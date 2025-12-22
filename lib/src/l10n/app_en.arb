@@ -1,0 +1,94 @@
+{
+  "loginTagline": "Power up your management.\nElevate your business.",
+  "loginDescription": "Comprehensive control panel for efficient management of members, finances, and real-time access.",
+  "loginFeatureReports": "Live Reports",
+  "loginFeatureAccess": "Access Control",
+  "loginTitle": "Sign in",
+  "loginSubtitle": "Welcome to the GMS Administration Panel.",
+  "loginUsernameLabel": "Username or email",
+  "loginUsernameHint": "user@diamondgym.com",
+  "loginUsernameHelper": "Enter your corporate email or user ID.",
+  "loginUsernameRequired": "Enter your email or username",
+  "loginPasswordLabel": "Password",
+  "loginForgotPassword": "Forgot your password?",
+  "loginPasswordRequired": "Enter your password",
+  "loginPasswordHelper": "Minimum 8 characters, at least one number.",
+  "loginButton": "Sign in",
+  "loginErrorUnexpected": "Unexpected error",
+  "systemStatusLabel": "System status",
+  "systemStatusOnline": "ONLINE",
+  "toggleLanguageTooltip": "Switch language",
+  "toggleThemeTooltip": "Toggle theme",
+  "switchRoleTooltip": "Switch role (debug)",
+  "logoutTooltip": "Log out",
+  "searchMembersHint": "Search members, classes...",
+  "invalidCredentialsError": "Invalid credentials",
+  "userInactiveError": "Account is inactive",
+  "tooManyAttemptsError": "Too many failed attempts. Try again in {seconds} seconds.",
+  "@tooManyAttemptsError": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "tooManyAttemptsErrorGeneric": "Too many failed attempts. Try again later.",
+  "networkError": "Network error. Try again.",
+  "createUserTitle": "Register new user",
+  "createUserSubtitle": "Complete the form below to register a new team member.",
+  "fullNameLabel": "Full name",
+  "fullNameHint": "e.g. John Doe",
+  "emailLabel": "Email address",
+  "emailHint": "e.g. john@diamondgym.com",
+  "usernameLabel": "Username",
+  "corporateEmailLabel": "Corporate email",
+  "systemRoleLabel": "System role",
+  "assignedGymLabel": "Assigned gym",
+  "securitySectionTitle": "Security",
+  "passwordLabel": "Password",
+  "confirmPasswordLabel": "Confirm password",
+  "newPasswordLabel": "New password",
+  "resetPasswordButton": "Reset password",
+  "userActiveLabel": "User active",
+  "userActiveSubtitleOn": "User can access the system",
+  "userActiveSubtitleOff": "System access is disabled",
+  "cancelButton": "Cancel",
+  "createUserButton": "Create user",
+  "updateUserButton": "Update user",
+  "saveChangesButton": "Save changes",
+  "securityRequirementsTitle": "Security requirements",
+  "reqMinLength": "Minimum 8 characters",
+  "reqUppercase": "At least one uppercase letter",
+  "reqLowercase": "At least one lowercase letter",
+  "reqDigit": "At least one number",
+  "reqSpecialChar": "One special character",
+  "successTitle": "Success!",
+  "successUserCreated": "User created successfully.",
+  "successUserUpdated": "User updated successfully.",
+  "errorTitle": "Error",
+  "passwordsDoNotMatch": "Passwords do not match",
+  "passwordRequiredNew": "Password is required for new users",
+  "passwordRequirementsFail": "Password does not meet security requirements",
+  "nameEmailRequired": "Name must be at least 3 characters and email is required",
+  "userFallbackName": "User",
+  "createdLabel": "Created: {date}",
+  "@createdLabel": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "noGymsAvailable": "No gyms available",
+  "selectGymHint": "Select a gym",
+  "gymsLoadError": "Error loading gyms",
+  "okButton": "OK",
+  "errorWithDetails": "Error: {details}",
+  "@errorWithDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+flutter_launcher_icons:
+  android: false
+  ios: false
+  image_path: "assets/images/diamond_logo.png"
+  web:
+    generate: true
+    image_path: "assets/images/diamond_logo.png"
+    background_color: "#F3F4F6"
+    theme_color: "#2563EB"
+  windows:
+    generate: true
+    image_path: "assets/images/diamond_logo.png"
+    icon_size: 48 # standard size

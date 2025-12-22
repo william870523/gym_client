@@ -1,0 +1,94 @@
+{
+  "loginTagline": "Potencia tu gestión.\nEleva tu negocio.",
+  "loginDescription": "Panel de control integral para la administración eficiente de socios, finanzas y accesos en tiempo real.",
+  "loginFeatureReports": "Reportes en vivo",
+  "loginFeatureAccess": "Control de acceso",
+  "loginTitle": "Iniciar sesión",
+  "loginSubtitle": "Bienvenido al Panel de Administración GMS.",
+  "loginUsernameLabel": "Usuario o correo electrónico",
+  "loginUsernameHint": "usuario@diamondgym.com",
+  "loginUsernameHelper": "Introduce tu correo corporativo o ID de usuario.",
+  "loginUsernameRequired": "Ingresa tu correo o usuario",
+  "loginPasswordLabel": "Contraseña",
+  "loginForgotPassword": "¿Olvidaste tu contraseña?",
+  "loginPasswordRequired": "Ingresa tu contraseña",
+  "loginPasswordHelper": "Mínimo 8 caracteres, al menos un número.",
+  "loginButton": "Iniciar sesión",
+  "loginErrorUnexpected": "Error inesperado",
+  "systemStatusLabel": "Estado del sistema",
+  "systemStatusOnline": "EN LÍNEA",
+  "toggleLanguageTooltip": "Cambiar idioma",
+  "toggleThemeTooltip": "Cambiar tema",
+  "switchRoleTooltip": "Cambiar rol (debug)",
+  "logoutTooltip": "Cerrar sesión",
+  "searchMembersHint": "Buscar miembros, clases...",
+  "invalidCredentialsError": "Credenciales inválidas",
+  "userInactiveError": "La cuenta está inactiva",
+  "tooManyAttemptsError": "Demasiados intentos fallidos. Intenta de nuevo en {seconds} segundos.",
+  "@tooManyAttemptsError": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "tooManyAttemptsErrorGeneric": "Demasiados intentos fallidos. Intenta de nuevo más tarde.",
+  "networkError": "Error de red. Intenta de nuevo.",
+  "createUserTitle": "Registrar nuevo usuario",
+  "createUserSubtitle": "Completa el formulario a continuación para registrar un nuevo miembro del equipo.",
+  "fullNameLabel": "Nombre completo",
+  "fullNameHint": "ej. Juan Pérez",
+  "emailLabel": "Correo electrónico",
+  "emailHint": "ej. juan@diamondgym.com",
+  "usernameLabel": "Nombre de usuario",
+  "corporateEmailLabel": "Correo corporativo",
+  "systemRoleLabel": "Rol del sistema",
+  "assignedGymLabel": "Gimnasio asignado",
+  "securitySectionTitle": "Seguridad",
+  "passwordLabel": "Contraseña",
+  "confirmPasswordLabel": "Confirmar contraseña",
+  "newPasswordLabel": "Nueva contraseña",
+  "resetPasswordButton": "Restablecer contraseña",
+  "userActiveLabel": "Usuario activo",
+  "userActiveSubtitleOn": "El usuario puede acceder al sistema",
+  "userActiveSubtitleOff": "El acceso al sistema está deshabilitado",
+  "cancelButton": "Cancelar",
+  "createUserButton": "Crear usuario",
+  "updateUserButton": "Actualizar usuario",
+  "saveChangesButton": "Guardar cambios",
+  "securityRequirementsTitle": "Requisitos de seguridad",
+  "reqMinLength": "Mínimo 8 caracteres",
+  "reqUppercase": "Al menos una letra mayúscula",
+  "reqLowercase": "Al menos una letra minúscula",
+  "reqDigit": "Al menos un número",
+  "reqSpecialChar": "Un carácter especial",
+  "successTitle": "¡Éxito!",
+  "successUserCreated": "Usuario creado correctamente.",
+  "successUserUpdated": "Usuario actualizado correctamente.",
+  "errorTitle": "Error",
+  "passwordsDoNotMatch": "Las contraseñas no coinciden",
+  "passwordRequiredNew": "La contraseña es requerida para nuevos usuarios",
+  "passwordRequirementsFail": "La contraseña no cumple con los requisitos de seguridad",
+  "nameEmailRequired": "El nombre debe tener al menos 3 caracteres y el email es requerido",
+  "userFallbackName": "Usuario",
+  "createdLabel": "Creado: {date}",
+  "@createdLabel": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "noGymsAvailable": "No hay gimnasios disponibles",
+  "selectGymHint": "Seleccione un gimnasio",
+  "gymsLoadError": "Error cargando gimnasios",
+  "okButton": "OK",
+  "errorWithDetails": "Error: {details}",
+  "@errorWithDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  }
+}
