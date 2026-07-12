@@ -47,3 +47,8 @@ app.*.map.json
 # Env
 .env
 
+# Local diagnostic artifacts
+/analyze_output.txt
+/build_log*.txt
+/lib/src/temp_ui_block.txt
+

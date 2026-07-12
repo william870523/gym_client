@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 // ignore: invalid_use_of_internal_member
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/user.dart';
@@ -38,13 +37,25 @@ class AuthRepositoryImpl implements AuthRepository {
       // Persist token on client for subsequent requests
       _client.options.headers['Authorization'] = 'Bearer $token';
 
+      // El API local anida los datos en `user`:
+      // { token, user: { id, username, role } }.
+      // Se mantienen los campos de nivel superior como respaldo.
+      final userMap = data['user'] is Map
+          ? Map<String, dynamic>.from(data['user'] as Map)
+          : <String, dynamic>{};
+
       return User(
-        id: (data['user_id'] ?? data['id'] ?? '').toString(),
-        name: (data['name'] ?? email.split('@')[0]) as String,
-        email: (data['email'] ?? email) as String,
-        role: (data['role'] ?? 'reception') as String,
-        status: (data['status'] ?? 'active') as String,
-        imageUrl: data['imageUrl'] as String?,
+        id: (userMap['id'] ?? data['user_id'] ?? data['id'] ?? '').toString(),
+        name: (userMap['username'] ??
+                userMap['name'] ??
+                data['name'] ??
+                email.split('@')[0])
+            .toString(),
+        email: (userMap['email'] ?? data['email'] ?? email).toString(),
+        role: (userMap['role'] ?? data['role'] ?? 'reception').toString(),
+        status:
+            (userMap['status'] ?? data['status'] ?? 'active').toString(),
+        imageUrl: (userMap['imageUrl'] ?? data['imageUrl']) as String?,
         token: token,
       );
     } on DioException catch (e) {
@@ -55,16 +66,16 @@ class AuthRepositoryImpl implements AuthRepository {
       final data = e.response?.data;
       if (data is Map) {
         final code = data['error_code'];
-        errorCode = code != null ? code.toString() : null;
+        errorCode = code?.toString();
         final retryAfter = data['retry_after_seconds'];
-        retryAfterSeconds =
-            retryAfter is int ? retryAfter : int.tryParse('$retryAfter');
+        retryAfterSeconds = retryAfter is int
+            ? retryAfter
+            : int.tryParse('$retryAfter');
         message = data['error']?.toString();
       }
 
       if (errorCode != null && errorCode.isNotEmpty) {
-        final suffix =
-            retryAfterSeconds != null ? ':$retryAfterSeconds' : '';
+        final suffix = retryAfterSeconds != null ? ':$retryAfterSeconds' : '';
         throw Exception('error_code:$errorCode$suffix');
       }
 

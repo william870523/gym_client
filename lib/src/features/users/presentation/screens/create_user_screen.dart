@@ -204,7 +204,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
                 Switch(
                   value: _isActive,
                   onChanged: (v) => setState(() => _isActive = v),
-                  activeColor: primary,
+                  activeTrackColor: primary,
                 ),
               ],
             ),
@@ -256,8 +256,9 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerLeft,
-                child:
-                    _buildPasswordCriteria(l10n), // Show criteria when resetting
+                child: _buildPasswordCriteria(
+                  l10n,
+                ), // Show criteria when resetting
               ),
             ],
 
@@ -441,7 +442,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
                     style: TextStyle(color: textMuted, fontSize: 12),
                   ),
                   value: _isActive,
-                  activeColor: primary,
+                  activeTrackColor: primary,
                   onChanged: (val) => setState(() => _isActive = val),
                 ),
               ),
@@ -583,7 +584,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
                       Icon(
                         Icons.badge_outlined,
                         size: 18,
-                        color: textColor.withOpacity(0.7),
+                        color: textColor.withValues(alpha: 0.7),
                       ),
                       const SizedBox(width: 12),
                       Text(r.toUpperCase()),
@@ -702,10 +703,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
     );
   }
 
-  Widget _buildSecurityRequirementsBox(
-    bool isDark,
-    AppLocalizations l10n,
-  ) {
+  Widget _buildSecurityRequirementsBox(bool isDark, AppLocalizations l10n) {
     final bgColor = isDark
         ? const Color(0xFF172033)
         : const Color(0xFFF1F8FF); // Light blue for requirements
@@ -717,7 +715,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: iconColor.withOpacity(0.1)),
+        border: Border.all(color: iconColor.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,9 +787,9 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
     // Validate
     if (_nameController.text.trim().length < 3 ||
         _emailController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.nameEmailRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.nameEmailRequired)));
       return;
     }
 
@@ -803,9 +801,9 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
     if (!_isEditing) {
       // Creating: Password is mandatory and must meet criteria
       if (!passwordIsBeingSet) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.passwordRequiredNew)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.passwordRequiredNew)));
         return;
       }
     }
@@ -816,16 +814,16 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
           !_hasLowercase ||
           !_hasDigit ||
           !_hasSpecialChar) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.passwordRequirementsFail)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.passwordRequirementsFail)));
         return;
       }
 
       if (_passwordController.text != _confirmPasswordController.text) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.passwordsDoNotMatch)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.passwordsDoNotMatch)));
         return;
       }
     }
@@ -864,9 +862,7 @@ class _CreateUserScreenState extends ConsumerState<CreateUserScreen> {
             ],
           ),
           content: Text(
-            _isEditing
-                ? l10n.successUserUpdated
-                : l10n.successUserCreated,
+            _isEditing ? l10n.successUserUpdated : l10n.successUserCreated,
           ),
           actions: [
             TextButton(

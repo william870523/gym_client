@@ -16,6 +16,11 @@ _User _$UserFromJson(Map<String, dynamic> json) => _User(
   imageUrl: json['imageUrl'] as String?,
   token: json['token'] as String?,
   gymId: json['gym_id'] as String?,
+  permissions:
+      (json['permissions'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
 );
 
 Map<String, dynamic> _$UserToJson(_User instance) => <String, dynamic>{
@@ -26,7 +31,7 @@ Map<String, dynamic> _$UserToJson(_User instance) => <String, dynamic>{
   'active': instance.active,
   'status': instance.status,
   'imageUrl': instance.imageUrl,
-  'token': instance.token,
   'password': instance.password,
   'gym_id': instance.gymId,
+  'permissions': instance.permissions,
 };

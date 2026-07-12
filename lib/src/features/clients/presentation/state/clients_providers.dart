@@ -6,7 +6,7 @@ part 'clients_providers.g.dart';
 
 // Use Case: Get Clients
 @riverpod
-Future<List<Client>> getClients(GetClientsRef ref) async {
+Future<List<Client>> getClients(Ref ref) async {
   final repository = ref.watch(clientsRepositoryProvider);
   return repository.getClients();
 }

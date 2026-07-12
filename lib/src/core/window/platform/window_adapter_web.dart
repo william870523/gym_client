@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart';
+
 import 'window_adapter.dart';
 
 class WindowAdapterPlatform implements WindowAdapter {
   @override
   void init() {
-    // No-op for Web
-    print('WindowAdapter: Web Init (No-op)');
+    if (kDebugMode) {
+      debugPrint('WindowAdapter: Web Init (No-op)');
+    }
   }
 
   @override

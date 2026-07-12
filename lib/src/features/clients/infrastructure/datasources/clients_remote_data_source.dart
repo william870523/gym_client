@@ -6,7 +6,7 @@ import '../../domain/models/client.dart';
 part 'clients_remote_data_source.g.dart';
 
 @Riverpod(keepAlive: true)
-ClientsRemoteDataSource clientsRemoteDataSource(ClientsRemoteDataSourceRef ref) {
+ClientsRemoteDataSource clientsRemoteDataSource(Ref ref) {
   return ClientsRemoteDataSource(ref.watch(apiClientProvider));
 }
 
@@ -16,12 +16,10 @@ class ClientsRemoteDataSource {
   ClientsRemoteDataSource(this._dio);
 
   Future<List<Client>> fetchClients() async {
-    final response = await _dio.get('/clients'); 
+    final response = await _dio.get('/clients');
     // Assuming API returns List<Client> directly or { data: [] }
     // Adjust based on actual API response structure
-    return (response.data as List)
-        .map((e) => Client.fromJson(e))
-        .toList();
+    return (response.data as List).map((e) => Client.fromJson(e)).toList();
   }
 
   Future<Client?> fetchClientById(String id) async {

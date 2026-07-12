@@ -1,8 +1,14 @@
 import 'package:flutter_neumorphic_plus/flutter_neumorphic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'dart:ui';
 import '../../../../features/dashboard/presentation/screens/dashboard_screen.dart';
-import '../../../../core/localization/locale_provider.dart';
 import '../../../../l10n/app_localizations.dart';
+import '../../../../core/widgets/sync_status_chip.dart';
+import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../../core/theme/pulso/pulso_theme.dart';
+import '../../../../core/window/window_manager.dart';
+import '../../../../core/localization/locale_provider.dart';
 import '../state/auth_notifier.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -13,9 +19,21 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _emailController = TextEditingController(text: 'reception@gymflow.com');
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  static const _devEmail = 'william870523@gmail.com';
+  static const _devPassword = 'Root2014*';
+
+  @override
+  void initState() {
+    super.initState();
+    assert(() {
+      _emailController.text = _devEmail;
+      _passwordController.text = _devPassword;
+      return true;
+    }());
+  }
 
   @override
   void dispose() {
@@ -27,8 +45,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+
+    // Listen for Auth Errors
+    ref.listen<AsyncValue>(authProvider, (_, state) {
+      if (state.hasError && !state.isLoading) {
+        final l10n = AppLocalizations.of(context)!;
+        final msg =
+            _mapAuthError(l10n, state.error.toString()) ??
+            state.error.toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg.replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
+
     final l10n = AppLocalizations.of(context)!;
-    final locale = ref.watch(localeProvider);
     final rawErrorText = authState.hasError
         ? authState.error.toString().replaceFirst('Exception: ', '')
         : null;
@@ -36,6 +71,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isDark = NeumorphicTheme.isUsingDark(context);
     // Use the theme's base color directly
     final kNeuBackground = NeumorphicTheme.baseColor(context);
+
+    Future<void> submitLogin() async {
+      if (authState.isLoading) return;
+      if (!_formKey.currentState!.validate()) {
+        return;
+      }
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+      await ref.read(authProvider.notifier).login(email, password);
+      final user = ref.read(authProvider).asData?.value;
+      if (user == null || !context.mounted) {
+        return;
+      }
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      );
+    }
 
     return Scaffold(
       backgroundColor: kNeuBackground,
@@ -60,20 +112,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       stops: const [0.0, 0.3, 0.8, 1.0],
                       colors: isDark
                           ? [
-                              Colors.black.withOpacity(0.9), // Deep Dark
-                              const Color(0xFF1E1E1E).withOpacity(0.95),
-                              kNeuBackground.withOpacity(0.9),
+                              Colors.black.withValues(alpha: 0.9), // Deep Dark
+                              const Color(0xFF1E1E1E).withValues(alpha: 0.95),
+                              kNeuBackground.withValues(alpha: 0.9),
                               kNeuBackground,
                             ]
                           : [
                               const Color(
                                 0xFF1E3A8A,
-                              ).withOpacity(0.95), // Deep Blue
+                              ).withValues(alpha: 0.95), // Deep Blue
                               const Color(
                                 0xFF0F172A,
-                              ).withOpacity(0.9), // Dark Slate
-                              kNeuBackground.withOpacity(
-                                0.8,
+                              ).withValues(alpha: 0.9), // Dark Slate
+                              kNeuBackground.withValues(
+                                alpha: 0.8,
                               ), // Fading to NeuBase
                               kNeuBackground, // Solid NeuBase
                             ],
@@ -163,37 +215,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Tooltip(
-                                  message: l10n.toggleLanguageTooltip,
-                                  child: TextButton.icon(
-                                    onPressed: () {
-                                      ref
-                                          .read(localeProvider.notifier)
-                                          .toggleLocale();
-                                    },
-                                    icon: Icon(
-                                      Icons.language,
-                                      size: 18,
-                                      color:
-                                          NeumorphicTheme.defaultTextColor(
-                                            context,
-                                          ),
-                                    ),
-                                    label: Text(
-                                      locale.languageCode.toUpperCase(),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color:
-                                            NeumorphicTheme.defaultTextColor(
-                                              context,
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              const SizedBox(height: 32),
                               const SizedBox(height: 8),
                               // Logo
                               Align(
@@ -234,7 +256,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   fontSize: 16,
                                   color: NeumorphicTheme.defaultTextColor(
                                     context,
-                                  ).withOpacity(0.6),
+                                  ).withValues(alpha: 0.6),
                                 ),
                               ),
                               const SizedBox(height: 32),
@@ -242,258 +264,260 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               const SizedBox(height: 32),
 
                               // Form
-                              Form(
-                                key: _formKey,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Email
-                                    _buildLabel(
-                                      context,
-                                      l10n.loginUsernameLabel,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _emailController,
-                                      validator: (v) =>
-                                          (v == null || v.trim().isEmpty)
-                                          ? l10n.loginUsernameRequired
-                                          : null,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        color: NeumorphicTheme.defaultTextColor(
-                                          context,
-                                        ),
-                                      ),
-                                      decoration: _inputDecoration(
-                                        context: context,
-                                        hint: l10n.loginUsernameHint,
-                                        icon: Icons.person_outline,
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        left: 4,
-                                        top: 4,
-                                      ),
-                                      child: Text(
-                                        l10n.loginUsernameHelper,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color:
-                                              NeumorphicTheme.defaultTextColor(
-                                                context,
-                                              ).withOpacity(0.5),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-
-                                    // Password
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
+                              CallbackShortcuts(
+                                bindings: {
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.enter,
+                                  ): submitLogin,
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.numpadEnter,
+                                  ): submitLogin,
+                                },
+                                child: Focus(
+                                  autofocus: true,
+                                  child: Form(
+                                    key: _formKey,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
                                       children: [
+                                        // Email
                                         _buildLabel(
                                           context,
-                                          l10n.loginPasswordLabel,
+                                          l10n.loginUsernameLabel,
                                         ),
-                                        TextButton(
-                                          onPressed: () {},
-                                          style: TextButton.styleFrom(
-                                            padding: EdgeInsets.zero,
-                                            minimumSize: Size.zero,
-                                            tapTargetSize: MaterialTapTargetSize
-                                                .shrinkWrap,
+                                        const SizedBox(height: 6),
+                                        TextFormField(
+                                          controller: _emailController,
+                                          textInputAction: TextInputAction.next,
+                                          onFieldSubmitted: (_) {
+                                            FocusScope.of(context).nextFocus();
+                                          },
+                                          validator: (v) =>
+                                              (v == null || v.trim().isEmpty)
+                                              ? l10n.loginUsernameRequired
+                                              : null,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            color:
+                                                NeumorphicTheme.defaultTextColor(
+                                                  context,
+                                                ),
+                                          ),
+                                          decoration: _inputDecoration(
+                                            context: context,
+                                            hint: l10n.loginUsernameHint,
+                                            icon: Icons.person_outline,
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 4,
+                                            top: 4,
                                           ),
                                           child: Text(
-                                            l10n.loginForgotPassword,
+                                            l10n.loginUsernameHelper,
                                             style: TextStyle(
                                               fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(
-                                                0xFF135BEC,
-                                              ), // primary
+                                              color:
+                                                  NeumorphicTheme.defaultTextColor(
+                                                    context,
+                                                  ).withValues(alpha: 0.5),
+                                              fontWeight: FontWeight.w500,
                                             ),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
+                                        const SizedBox(height: 24),
 
-                                    TextFormField(
-                                      controller: _passwordController,
-                                      validator: (v) => (v == null || v.isEmpty)
-                                          ? l10n.loginPasswordRequired
-                                          : null,
-                                      obscureText: true,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        color: NeumorphicTheme.defaultTextColor(
-                                          context,
-                                        ),
-                                      ),
-                                      decoration: _inputDecoration(
-                                        context: context,
-                                        hint: '********',
-                                        icon: Icons.lock_outline,
-                                        suffixIcon:
-                                            Icons.visibility_off_outlined,
-                                      ),
-                                    ),
-
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        left: 4,
-                                        top: 4,
-                                      ),
-                                      child: Text(
-                                        l10n.loginPasswordHelper,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color:
-                                              NeumorphicTheme.defaultTextColor(
-                                                context,
-                                              ).withOpacity(0.5),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-
-                                    // Error Message
-                                    if (authState.hasError)
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        margin: const EdgeInsets.only(
-                                          bottom: 20,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFFEE2E2),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFFFECACA),
-                                          ),
-                                        ),
-                                        child: Row(
+                                        // Password
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
-                                            const Icon(
-                                              Icons.error_outline,
-                                              color: Color(0xFFDC2626),
-                                              size: 20,
+                                            Flexible(
+                                              child: _buildLabel(
+                                                context,
+                                                l10n.loginPasswordLabel,
+                                              ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                errorText ??
-                                                    l10n.loginErrorUnexpected,
-                                                style: const TextStyle(
-                                                  color: Color(0xFFDC2626),
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w500,
+                                            const SizedBox(width: 12),
+                                            Flexible(
+                                              child: TextButton(
+                                                onPressed: () {},
+                                                style: TextButton.styleFrom(
+                                                  padding: EdgeInsets.zero,
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                                child: Text(
+                                                  l10n.loginForgotPassword,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  textAlign: TextAlign.right,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Color(
+                                                      0xFF135BEC,
+                                                    ), // primary
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ],
                                         ),
-                                      ),
+                                        const SizedBox(height: 6),
 
-                                    // Submit Button (Neumorphic)
-                                    SizedBox(
-                                      height: 50,
-                                      child: NeumorphicButton(
-                                        onPressed: authState.isLoading
-                                            ? null
-                                            : () async {
-                                                if (!_formKey.currentState!
-                                                    .validate()) {
-                                                  return;
-                                                }
-                                                final email = _emailController
-                                                    .text
-                                                    .trim();
-                                                final password =
-                                                    _passwordController.text;
-                                                await ref
-                                                    .read(authProvider.notifier)
-                                                    .login(email, password);
-                                                final user = ref
-                                                    .read(authProvider)
-                                                    .asData
-                                                    ?.value;
-                                                if (user == null) return;
-                                                ref
-                                                    .read(
-                                                      mockRoleProvider.notifier,
-                                                    )
-                                                    .update(user.role);
-                                                if (!mounted) return;
-                                                Navigator.of(
+                                        TextFormField(
+                                          controller: _passwordController,
+                                          textInputAction: TextInputAction.done,
+                                          onFieldSubmitted: (_) =>
+                                              submitLogin(),
+                                          validator: (v) =>
+                                              (v == null || v.isEmpty)
+                                              ? l10n.loginPasswordRequired
+                                              : null,
+                                          obscureText: true,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            color:
+                                                NeumorphicTheme.defaultTextColor(
                                                   context,
-                                                ).pushReplacement(
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        const DashboardScreen(),
-                                                  ),
-                                                );
-                                              },
-                                        style: NeumorphicStyle(
-                                          color: const Color(
-                                            0xFF135BEC,
-                                          ), // Primary Blue
-                                          // High Contrast Shadows for "Pop"
-                                          shadowLightColor: isDark
-                                              ? const Color(
-                                                  0xFF60A5FA,
-                                                ) // Bright Blue Highlight (Dark Mode)
-                                              : Colors
-                                                    .white, // Pure White Highlight (Light Mode)
-
-                                          shadowDarkColor: isDark
-                                              ? Colors.black
-                                              : const Color(
-                                                  0xFF002171,
-                                                ), // Deep Navy Shadow (Light Mode)
-
-                                          depth: 8, // Very noticeable depth
-                                          intensity: 1, // Max intensity
-                                          surfaceIntensity: 0.5, // Glossy curve
-                                          shape: NeumorphicShape.concave,
-                                          boxShape:
-                                              NeumorphicBoxShape.roundRect(
-                                                BorderRadius.circular(12),
-                                              ),
-                                          lightSource: LightSource.topLeft,
+                                                ),
+                                          ),
+                                          decoration: _inputDecoration(
+                                            context: context,
+                                            hint: '********',
+                                            icon: Icons.lock_outline,
+                                            suffixIcon:
+                                                Icons.visibility_off_outlined,
+                                          ),
                                         ),
-                                        padding: EdgeInsets.zero,
-                                        child: Center(
-                                          child: authState.isLoading
-                                              ? const SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
-                                                )
-                                              : Text(
-                                                  l10n.loginButton,
-                                                  style: TextStyle(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.white,
-                                                    letterSpacing: 0.5,
+
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 4,
+                                            top: 4,
+                                          ),
+                                          child: Text(
+                                            l10n.loginPasswordHelper,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color:
+                                                  NeumorphicTheme.defaultTextColor(
+                                                    context,
+                                                  ).withValues(alpha: 0.5),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 24),
+
+                                        // Error Message
+                                        if (authState.hasError)
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            margin: const EdgeInsets.only(
+                                              bottom: 20,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFEE2E2),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: const Color(0xFFFECACA),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.error_outline,
+                                                  color: Color(0xFFDC2626),
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    errorText ??
+                                                        l10n.loginErrorUnexpected,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFFDC2626),
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
                                                   ),
                                                 ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        // Submit Button (Neumorphic)
+                                        SizedBox(
+                                          height: 50,
+                                          child: NeumorphicButton(
+                                            onPressed: authState.isLoading
+                                                ? null
+                                                : submitLogin,
+                                            style: NeumorphicStyle(
+                                              color: const Color(
+                                                0xFF135BEC,
+                                              ), // Primary Blue
+                                              // High Contrast Shadows for "Pop"
+                                              shadowLightColor: isDark
+                                                  ? const Color(
+                                                      0xFF60A5FA,
+                                                    ) // Bright Blue Highlight (Dark Mode)
+                                                  : Colors
+                                                        .white, // Pure White Highlight (Light Mode)
+
+                                              shadowDarkColor: isDark
+                                                  ? Colors.black
+                                                  : const Color(
+                                                      0xFF002171,
+                                                    ), // Deep Navy Shadow (Light Mode)
+
+                                              depth: 8, // Very noticeable depth
+                                              intensity: 1, // Max intensity
+                                              surfaceIntensity:
+                                                  0.5, // Glossy curve
+                                              shape: NeumorphicShape.concave,
+                                              boxShape:
+                                                  NeumorphicBoxShape.roundRect(
+                                                    BorderRadius.circular(12),
+                                                  ),
+                                              lightSource: LightSource.topLeft,
+                                            ),
+                                            padding: EdgeInsets.zero,
+                                            child: Center(
+                                              child: authState.isLoading
+                                                  ? const SizedBox(
+                                                      height: 20,
+                                                      width: 20,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: Colors.white,
+                                                          ),
+                                                    )
+                                                  : Text(
+                                                      l10n.loginButton,
+                                                      style: TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.white,
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
 
@@ -502,7 +526,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 height: 32,
                                 color: NeumorphicTheme.defaultTextColor(
                                   context,
-                                ).withOpacity(0.2),
+                                ).withValues(alpha: 0.2),
                               ),
 
                               // System Status Footer - CLEAN VERSION
@@ -521,53 +545,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                           color:
                                               NeumorphicTheme.defaultTextColor(
                                                 context,
-                                              ).withOpacity(0.5),
+                                              ).withValues(alpha: 0.5),
                                           letterSpacing: 0.5,
                                         ),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: isDark
-                                              ? Colors.white10
-                                              : Colors.white.withOpacity(0.5),
-                                          border: Border.all(
-                                            color:
-                                                NeumorphicTheme.defaultTextColor(
-                                                  context,
-                                                ).withOpacity(0.2),
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 6,
-                                              height: 6,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFF22C55E),
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              l10n.systemStatusOnline,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                                color:
-                                                    NeumorphicTheme.defaultTextColor(
-                                                      context,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                      const Flexible(
+                                        child: SyncStatusChip(compact: true),
                                       ),
                                     ],
                                   ),
@@ -578,7 +561,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       fontSize: 11,
                                       color: NeumorphicTheme.defaultTextColor(
                                         context,
-                                      ).withOpacity(0.4),
+                                      ).withValues(alpha: 0.4),
                                       fontFamily: 'monospace',
                                     ),
                                   ),
@@ -591,6 +574,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 ],
+              ),
+
+              // Appearance must remain below Navigator's Overlay. On desktop
+              // language stays in the native title bar; web/mobile show both.
+              Positioned(
+                top: 12,
+                right: 16,
+                child: isDesktopPlatform
+                    ? const PulsoThemeScope(child: PulsoAppearanceMenuButton())
+                    : _LoginToggles(isDark: isDark),
               ),
             ],
           );
@@ -705,22 +698,87 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: textColor.withOpacity(0.4)),
-      prefixIcon: Icon(icon, color: textColor.withOpacity(0.5)),
+      hintStyle: TextStyle(color: textColor.withValues(alpha: 0.4)),
+      prefixIcon: Icon(icon, color: textColor.withValues(alpha: 0.5)),
       suffixIcon: suffixIcon != null
-          ? Icon(suffixIcon, color: textColor.withOpacity(0.5))
+          ? Icon(suffixIcon, color: textColor.withValues(alpha: 0.5))
           : null,
       filled: true,
       fillColor: isDark ? Colors.grey[900] : Colors.white,
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: textColor.withOpacity(0.2)),
+        borderSide: BorderSide(color: textColor.withValues(alpha: 0.2)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFF135BEC), width: 2),
       ),
+    );
+  }
+}
+
+/// Theme & language toggles shown on the login screen ONLY on web (where there
+/// is no desktop title bar to host them). Translucent blurred background so it
+/// stays visible over the login's background image.
+class _LoginToggles extends ConsumerWidget {
+  final bool isDark;
+
+  const _LoginToggles({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = ref.watch(localeProvider);
+    final iconColor = isDark ? Colors.white : const Color(0xFF1F2937);
+    final bgColor = (isDark ? Colors.black : Colors.white).withValues(
+      alpha: 0.35,
+    );
+
+    Widget button({
+      required Widget child,
+      required VoidCallback onTap,
+      required BorderRadius radius,
+    }) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Material(
+            color: bgColor,
+            child: InkWell(onTap: onTap, borderRadius: radius, child: child),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const PulsoThemeScope(child: PulsoAppearanceMenuButton()),
+        const SizedBox(width: 8),
+        button(
+          onTap: () => ref.read(localeProvider.notifier).toggleLocale(),
+          radius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.language_outlined, size: 16, color: iconColor),
+                const SizedBox(width: 4),
+                Text(
+                  locale.languageCode.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: iconColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../window/window_manager.dart';
 
@@ -14,18 +13,19 @@ class Env {
     defaultValue: '',
   );
 
-  // URLs configurables desde .env
+  // URLs configurables para desarrollo local. En web se debe preferir
+  // --dart-define=API_BASE_URL=... porque los assets son publicos.
   static String get _localBase =>
-      dotenv.env['LOCAL_API_URL'] ?? 'http://127.0.0.1:8081';
+      (dotenv.isInitialized ? dotenv.env['LOCAL_API_URL'] : null) ??
+      'http://127.0.0.1:8080';
   static String get _remoteBase =>
-      dotenv.env['REMOTE_API_URL'] ?? 'https://gym-remote-api.railway.app';
+      (dotenv.isInitialized ? dotenv.env['REMOTE_API_URL'] : null) ??
+      'https://gym-remote-api.railway.app';
   static const String _prodBase = 'https://api.gymflow.com';
 
   static String get baseUrl {
     if (_baseUrlOverride.isNotEmpty) return _baseUrlOverride;
 
-    // Web => remoto; Desktop (Windows/macOS/Linux) => local por defecto
-    if (kIsWeb) return _remoteBase;
     if (isDesktopPlatform) return _localBase;
 
     // Fallback según entorno declarado

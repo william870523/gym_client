@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/window/window_manager.dart'; // IsDesktop check
-import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/localization/locale_provider.dart';
-import '../../../../l10n/app_localizations.dart';
+import '../../../../core/theme/pulso/pulso_theme.dart';
+import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../../core/widgets/sync_status_chip.dart';
 
 class DashboardHeader extends ConsumerWidget {
   final bool isDark;
@@ -13,6 +15,7 @@ class DashboardHeader extends ConsumerWidget {
   final String role;
   final VoidCallback onToggleRole;
   final VoidCallback onLogout;
+  final VoidCallback? onMenuPressed;
   final Widget? headerAction;
 
   const DashboardHeader({
@@ -24,20 +27,13 @@ class DashboardHeader extends ConsumerWidget {
     required this.role,
     required this.onToggleRole,
     required this.onLogout,
+    this.onMenuPressed,
     this.headerAction,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context)!;
-    final locale = ref.watch(localeProvider);
-    final textMain = isDark ? Colors.white : const Color(0xFF0F172A);
-    final textMuted = isDark
-        ? const Color(0xFF94A3B8)
-        : const Color(0xFF64748B);
-
     // Desktop: Add padding for Window Frame (Title Bar)
-    // Adjusted: Reduced from 40.0 to 28.0 to prevent "too wide" header look
     final double topPadding = isDesktopPlatform ? 28.0 : 0.0;
 
     return Container(
@@ -53,7 +49,7 @@ class DashboardHeader extends ConsumerWidget {
         border: Border(bottom: BorderSide(color: borderColor)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -61,156 +57,136 @@ class DashboardHeader extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Title / Breadcrumb (Hidden on mobile if Sidebar is drawer)
+          // Title / Breadcrumb
           Expanded(
             child: Row(
               children: [
-                if (MediaQuery.of(context).size.width < 768)
+                if (onMenuPressed != null)
                   IconButton(
-                    icon: Icon(Icons.menu, color: textMuted),
-                    onPressed: () {},
+                    icon: Icon(
+                      Icons.menu,
+                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                    ),
+                    onPressed: onMenuPressed,
                   ),
-
+                const SizedBox(width: 8),
                 Text(
                   title,
-                  style: TextStyle(
-                    color: textMain,
+                  style: GoogleFonts.inter(
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
                     fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w900, // font-black equivalent
+                    letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(width: 32),
-
-                // Search Bar (Flexible)
-                if (MediaQuery.of(context).size.width > 600)
-                  Expanded(
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.05)
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.1)
-                              : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Icon(Icons.search, color: textMuted, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              style: TextStyle(color: textMain, fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: l10n.searchMembersHint,
-                                hintStyle: TextStyle(color: textMuted),
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
 
-          // Right Actions
-          Row(
-            children: [
-              if (headerAction != null) ...[
-                headerAction!,
-                const SizedBox(width: 16),
-                Container(
-                  width: 1,
-                  height: 24,
-                  color: isDark ? Colors.white24 : Colors.grey.shade300,
-                ),
-                const SizedBox(width: 16),
-              ],
-              // Theme Toggle Notifier
-              IconButton(
-                onPressed: () {
-                  ref.read(themeProvider.notifier).toggleTheme();
-                },
-                tooltip: l10n.toggleThemeTooltip,
-                icon: Icon(
-                  isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                  color: isDark ? Colors.amber : Colors.blueGrey,
+          // Status Indicators (API / Sync)
+          if (MediaQuery.of(context).size.width > 1024) ...[
+            SyncStatusChip(isDark: isDark, showDetails: true),
+            const SizedBox(width: 24),
+          ],
+
+          // Appearance opens a popup and therefore stays under Navigator's
+          // Overlay instead of the native title-bar layer.
+          const PulsoThemeScope(child: PulsoAppearanceMenuButton()),
+          const SizedBox(width: 8),
+          // Language remains in the native bar on desktop. Web/mobile expose it
+          // inline because they do not have native window controls.
+          if (!isDesktopPlatform) ...[
+            TextButton(
+              onPressed: () {
+                ref.read(localeProvider.notifier).toggleLocale();
+              },
+              style: TextButton.styleFrom(
+                minimumSize: const Size(36, 36),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              const SizedBox(width: 8),
+              child: Text(
+                ref.watch(localeProvider).languageCode.toUpperCase(),
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+          ],
+          // Divider
+          Container(height: 24, width: 1, color: borderColor),
+          const SizedBox(width: 16),
 
-              Tooltip(
-                message: l10n.toggleLanguageTooltip,
-                child: TextButton(
-                  onPressed: () {
-                    ref.read(localeProvider.notifier).toggleLocale();
-                  },
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    foregroundColor: textMuted,
+          // Logout Button
+          InkWell(
+            onTap: onLogout,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : const Color(0xFFF3F4F6), // gray-100
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.logout,
+                    size: 20,
+                    color: isDark ? Colors.white70 : const Color(0xFF334155),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.language, color: textMuted, size: 20),
-                      const SizedBox(width: 6),
-                      Text(
-                        locale.languageCode.toUpperCase(),
-                        style: TextStyle(
-                          color: textMuted,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
+                  if (MediaQuery.of(context).size.width > 640) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      "Salir",
+                      style: GoogleFonts.inter(
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF334155),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 8),
+            ),
+          ),
 
-              // Temporary Role Toggle for Demo
-              IconButton(
-                onPressed: onToggleRole,
-                tooltip: l10n.switchRoleTooltip,
-                icon: const Icon(Icons.swap_horiz, color: Colors.blue),
-              ),
-              const SizedBox(width: 8),
+          const SizedBox(width: 24),
 
-              _buildIconButton(
-                Icons.notifications_none,
-                textMuted,
-                hasBadge: true,
-              ),
-              const SizedBox(width: 12),
-              _buildIconButton(Icons.person_outline, textMuted),
-              const SizedBox(width: 16),
-              IconButton(
-                onPressed: onLogout,
-                tooltip: l10n.logoutTooltip,
-                icon: const Icon(Icons.logout),
-                color: Colors.redAccent,
-              ),
-
-              // Profile Circle
+          // Profile Picture
+          Stack(
+            children: [
               Container(
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.grey.shade200,
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                      'https://lh3.googleusercontent.com/aida-public/AB6AXuDKxbGxTtKnzlRZvYXQIOlGOEST-PoeEarX3VzyNpxQxnsx9_NHzUKHqRkzLl9xp4pUu-5-IXXGejjC0drlQkWBeNyNpi6fMBnBBLldRlrO1_SK8-z5w2JTYlv253gdz6ZMF86lPRStpmc7AtF9rMKtYoNQnjzEaP1l_rxOB9jb05QZtvrNDCJRjcf81-n4S9f55x-MwNZ33odaKu_AYvaEOEwkYvwFXf1NWrlw-NBR9696FcXbcaYUONUR1FpWDn6cJqQsQ2_QuqU',
-                    ),
-                    fit: BoxFit.cover,
+                  border: Border.all(color: Colors.transparent, width: 2),
+                ),
+                child: Icon(
+                  Icons.person,
+                  color: Colors.grey.shade400,
+                  size: 24,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade500,
+                    border: Border.all(color: Colors.white, width: 2),
+                    shape: BoxShape.circle,
                   ),
                 ),
               ),
@@ -218,37 +194,6 @@ class DashboardHeader extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildIconButton(IconData icon, Color color, {bool hasBadge = false}) {
-    return Stack(
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.transparent, // Hover handles in InkWell
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.transparent),
-          ),
-          child: Icon(icon, color: color, size: 24),
-        ),
-        if (hasBadge)
-          Positioned(
-            top: 2,
-            right: 2,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

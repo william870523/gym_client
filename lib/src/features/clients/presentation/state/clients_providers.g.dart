@@ -46,4 +46,4 @@ final class GetClientsProvider
   }
 }
 
-String _$getClientsHash() => r'7bd7b4730e6962193e763b8687b80de31fa437bc';
+String _$getClientsHash() => r'2d965989fac7713c4c3afde0f6fcd4bd05176b1d';

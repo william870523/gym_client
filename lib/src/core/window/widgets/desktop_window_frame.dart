@@ -2,7 +2,8 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_neumorphic_plus/flutter_neumorphic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../window_manager.dart';
-import '../../theme/theme_provider.dart';
+import '../../localization/locale_provider.dart';
+import '../../theme/pulso/appearance_provider.dart';
 
 class DesktopWindowFrame extends ConsumerWidget {
   final Widget child;
@@ -11,10 +12,19 @@ class DesktopWindowFrame extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = ref.watch(themeProvider) == ThemeMode.dark;
+    final appearance = ref.watch(appearanceProvider);
+    final isDark =
+        appearance.resolveBrightness(
+          MediaQuery.platformBrightnessOf(context),
+        ) ==
+        Brightness.dark;
     final textColor = isDark ? Colors.white : const Color(0xFF111827);
 
     // 1. If Web/Mobile, return Custom Web Frame (Overlay Header)
+    // NOTE: On web there are no native window controls, so the theme/language
+    // toggles are rendered inside the in-content headers (DashboardHeader /
+    // LoginScreen) instead of here. This overlay stays decorative (non-interactive)
+    // to avoid overlapping real content.
     if (!isDesktopPlatform) {
       return Stack(
         children: [
@@ -62,12 +72,12 @@ class DesktopWindowFrame extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(
         horizontal: 16,
       ), // Add padding for Web
-      child: Material(
+      child: const Material(
         type: MaterialType.transparency,
         child: Row(
           children: [
             // Left Spacer (pushes controls to the right)
-            const Spacer(),
+            Spacer(),
           ],
         ),
       ),
@@ -89,7 +99,8 @@ class DesktopWindowFrame extends ConsumerWidget {
           child: Stack(
             children: [
               // 1. Draggable Background (captures drags everywhere except where buttons are)
-              Positioned.fill(child: MoveWindow()),
+              // We leave the left 260px open so the DashboardSidebar toggle button can receive clicks
+              Positioned.fill(left: 260, child: MoveWindow()),
 
               // 2. Perfectly Centered Branding
               // Wrapped in MoveWindow to allow dragging when clicking/holding the logo/text
@@ -129,7 +140,7 @@ class DesktopWindowFrame extends ConsumerWidget {
                 ),
               ),
 
-              // 3. Right-aligned Controls (Theme Switch + Window Buttons)
+              // 3. Right-aligned Controls (Theme + Language Toggles + Window Buttons)
               Positioned(
                 right: 0,
                 top: 0,
@@ -137,6 +148,9 @@ class DesktopWindowFrame extends ConsumerWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Theme & Language Toggles
+                    _TitleBarToggleButtons(isDark: isDark),
+                    const SizedBox(width: 8),
                     // Window Buttons
                     WindowButtons(isDark: isDark),
                   ],
@@ -181,6 +195,104 @@ class WindowButtons extends StatelessWidget {
         MaximizeWindowButton(colors: colors),
         CloseWindowButton(colors: closeColors),
       ],
+    );
+  }
+}
+
+/// Theme (light/dark) and language (es/en) toggles rendered inside the
+/// custom title bar so they no longer overlap the window controls.
+///
+/// The native title bar only hosts controls that do not require Navigator's
+/// Overlay. Appearance lives inside Login/Dashboard, where popup menus are safe.
+class _TitleBarToggleButtons extends ConsumerWidget {
+  final bool isDark;
+
+  const _TitleBarToggleButtons({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = ref.watch(localeProvider);
+    final iconColor = isDark ? Colors.white : const Color(0xFF111827);
+    // Translucent background so the buttons stay visible over any content.
+    final bgColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Language Toggle (stadium)
+        _TitleBarButton(
+          isDark: isDark,
+          backgroundColor: bgColor,
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          onTap: () => ref.read(localeProvider.notifier).toggleLocale(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.language_outlined, size: 16, color: iconColor),
+              const SizedBox(width: 4),
+              Text(
+                locale.languageCode.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A compact hover-aware button used by [_TitleBarToggleButtons].
+class _TitleBarButton extends StatefulWidget {
+  final bool isDark;
+  final Color backgroundColor;
+  final OutlinedBorder shape;
+  final EdgeInsetsGeometry padding;
+  final VoidCallback onTap;
+  final Widget child;
+
+  const _TitleBarButton({
+    required this.isDark,
+    required this.backgroundColor,
+    required this.shape,
+    required this.padding,
+    required this.onTap,
+    required this.child,
+  });
+
+  @override
+  State<_TitleBarButton> createState() => _TitleBarButtonState();
+}
+
+class _TitleBarButtonState extends State<_TitleBarButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: ShapeDecoration(
+            color: _hover
+                ? widget.backgroundColor.withValues(alpha: 1)
+                : widget.backgroundColor,
+            shape: widget.shape,
+          ),
+          padding: widget.padding,
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

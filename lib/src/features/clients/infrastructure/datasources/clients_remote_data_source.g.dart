@@ -55,4 +55,4 @@ final class ClientsRemoteDataSourceProvider
 }
 
 String _$clientsRemoteDataSourceHash() =>
-    r'1bf138e49bd2be71901f0bb1f3c9430b29425de1';
+    r'2979122d6e2755aa609ef4bbc62e1fceca87c195';

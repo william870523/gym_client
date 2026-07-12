@@ -30,7 +30,9 @@ class KpiCard extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0651ED).withOpacity(0.1), // Shadow from spec
+            color: const Color(
+              0xFF0651ED,
+            ).withValues(alpha: 0.1), // Shadow from spec
             blurRadius: 10,
             offset: const Offset(0, 2),
             spreadRadius: -3,
@@ -77,7 +79,7 @@ class KpiCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: trendColor.withOpacity(0.1),
+              color: trendColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

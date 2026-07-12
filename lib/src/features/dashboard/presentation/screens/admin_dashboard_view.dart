@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/sync/sync_status_provider.dart';
 import '../../../../features/dashboard/presentation/widgets/kpi_card.dart';
 import '../widgets/system_health_card.dart';
 
-class AdminDashboardView extends StatelessWidget {
+class AdminDashboardView extends ConsumerWidget {
   const AdminDashboardView({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final syncStatus =
+        ref.watch(syncStatusProvider).value ?? SyncStatusSnapshot.checking();
     final textMain = isDark ? Colors.white : const Color(0xFF0F172A);
     final textMuted = isDark
         ? const Color(0xFF94A3B8)
@@ -32,71 +36,11 @@ class AdminDashboardView extends StatelessWidget {
           const SystemHealthRow(),
           const SizedBox(height: 16),
 
-          // Warning Banner
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border(left: BorderSide(color: Colors.orange, width: 4)),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.orange,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Synchronization Warning',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey.shade800,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        'Member database sync experienced latency (145ms). Background retry scheduled.',
-                        style: TextStyle(
-                          color: Colors.blueGrey.shade500,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(onPressed: () {}, child: const Text('Dismiss')),
-                ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(0, 32),
-                  ),
-                  child: const Text('View Logs'),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 32),
+          if (!syncStatus.isHealthy) ...[
+            _SyncWarningBanner(status: syncStatus, isDark: isDark),
+            const SizedBox(height: 32),
+          ] else
+            const SizedBox(height: 16),
 
           // 2. KPIs
           Row(
@@ -127,22 +71,32 @@ class AdminDashboardView extends StatelessWidget {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : Colors.grey.shade300,
+                  ),
                   borderRadius: BorderRadius.circular(8),
-                  color: Colors.white,
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 ),
                 child: Row(
                   children: [
                     Text(
                       'Last 30 Days',
                       style: TextStyle(
-                        color: Colors.blueGrey.shade700,
+                        color: isDark
+                            ? Colors.white70
+                            : Colors.blueGrey.shade700,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Icon(Icons.keyboard_arrow_down, size: 16),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 16,
+                      color: isDark ? Colors.white70 : Colors.black,
+                    ),
                   ],
                 ),
               ),
@@ -155,8 +109,6 @@ class AdminDashboardView extends StatelessWidget {
           const SizedBox(height: 32),
 
           // 3. Charts & Alerts Row
-          // For simplicity in this step, I'll use placeholders for the Charts as they require `fl_chart` or CustomPainter
-          // which fits better in a separate widget file.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -164,12 +116,16 @@ class AdminDashboardView extends StatelessWidget {
                 child: Container(
                   height: 300,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : Colors.grey.shade200,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
+                        color: Colors.black.withValues(alpha: 0.02),
                         blurRadius: 10,
                       ),
                     ],
@@ -188,12 +144,13 @@ class AdminDashboardView extends StatelessWidget {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 18,
+                                  color: textMain,
                                 ),
                               ),
                               Text(
                                 'Real-time check-in data',
                                 style: TextStyle(
-                                  color: Colors.grey,
+                                  color: textMuted,
                                   fontSize: 12,
                                 ),
                               ),
@@ -207,6 +164,7 @@ class AdminDashboardView extends StatelessWidget {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 24,
+                                  color: textMain,
                                 ),
                               ),
                               Row(
@@ -229,11 +187,11 @@ class AdminDashboardView extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const Expanded(
+                      Expanded(
                         child: Center(
                           child: Text(
                             '[Chart Placeholder]',
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: textMuted),
                           ),
                         ),
                       ),
@@ -246,12 +204,16 @@ class AdminDashboardView extends StatelessWidget {
                 child: Container(
                   height: 300,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : Colors.grey.shade200,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
+                        color: Colors.black.withValues(alpha: 0.02),
                         blurRadius: 10,
                       ),
                     ],
@@ -270,12 +232,13 @@ class AdminDashboardView extends StatelessWidget {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 18,
+                                  color: textMain,
                                 ),
                               ),
                               Text(
                                 'Last 6 Months',
                                 style: TextStyle(
-                                  color: Colors.grey,
+                                  color: textMuted,
                                   fontSize: 12,
                                 ),
                               ),
@@ -289,6 +252,7 @@ class AdminDashboardView extends StatelessWidget {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 24,
+                                  color: textMain,
                                 ),
                               ),
                               Row(
@@ -311,11 +275,11 @@ class AdminDashboardView extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const Expanded(
+                      Expanded(
                         child: Center(
                           child: Text(
                             '[Bar Chart Placeholder]',
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: textMuted),
                           ),
                         ),
                       ),
@@ -331,11 +295,16 @@ class AdminDashboardView extends StatelessWidget {
   }
 }
 
-class SystemHealthRow extends StatelessWidget {
+class SystemHealthRow extends ConsumerWidget {
   const SystemHealthRow({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncStatus =
+        ref.watch(syncStatusProvider).value ?? SyncStatusSnapshot.checking();
+    final isOffline = syncStatus.level == SyncStatusLevel.offline;
+    final isPending = syncStatus.level == SyncStatusLevel.pending;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         int cols = constraints.maxWidth > 800 ? 4 : 2;
@@ -349,34 +318,129 @@ class SystemHealthRow extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           children: [
             SystemHealthCard(
-              icon: Icons.wifi,
-              color: Colors.green,
-              label: 'Status',
-              value: 'Online',
-              isPulse: true,
+              icon: isOffline ? Icons.wifi_off : Icons.wifi,
+              color: isOffline ? Colors.red : Colors.green,
+              label: 'API',
+              value: isOffline ? 'Offline' : 'Online',
+              isPulse: !isOffline,
+              isError: isOffline,
             ),
             SystemHealthCard(
-              icon: Icons.sync,
-              color: Colors.blue,
+              icon: isPending ? Icons.cloud_sync : Icons.sync,
+              color: isOffline
+                  ? Colors.red
+                  : (isPending ? Colors.orange : Colors.blue),
               label: 'Data Sync',
-              value: 'Synced',
+              value: syncStatus.label,
+              isError: isOffline,
             ),
             SystemHealthCard(
               icon: Icons.update,
               color: Colors.grey,
               label: 'Last Sync',
-              value: 'Just now',
+              value: syncStatus.lastSyncLabel,
             ),
             SystemHealthCard(
               icon: Icons.error_outline,
-              color: Colors.red,
-              label: 'Alerts',
-              value: '1 Warning',
-              isError: true,
+              color: syncStatus.pendingEvents > 0
+                  ? Colors.orange
+                  : Colors.green,
+              label: 'Pendientes',
+              value: '${syncStatus.pendingEvents}',
+              isError: syncStatus.pendingEvents > 0 || isOffline,
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _SyncWarningBanner extends StatelessWidget {
+  const _SyncWarningBanner({required this.status, required this.isDark});
+
+  final SyncStatusSnapshot status;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOffline = status.level == SyncStatusLevel.offline;
+    final color = isOffline ? Colors.red : Colors.orange;
+
+    return IntrinsicHeight(
+      child: Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.transparent : Colors.grey.shade200,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: color),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: isDark ? 0.18 : 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isOffline
+                            ? Icons.cloud_off_outlined
+                            : Icons.cloud_sync_outlined,
+                        color: color,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            status.label,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? Colors.white70
+                                  : Colors.blueGrey.shade800,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            '${status.detail}. La sincronización se reintentará automáticamente.',
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.blueGrey.shade500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

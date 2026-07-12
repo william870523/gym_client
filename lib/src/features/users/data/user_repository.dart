@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/network/api_client.dart';
 import '../../auth/domain/models/user.dart';
@@ -35,8 +35,9 @@ class UserRepository {
       final List<dynamic> list = response.data is List ? response.data : [];
       return list.map((json) => User.fromJson(json)).toList();
     } catch (e) {
-      // Return empty list on error for now or rethrow
-      print('Error fetching users: $e');
+      if (kDebugMode) {
+        debugPrint('Error fetching users: $e');
+      }
       rethrow;
     }
   }
@@ -45,7 +46,9 @@ class UserRepository {
     try {
       await _client.post('/users', data: user.toJson());
     } catch (e) {
-      print('Error creating user: $e');
+      if (kDebugMode) {
+        debugPrint('Error creating user: $e');
+      }
       rethrow;
     }
   }
@@ -54,7 +57,9 @@ class UserRepository {
     try {
       await _client.put('/users/${user.id}', data: user.toJson());
     } catch (e) {
-      print('Error updating user: $e');
+      if (kDebugMode) {
+        debugPrint('Error updating user: $e');
+      }
       rethrow;
     }
   }
@@ -63,7 +68,9 @@ class UserRepository {
     try {
       await _client.delete('/users/$id');
     } catch (e) {
-      print('Error deleting user: $e');
+      if (kDebugMode) {
+        debugPrint('Error deleting user: $e');
+      }
       rethrow;
     }
   }

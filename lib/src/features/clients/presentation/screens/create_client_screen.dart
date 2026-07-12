@@ -20,7 +20,7 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
         ? const Color(0xFF0F172A)
         : const Color(0xFFF6F6F8);
     final borderColor = isDark
-        ? Colors.white.withOpacity(0.1)
+        ? Colors.white.withValues(alpha: 0.1)
         : const Color(0xFFE7EBF3);
     final primaryColor = const Color(0xFF135BEC);
 
@@ -39,7 +39,7 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: primaryColor.withOpacity(0.1),
+                color: primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(Icons.diamond, color: primaryColor, size: 20),
@@ -60,9 +60,9 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
+              color: Colors.green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(100),
-              border: Border.all(color: Colors.green.withOpacity(0.2)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
@@ -259,7 +259,9 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
                                         color: backgroundColor,
                                         shape: BoxShape.circle,
                                         border: Border.all(
-                                          color: primaryColor.withOpacity(0.3),
+                                          color: primaryColor.withValues(
+                                            alpha: 0.3,
+                                          ),
                                           width: 2,
                                           style: BorderStyle.solid,
                                         ), // Simulated dashed
@@ -295,8 +297,8 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
                                           shape: BoxShape.circle,
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.2,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.2,
                                               ),
                                               blurRadius: 8,
                                             ),
@@ -383,7 +385,7 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
                                         value: _isActive,
                                         onChanged: (val) =>
                                             setState(() => _isActive = val),
-                                        activeColor: primaryColor,
+                                        activeThumbColor: primaryColor,
                                       ),
                                     ],
                                   ),
@@ -416,8 +418,10 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
                                   bottom: BorderSide(color: borderColor),
                                 ),
                                 color: isDark
-                                    ? Colors.white.withOpacity(0.02)
-                                    : Colors.grey.shade50.withOpacity(0.5),
+                                    ? Colors.white.withValues(alpha: 0.02)
+                                    : Colors.grey.shade50.withValues(
+                                        alpha: 0.5,
+                                      ),
                               ),
                               child: Row(
                                 children: [
@@ -511,8 +515,10 @@ class _CreateClientScreenState extends ConsumerState<CreateClientScreen> {
                                   bottom: BorderSide(color: borderColor),
                                 ),
                                 color: isDark
-                                    ? Colors.white.withOpacity(0.02)
-                                    : Colors.grey.shade50.withOpacity(0.5),
+                                    ? Colors.white.withValues(alpha: 0.02)
+                                    : Colors.grey.shade50.withValues(
+                                        alpha: 0.5,
+                                      ),
                               ),
                               child: Row(
                                 children: [

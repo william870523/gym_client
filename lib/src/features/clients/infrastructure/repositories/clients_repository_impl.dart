@@ -6,7 +6,7 @@ import '../datasources/clients_remote_data_source.dart';
 part 'clients_repository_impl.g.dart';
 
 @Riverpod(keepAlive: true)
-ClientsRepository clientsRepository(ClientsRepositoryRef ref) {
+ClientsRepository clientsRepository(Ref ref) {
   return ClientsRepositoryImpl(ref.watch(clientsRemoteDataSourceProvider));
 }
 

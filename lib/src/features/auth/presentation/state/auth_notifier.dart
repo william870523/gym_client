@@ -1,7 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/user.dart';
-import '../../domain/repositories/auth_repository.dart';
 import '../../infrastructure/repositories/auth_repository_impl.dart';
+import '../../../../core/config/env.dart';
+import '../../../../core/theme/pulso/appearance_provider.dart';
+import '../../../../core/time/app_clock.dart';
 
 part 'auth_notifier.g.dart';
 
@@ -17,6 +19,13 @@ class AuthNotifier extends _$AuthNotifier {
     try {
       final repository = ref.read(authRepositoryProvider);
       final user = await repository.login(email, password);
+      try {
+        await appClock.synchronize(Env.baseUrl, gymId: user.gymId);
+      } catch (_) {
+        // El login local no depende de tener conexión con la autoridad horaria.
+      }
+      // La apariencia pasa al scope del usuario (gymos.ui.<user_id>.*).
+      ref.read(appearanceUserProvider.notifier).set(user.id);
       state = AsyncValue.data(user);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -24,6 +33,7 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> logout() async {
+    ref.read(appearanceUserProvider.notifier).set(null);
     state = const AsyncValue.data(null);
   }
 }

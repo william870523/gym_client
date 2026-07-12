@@ -1,0 +1,114 @@
+import 'package:json_annotation/json_annotation.dart';
+import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
+
+part 'attendance_model.g.dart';
+
+@JsonSerializable(createFactory: false)
+class AttendanceModel {
+  @JsonKey(name: 'asistencia_id')
+  final String id;
+  @JsonKey(name: 'ci')
+  final String clientId;
+
+  @JsonKey(name: 'created_at')
+  final DateTime checkIn;
+
+  @JsonKey(name: 'fecha_salida')
+  final DateTime? checkOut;
+
+  // Pausa de permanencia (persistida): instante UTC de la pausa vigente
+  // (null = no pausado) y milisegundos acumulados de pausas ya cerradas.
+  @JsonKey(name: 'pausa_inicio')
+  final DateTime? pauseStart;
+
+  @JsonKey(name: 'pausa_ms')
+  final int pausedMs;
+
+  // 'status' is not in DB, so we derive it or ignore it from JSON
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String status;
+
+  // Optional: Expanded client data if API returns joined data
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? clientName;
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? photoUrl;
+
+  AttendanceModel({
+    required this.id,
+    required this.clientId,
+    required this.checkIn,
+    this.checkOut,
+    this.pauseStart,
+    this.pausedMs = 0,
+    String? status,
+    this.clientName,
+    this.photoUrl,
+  }) : status = status ?? (checkOut == null ? 'activo' : 'finalizado');
+
+  bool get isPaused => checkOut == null && pauseStart != null;
+
+  /// Tiempo activo dentro del gimnasio (descuenta pausas), respecto a [nowUtc].
+  Duration activeElapsed(DateTime nowUtc) {
+    final end = checkOut?.toUtc() ?? nowUtc;
+    var elapsed = end.difference(checkIn.toUtc());
+    elapsed -= Duration(milliseconds: pausedMs);
+    if (checkOut == null && pauseStart != null) {
+      elapsed -= nowUtc.difference(pauseStart!.toUtc());
+    }
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
+
+  factory AttendanceModel.fromJson(Map<String, dynamic> json) {
+    // Safely extract fields that might be wrong types
+    final id = json['asistencia_id']?.toString() ?? '';
+    final clientId = json['ci']?.toString() ?? '';
+
+    final checkInStr = json['created_at'] as String?;
+    final checkIn = checkInStr != null
+        ? parseUtc(checkInStr)
+        : appClock.nowUtc();
+
+    final checkOutStr = json['fecha_salida'] as String?;
+    final checkOut = checkOutStr != null ? parseUtc(checkOutStr) : null;
+
+    final pauseStartStr = json['pausa_inicio'] as String?;
+    final pauseStart = pauseStartStr != null ? parseUtc(pauseStartStr) : null;
+    final pausedMs = switch (json['pausa_ms']) {
+      final num v => v.toInt(),
+      final String v => int.tryParse(v) ?? 0,
+      _ => 0,
+    };
+
+    // Handle nested 'cliente' data
+    String? name;
+    String? photo;
+
+    if (json['cliente'] != null && json['cliente'] is Map) {
+      final c = json['cliente'];
+      final n = c['nombres']?.toString() ?? '';
+      final a = c['apellidos']?.toString() ?? '';
+      name = '$n $a'.trim();
+
+      // Check if photo is actually a string (Base64)
+      if (c['foto_cliente'] is String) {
+        photo = c['foto_cliente'];
+      }
+    }
+
+    return AttendanceModel(
+      id: id,
+      clientId: clientId,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      pauseStart: pauseStart,
+      pausedMs: pausedMs,
+      status: checkOut == null ? 'activo' : 'finalizado',
+      clientName: name,
+      photoUrl: photo,
+    );
+  }
+
+  Map<String, dynamic> toJson() => _$AttendanceModelToJson(this);
+}

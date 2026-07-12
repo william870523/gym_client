@@ -1,43 +1,56 @@
-import 'package:dio/dio.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
+import 'package:gym_client/src/core/network/api_client.dart';
+import '../data/gym_repository.dart';
 import '../domain/models/gym.dart';
 
-// Provider for the Gym Repository
+// Repository Provider
 final gymRepositoryProvider = Provider<GymRepository>((ref) {
-  final dio = ref.read(apiClientProvider);
-  return GymRepository(dio);
+  return GymRepository(ref.watch(apiClientProvider));
 });
 
-// Future Provider to fetch the list of gyms
-final gymsListProvider = FutureProvider<List<Gym>>((ref) async {
-  final repo = ref.read(gymRepositoryProvider);
+// List Provider
+final gymsListProvider = FutureProvider.autoDispose<List<Gym>>((ref) async {
+  final repo = ref.watch(gymRepositoryProvider);
   return repo.getGyms();
 });
 
-class GymRepository {
-  final Dio _dio;
-  GymRepository(this._dio);
+// Controller Provider
+final gymsControllerProvider = AsyncNotifierProvider<GymsController, void>(
+  GymsController.new,
+);
 
-  Future<List<Gym>> getGyms() async {
-    try {
-      final response = await _dio.get(
-        '/gyms',
-      ); // Calls our new remote endpoint (Local/Remote agnostic via base url)
-      /* 
-       Note: Local API does NOT have /gyms endpoint usually, 
-       but if we are in Local mode, we probably don't need to fetch gyms (auto-assigned).
-       But if we DO fetch, it will likely fail 404 or 403 unless we mock it.
-       The UI logic will protect this call (only if kIsWeb).
-      */
+class GymsController extends AsyncNotifier<void> {
+  @override
+  FutureOr<void> build() {
+    // No initial state beyond void/null as this controller manages actions
+    return null;
+  }
 
-      final List data = response.data is List ? response.data : [];
-      return data.map((e) => Gym.fromJson(e)).toList();
-    } catch (e) {
-      if (e is DioException && e.response?.statusCode != 200) {
-        // Maybe log?
-      }
-      return []; // Return empty on error
-    }
+  Future<void> createGym(Gym gym) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final repo = ref.read(gymRepositoryProvider);
+      await repo.createGym(gym);
+      ref.invalidate(gymsListProvider);
+    });
+  }
+
+  Future<void> updateGym(Gym gym) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final repo = ref.read(gymRepositoryProvider);
+      await repo.updateGym(gym);
+      ref.invalidate(gymsListProvider);
+    });
+  }
+
+  Future<void> deleteGym(String id) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final repo = ref.read(gymRepositoryProvider);
+      await repo.deleteGym(id);
+      ref.invalidate(gymsListProvider);
+    });
   }
 }
