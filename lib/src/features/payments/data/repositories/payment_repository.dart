@@ -54,11 +54,14 @@ class PaymentRepository {
 
   Future<PaymentModel> createPayment(
     PaymentModel payment,
-    List<PaymentDetailModel> details,
-  ) async {
+    List<PaymentDetailModel> details, {
+    // R5.2 — banderas del cobro por cuotas (modo_cuotas, numero_cuota).
+    Map<String, dynamic>? extra,
+  }) async {
     try {
       final payload = payment.toJson();
       payload['detalles'] = details.map((e) => e.toJson()).toList();
+      if (extra != null) payload.addAll(extra);
       final response = await _client.post('/pagos/process', data: payload);
       return PaymentModel.fromJson(response.data);
     } on DioException catch (e) {

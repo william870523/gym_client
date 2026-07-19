@@ -10,6 +10,7 @@ import '../../data/repositories/payment_repository.dart';
 import '../../../financials/data/models/account_model.dart';
 import '../../../configuration/data/models/payment_type_model.dart';
 import '../../../clients/data/models/client_model.dart';
+import '../../../products/data/repositories/payment_plan_repository.dart';
 import '../../../products/presentation/state/payment_plan_notifier.dart';
 import '../../../products/data/models/payment_plan_model.dart';
 
@@ -29,10 +30,17 @@ class ProcessPaymentDialog extends ConsumerStatefulWidget {
   final ClientModel client;
   final String planId;
 
+  /// R5.2 — pago de una cuota concreta de la membresía del cliente: fija el
+  /// importe y envía `modo_cuotas` + `numero_cuota` al servidor.
+  final int? cuotaNumero;
+  final double? cuotaImporte;
+
   const ProcessPaymentDialog({
     super.key,
     required this.client,
     required this.planId,
+    this.cuotaNumero,
+    this.cuotaImporte,
   });
 
   @override
@@ -44,6 +52,72 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
   // Static mock state
   final List<Map<String, dynamic>> _paymentRows = [];
   bool _isLoading = false;
+
+  /// R5.2 — contratación por cuotas: elección de recepción y esquema del plan.
+  bool _porCuotas = false;
+  List<Map<String, dynamic>> _scheme = const [];
+
+  /// Siguiente cuota pendiente detectada en la membresía del cliente: el
+  /// diálogo la propone solo, con importe fijo.
+  int? _autoCuotaNumero;
+  double? _autoCuotaImporte;
+
+  int? get _numeroCuotaEnCurso => widget.cuotaNumero ?? _autoCuotaNumero;
+
+  double? get _importeCuotaEnCurso => widget.cuotaImporte ?? _autoCuotaImporte;
+
+  bool get _cuotaFija => _numeroCuotaEnCurso != null;
+
+  double? get _cuota1Importe => _scheme.isEmpty
+      ? null
+      : double.tryParse('${_scheme.first['importe']}');
+
+  int get _cuota1Dias => _scheme.isEmpty
+      ? 0
+      : int.tryParse(
+              '${_scheme.first['dias_cobertura'] ?? _scheme.first['diasCobertura']}',
+            ) ??
+            0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.cuotaNumero == null) {
+      _loadInstallmentContext();
+    }
+  }
+
+  Future<void> _loadInstallmentContext() async {
+    final repo = ref.read(paymentPlanRepositoryProvider);
+    // 1) Membresía vigente con cuotas: proponer la siguiente pendiente.
+    final membershipId = widget.client.membershipId;
+    if (membershipId != null && membershipId.isNotEmpty) {
+      try {
+        final cuotas = await repo.getMembresiaCuotas(membershipId);
+        final next = cuotas.where((c) => !c.isPaid && c.estado != 'ANULADA');
+        if (next.isNotEmpty && mounted) {
+          setState(() {
+            _autoCuotaNumero = next.first.numeroCuota;
+            _autoCuotaImporte = next.first.importe;
+          });
+          return;
+        }
+      } catch (_) {
+        // Sin cuotas legibles se continúa con el flujo normal.
+      }
+    }
+    // 2) Contratación nueva: cargar el esquema para ofrecer la elección.
+    if (widget.planId.isNotEmpty) {
+      try {
+        final scheme = await repo.getPlanCuotasScheme(widget.planId);
+        if (mounted && scheme.isNotEmpty) {
+          setState(() => _scheme = scheme);
+        }
+      } catch (_) {
+        // Sin esquema legible no se ofrece la opción; el pago total sigue.
+      }
+    }
+  }
 
   Future<void> _processPayment() async {
     // Se capturan antes de cerrar el diálogo para colorear los snackbars.
@@ -99,13 +173,10 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
         id: paymentId,
         ci: widget.client.id, // Assuming CI matches ID
         fecha: cleanDate,
-        // El encabezado representa el precio aplicado al plan. Si recepción
-        // recibe efectivo de más, el excedente es cambio de caja, no ingreso.
-        amount:
-            widget.client.membershipBalanceDue != null &&
-                widget.client.membershipBalanceDue! > 0
-            ? widget.client.membershipBalanceDue!
-            : plan.importe,
+        // El encabezado representa el precio aplicado al plan (o la cuota
+        // cobrada en modo cuotas). El excedente en efectivo es cambio de
+        // caja, no ingreso.
+        amount: _amountDueFor(plan),
         trainerId: widget.client.trainerId,
         planId: widget.planId,
         currencyId: plan.monedaId,
@@ -128,7 +199,15 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
         );
       }).toList();
 
-      await ref.read(paymentRepositoryProvider).createPayment(payment, details);
+      await ref.read(paymentRepositoryProvider).createPayment(
+        payment,
+        details,
+        extra: _cuotaFija
+            ? {'modo_cuotas': true, 'numero_cuota': _numeroCuotaEnCurso}
+            : _porCuotas
+            ? {'modo_cuotas': true}
+            : null,
+      );
       await ref
           .read(paymentRefreshCoordinatorProvider)
           .afterSuccessfulPayment(widget.client.id);
@@ -264,7 +343,127 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     return text;
   }
 
+  /// R5.2 — elección de recepción cuando el plan admite cuotas: cobrar el
+  /// plan completo o solo la primera cuota (el resto queda programado).
+  Widget _buildCuotaChoice(
+    PulsoTokens t,
+    PaymentPlanModel plan,
+    String planSymbol,
+  ) {
+    if (_cuotaFija) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: t.accentSoft,
+          border: Border.all(color: t.accent),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_month_outlined, size: 16, color: t.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'CUOTA #$_numeroCuotaEnCurso · '
+                '$planSymbol${(_importeCuotaEnCurso ?? 0).toStringAsFixed(2)} · importe fijo',
+                style: TextStyle(
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: t.accent,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    // Solo en contrataciones nuevas de un plan con esquema de cuotas.
+    final balance = widget.client.membershipBalanceDue;
+    if (_scheme.isEmpty || (balance != null && balance > 0)) {
+      return const SizedBox.shrink();
+    }
+    Widget option({
+      required Key key,
+      required bool selected,
+      required String title,
+      required String subtitle,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: GestureDetector(
+          key: key,
+          onTap: _isLoading ? null : onTap,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: selected ? t.accentSoft : t.raised,
+              border: Border.all(color: selected ? t.accent : t.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? t.accent : t.muted,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: selected ? t.chalk : t.chalkDim,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          option(
+            key: const ValueKey('pay-mode-full'),
+            selected: !_porCuotas,
+            title: 'PLAN COMPLETO',
+            subtitle:
+                '$planSymbol${plan.importe.toStringAsFixed(2)} · ${plan.duracion} días',
+            onTap: () => setState(() => _porCuotas = false),
+          ),
+          const SizedBox(width: 8),
+          option(
+            key: const ValueKey('pay-mode-installments'),
+            selected: _porCuotas,
+            title: 'PRIMERA CUOTA',
+            subtitle:
+                '$planSymbol${(_cuota1Importe ?? 0).toStringAsFixed(2)} · '
+                '$_cuota1Dias días · quedan ${_scheme.length - 1} cuota(s)',
+            onTap: () => setState(() => _porCuotas = true),
+          ),
+        ],
+      ),
+    );
+  }
+
   double _amountDueFor(PaymentPlanModel plan) {
+    // Cuota concreta (panel de cuotas o detección automática): importe fijo.
+    if (_cuotaFija) return _importeCuotaEnCurso ?? plan.importe;
+    // Contratación por cuotas: se cobra la cuota 1; el resto queda programado.
+    if (_porCuotas && _cuota1Importe != null) return _cuota1Importe!;
     final balance = widget.client.membershipBalanceDue;
     if (widget.client.membershipId != null && balance != null && balance > 0) {
       return balance;
@@ -631,6 +830,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
 
               return Column(
                 children: [
+                  _buildCuotaChoice(t, plan, planSymbol),
                   Stack(
                     children: [
                       Container(height: 8, color: t.raised2),

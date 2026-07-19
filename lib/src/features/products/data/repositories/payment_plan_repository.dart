@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../../core/network/api_client.dart';
+import '../models/membresia_cuota_models.dart';
 import '../models/payment_plan_model.dart';
 
 part 'payment_plan_repository.g.dart';
@@ -77,6 +78,24 @@ class PaymentPlanRepository {
       return (response.data as List).cast<Map<String, dynamic>>();
     } catch (e) {
       return [];
+    }
+  }
+
+  /// Cuotas materializadas de una membresía (R5.2), en orden.
+  Future<List<MembresiaCuotaModel>> getMembresiaCuotas(
+    String membershipId,
+  ) async {
+    try {
+      final response = await _client.get('/membresias/$membershipId/cuotas');
+      return (response.data as List)
+          .map(
+            (e) => MembresiaCuotaModel.fromJson(
+              Map<String, dynamic>.from(e as Map),
+            ),
+          )
+          .toList();
+    } catch (e) {
+      throw Exception('Error al cargar las cuotas de la membresía: $e');
     }
   }
 
