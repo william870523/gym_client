@@ -8,6 +8,8 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../configuration/data/models/payment_type_model.dart';
+import '../../../configuration/presentation/state/payment_type_notifier.dart';
 import '../../data/models/currency_model.dart';
 import '../../data/models/exchange_rate_model.dart';
 import '../state/currency_notifier.dart';
@@ -50,6 +52,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
   bool _busy = false;
   String? _error;
 
+  /// R5.1 — recargos por método de pago: filas (tipo_pago_id, % como texto).
+  final List<_SurchargeEntry> _surcharges = [];
+
   static final _dateFmt = DateFormat('yyyy-MM-dd');
 
   bool get _isEdit => widget.initialData != null;
@@ -65,6 +70,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       _activo = initial.activo;
       _startDate = initial.fechaInicio;
       _endDate = initial.fechaExpiracion;
+      for (final entry in initial.recargos.entries) {
+        _surcharges.add(_SurchargeEntry(entry.key, entry.value));
+      }
     } else {
       _baseId = widget.initialBaseCurrencyId;
       _targetId = widget.initialTargetCurrencyId == widget.initialBaseCurrencyId
@@ -80,6 +88,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
   @override
   void dispose() {
     _rateController.dispose();
+    for (final entry in _surcharges) {
+      entry.dispose();
+    }
     super.dispose();
   }
 
@@ -123,6 +134,20 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       setState(() => _error = 'Indica desde cuándo rige la tasa.');
       return;
     }
+    final surcharges = <String, String>{};
+    for (final entry in _surcharges) {
+      final paymentTypeId = entry.paymentTypeId;
+      final pct = entry.pctController.text.trim();
+      if (paymentTypeId == null || pct.isEmpty) continue;
+      final parsed = double.tryParse(pct.replaceAll(',', '.'));
+      if (parsed == null || parsed < 0 || parsed > 100) {
+        setState(
+          () => _error = 'Cada recargo debe ser un porcentaje entre 0 y 100.',
+        );
+        return;
+      }
+      surcharges[paymentTypeId] = pct.replaceAll(',', '.');
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -131,6 +156,8 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       'moneda_id_base': _baseId,
       'moneda_id_target': _targetId,
       'exchange_rate': double.parse(_rateController.text),
+      // R5.1: se envía siempre; mapa vacío limpia los recargos al editar.
+      'recargos': surcharges,
       'fecha_inicio': calendarDateToUtc(_startDate!).toIso8601String(),
       // Se envía siempre: null persiste "sin vencimiento" al editar.
       'fecha_expiracion': _endDate == null
@@ -302,6 +329,17 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
                             ),
                             const SizedBox(height: 16),
                             _buildDateFields(context),
+                            const SizedBox(height: 24),
+                            const PulsoLabel('Recargos por método de pago'),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Porcentaje adicional que cobra el gimnasio según el método '
+                              '(p. ej. transferencia). En efectivo no se configura nada. '
+                              'El recargo es ganancia del gimnasio y sale desglosado en el recibo.',
+                              style: TextStyle(color: tokens.muted, fontSize: 12),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildSurchargeFields(context),
                             const SizedBox(height: 24),
                             const PulsoLabel('Disponibilidad operativa'),
                             const SizedBox(height: 12),
@@ -487,6 +525,131 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
     );
   }
 
+  Widget _buildSurchargeFields(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final typesState = ref.watch(paymentTypeNotifierProvider);
+    return typesState.when(
+      loading: () => const LinearProgressIndicator(minHeight: 2),
+      error: (error, _) => Text(
+        'No se pudo cargar el catálogo de métodos de pago: $error',
+        style: TextStyle(color: tokens.danger, fontSize: 12),
+      ),
+      data: (types) {
+        final activeTypes = [
+          for (final type in types)
+            if (type.active && !type.isDeleted) type,
+        ];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < _surcharges.length; index++) ...[
+              _buildSurchargeRow(tokens, activeTypes, index),
+              const SizedBox(height: 10),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: PulsoSecondaryButton(
+                key: const ValueKey('pulso-rate-add-surcharge'),
+                label: 'Añadir recargo',
+                onPressed: _busy || _surcharges.length >= activeTypes.length
+                    ? null
+                    : () => setState(
+                        () => _surcharges.add(_SurchargeEntry(null, '')),
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSurchargeRow(
+    PulsoTokens tokens,
+    List<PaymentTypeModel> types,
+    int index,
+  ) {
+    final entry = _surcharges[index];
+    final takenIds = {
+      for (var i = 0; i < _surcharges.length; i++)
+        if (i != index && _surcharges[i].paymentTypeId != null)
+          _surcharges[i].paymentTypeId,
+    };
+    final options = [
+      for (final type in types)
+        if (!takenIds.contains(type.id)) type,
+    ];
+    final known = options.any((type) => type.id == entry.paymentTypeId);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.raised,
+        border: Border.all(color: tokens.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 3,
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('pulso-rate-surcharge-type-$index'),
+              initialValue: known ? entry.paymentTypeId : null,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Método de pago',
+                isDense: true,
+              ),
+              items: [
+                for (final type in options)
+                  DropdownMenuItem(value: type.id, child: Text(type.name)),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() => entry.paymentTypeId = value),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: TextFormField(
+              key: ValueKey('pulso-rate-surcharge-pct-$index'),
+              controller: entry.pctController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+              ],
+              style: const TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Recargo %',
+                hintText: '5.00',
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: PulsoIconButton(
+              key: ValueKey('pulso-rate-surcharge-remove-$index'),
+              icon: Icons.close,
+              tooltip: 'Quitar recargo',
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _surcharges.removeAt(index).dispose();
+                    }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatusField(PulsoTokens tokens) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -533,6 +696,16 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       ),
     );
   }
+}
+
+class _SurchargeEntry {
+  _SurchargeEntry(this.paymentTypeId, String pct)
+    : pctController = TextEditingController(text: pct);
+
+  String? paymentTypeId;
+  final TextEditingController pctController;
+
+  void dispose() => pctController.dispose();
 }
 
 class _CurrencyOption extends StatelessWidget {

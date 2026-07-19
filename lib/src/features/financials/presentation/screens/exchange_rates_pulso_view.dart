@@ -7,6 +7,7 @@ import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../configuration/presentation/state/payment_type_notifier.dart';
 import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
 import '../../data/models/currency_model.dart';
 import '../../data/models/exchange_rate_model.dart';
@@ -1065,7 +1066,7 @@ class _RateStatusChip extends StatelessWidget {
   }
 }
 
-class _RateDetail extends StatelessWidget {
+class _RateDetail extends ConsumerWidget {
   const _RateDetail({
     required this.item,
     required this.currencyMap,
@@ -1082,7 +1083,7 @@ class _RateDetail extends StatelessWidget {
   final VoidCallback onCurrencies;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tokens = PulsoTokens.of(context);
     final rate = item;
     if (rate == null) {
@@ -1136,26 +1137,43 @@ class _RateDetail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _DetailLine(
-            label: 'Base',
-            value: '$baseCode · ${base?.symbol ?? '—'}',
+          // Las líneas del detalle desplazan su propio contenido si la altura
+          // no alcanza; las acciones permanecen ancladas abajo.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _DetailLine(
+                    label: 'Base',
+                    value: '$baseCode · ${base?.symbol ?? '—'}',
+                  ),
+                  _DetailLine(
+                    label: 'Destino',
+                    value: '$targetCode · ${target?.symbol ?? '—'}',
+                  ),
+                  _DetailLine(
+                    label: 'Inversa',
+                    value: rate.exchangeRate == 0
+                        ? '—'
+                        : _invFmt.format(1 / rate.exchangeRate),
+                  ),
+                  _DetailLine(
+                    label: 'Vigencia',
+                    value:
+                        '${_fmtDate(rate.fechaInicio)} → ${_fmtDate(rate.fechaExpiracion)}',
+                  ),
+                  // R5.1: recargos por método (ganancia del gimnasio).
+                  if (rate.tieneRecargos)
+                    _DetailLine(
+                      label: 'Recargos',
+                      value: _surchargeSummary(ref, rate.recargos),
+                    ),
+                ],
+              ),
+            ),
           ),
-          _DetailLine(
-            label: 'Destino',
-            value: '$targetCode · ${target?.symbol ?? '—'}',
-          ),
-          _DetailLine(
-            label: 'Inversa',
-            value: rate.exchangeRate == 0
-                ? '—'
-                : _invFmt.format(1 / rate.exchangeRate),
-          ),
-          _DetailLine(
-            label: 'Vigencia',
-            value:
-                '${_fmtDate(rate.fechaInicio)} → ${_fmtDate(rate.fechaExpiracion)}',
-          ),
-          const Spacer(),
+          const SizedBox(height: 12),
           // Una tasa vencida se renueva de una pulsación: alta precargada con
           // el par y la última tasa, vigente desde hoy.
           if (status == _RateStatus.expired) ...[
@@ -1204,6 +1222,18 @@ class _RateDetail extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// «Transferencia +5.00 % · Tarjeta +2.50 %», resolviendo el nombre del
+  /// método por catálogo; si aún no cargó, muestra el identificador.
+  String _surchargeSummary(WidgetRef ref, Map<String, String> recargos) {
+    final types = ref.watch(paymentTypeNotifierProvider).value ?? const [];
+    final nameById = {for (final type in types) type.id: type.name};
+    return recargos.entries
+        .map(
+          (entry) => '${nameById[entry.key] ?? entry.key} +${entry.value} %',
+        )
+        .join(' · ');
   }
 }
 

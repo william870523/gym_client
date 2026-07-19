@@ -12,6 +12,7 @@ _ExchangeRateModel _$ExchangeRateModelFromJson(Map<String, dynamic> json) =>
       monedaIdBase: json['moneda_id_base'] as String,
       monedaIdTarget: json['moneda_id_target'] as String,
       exchangeRate: (json['exchange_rate'] as num).toDouble(),
+      recargosJson: json['recargos_json'] as String?,
       fechaInicio: DateTime.parse(json['fecha_inicio'] as String),
       fechaExpiracion: json['fecha_expiracion'] == null
           ? null
@@ -39,6 +40,7 @@ Map<String, dynamic> _$ExchangeRateModelToJson(_ExchangeRateModel instance) =>
       'moneda_id_base': instance.monedaIdBase,
       'moneda_id_target': instance.monedaIdTarget,
       'exchange_rate': instance.exchangeRate,
+      'recargos_json': instance.recargosJson,
       'fecha_inicio': instance.fechaInicio.toIso8601String(),
       'fecha_expiracion': instance.fechaExpiracion?.toIso8601String(),
       'activo': instance.activo,

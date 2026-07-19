@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ExchangeRateModel {
 
-@JsonKey(name: 'tipo_cambio_id') String get id;@JsonKey(name: 'moneda_id_base') String get monedaIdBase;@JsonKey(name: 'moneda_id_target') String get monedaIdTarget;@JsonKey(name: 'exchange_rate') double get exchangeRate;@JsonKey(name: 'fecha_inicio') DateTime get fechaInicio;@JsonKey(name: 'fecha_expiracion') DateTime? get fechaExpiracion; bool get activo;@JsonKey(name: 'moneda_base') CurrencyModel? get monedaBase;@JsonKey(name: 'moneda_target') CurrencyModel? get monedaTarget;@JsonKey(name: 'created_at') DateTime? get createdAt;@JsonKey(name: 'updated_at') DateTime? get updatedAt;
+@JsonKey(name: 'tipo_cambio_id') String get id;@JsonKey(name: 'moneda_id_base') String get monedaIdBase;@JsonKey(name: 'moneda_id_target') String get monedaIdTarget;@JsonKey(name: 'exchange_rate') double get exchangeRate;@JsonKey(name: 'recargos_json') String? get recargosJson;@JsonKey(name: 'fecha_inicio') DateTime get fechaInicio;@JsonKey(name: 'fecha_expiracion') DateTime? get fechaExpiracion; bool get activo;@JsonKey(name: 'moneda_base') CurrencyModel? get monedaBase;@JsonKey(name: 'moneda_target') CurrencyModel? get monedaTarget;@JsonKey(name: 'created_at') DateTime? get createdAt;@JsonKey(name: 'updated_at') DateTime? get updatedAt;
 /// Create a copy of ExchangeRateModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $ExchangeRateModelCopyWith<ExchangeRateModel> get copyWith => _$ExchangeRateMode
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ExchangeRateModel&&(identical(other.id, id) || other.id == id)&&(identical(other.monedaIdBase, monedaIdBase) || other.monedaIdBase == monedaIdBase)&&(identical(other.monedaIdTarget, monedaIdTarget) || other.monedaIdTarget == monedaIdTarget)&&(identical(other.exchangeRate, exchangeRate) || other.exchangeRate == exchangeRate)&&(identical(other.fechaInicio, fechaInicio) || other.fechaInicio == fechaInicio)&&(identical(other.fechaExpiracion, fechaExpiracion) || other.fechaExpiracion == fechaExpiracion)&&(identical(other.activo, activo) || other.activo == activo)&&(identical(other.monedaBase, monedaBase) || other.monedaBase == monedaBase)&&(identical(other.monedaTarget, monedaTarget) || other.monedaTarget == monedaTarget)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ExchangeRateModel&&(identical(other.id, id) || other.id == id)&&(identical(other.monedaIdBase, monedaIdBase) || other.monedaIdBase == monedaIdBase)&&(identical(other.monedaIdTarget, monedaIdTarget) || other.monedaIdTarget == monedaIdTarget)&&(identical(other.exchangeRate, exchangeRate) || other.exchangeRate == exchangeRate)&&(identical(other.recargosJson, recargosJson) || other.recargosJson == recargosJson)&&(identical(other.fechaInicio, fechaInicio) || other.fechaInicio == fechaInicio)&&(identical(other.fechaExpiracion, fechaExpiracion) || other.fechaExpiracion == fechaExpiracion)&&(identical(other.activo, activo) || other.activo == activo)&&(identical(other.monedaBase, monedaBase) || other.monedaBase == monedaBase)&&(identical(other.monedaTarget, monedaTarget) || other.monedaTarget == monedaTarget)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,monedaIdBase,monedaIdTarget,exchangeRate,fechaInicio,fechaExpiracion,activo,monedaBase,monedaTarget,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,monedaIdBase,monedaIdTarget,exchangeRate,recargosJson,fechaInicio,fechaExpiracion,activo,monedaBase,monedaTarget,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'ExchangeRateModel(id: $id, monedaIdBase: $monedaIdBase, monedaIdTarget: $monedaIdTarget, exchangeRate: $exchangeRate, fechaInicio: $fechaInicio, fechaExpiracion: $fechaExpiracion, activo: $activo, monedaBase: $monedaBase, monedaTarget: $monedaTarget, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'ExchangeRateModel(id: $id, monedaIdBase: $monedaIdBase, monedaIdTarget: $monedaIdTarget, exchangeRate: $exchangeRate, recargosJson: $recargosJson, fechaInicio: $fechaInicio, fechaExpiracion: $fechaExpiracion, activo: $activo, monedaBase: $monedaBase, monedaTarget: $monedaTarget, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $ExchangeRateModelCopyWith<$Res>  {
   factory $ExchangeRateModelCopyWith(ExchangeRateModel value, $Res Function(ExchangeRateModel) _then) = _$ExchangeRateModelCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'tipo_cambio_id') String id,@JsonKey(name: 'moneda_id_base') String monedaIdBase,@JsonKey(name: 'moneda_id_target') String monedaIdTarget,@JsonKey(name: 'exchange_rate') double exchangeRate,@JsonKey(name: 'fecha_inicio') DateTime fechaInicio,@JsonKey(name: 'fecha_expiracion') DateTime? fechaExpiracion, bool activo,@JsonKey(name: 'moneda_base') CurrencyModel? monedaBase,@JsonKey(name: 'moneda_target') CurrencyModel? monedaTarget,@JsonKey(name: 'created_at') DateTime? createdAt,@JsonKey(name: 'updated_at') DateTime? updatedAt
+@JsonKey(name: 'tipo_cambio_id') String id,@JsonKey(name: 'moneda_id_base') String monedaIdBase,@JsonKey(name: 'moneda_id_target') String monedaIdTarget,@JsonKey(name: 'exchange_rate') double exchangeRate,@JsonKey(name: 'recargos_json') String? recargosJson,@JsonKey(name: 'fecha_inicio') DateTime fechaInicio,@JsonKey(name: 'fecha_expiracion') DateTime? fechaExpiracion, bool activo,@JsonKey(name: 'moneda_base') CurrencyModel? monedaBase,@JsonKey(name: 'moneda_target') CurrencyModel? monedaTarget,@JsonKey(name: 'created_at') DateTime? createdAt,@JsonKey(name: 'updated_at') DateTime? updatedAt
 });
 
 
@@ -65,13 +65,14 @@ class _$ExchangeRateModelCopyWithImpl<$Res>
 
 /// Create a copy of ExchangeRateModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? monedaIdBase = null,Object? monedaIdTarget = null,Object? exchangeRate = null,Object? fechaInicio = null,Object? fechaExpiracion = freezed,Object? activo = null,Object? monedaBase = freezed,Object? monedaTarget = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? monedaIdBase = null,Object? monedaIdTarget = null,Object? exchangeRate = null,Object? recargosJson = freezed,Object? fechaInicio = null,Object? fechaExpiracion = freezed,Object? activo = null,Object? monedaBase = freezed,Object? monedaTarget = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,monedaIdBase: null == monedaIdBase ? _self.monedaIdBase : monedaIdBase // ignore: cast_nullable_to_non_nullable
 as String,monedaIdTarget: null == monedaIdTarget ? _self.monedaIdTarget : monedaIdTarget // ignore: cast_nullable_to_non_nullable
 as String,exchangeRate: null == exchangeRate ? _self.exchangeRate : exchangeRate // ignore: cast_nullable_to_non_nullable
-as double,fechaInicio: null == fechaInicio ? _self.fechaInicio : fechaInicio // ignore: cast_nullable_to_non_nullable
+as double,recargosJson: freezed == recargosJson ? _self.recargosJson : recargosJson // ignore: cast_nullable_to_non_nullable
+as String?,fechaInicio: null == fechaInicio ? _self.fechaInicio : fechaInicio // ignore: cast_nullable_to_non_nullable
 as DateTime,fechaExpiracion: freezed == fechaExpiracion ? _self.fechaExpiracion : fechaExpiracion // ignore: cast_nullable_to_non_nullable
 as DateTime?,activo: null == activo ? _self.activo : activo // ignore: cast_nullable_to_non_nullable
 as bool,monedaBase: freezed == monedaBase ? _self.monedaBase : monedaBase // ignore: cast_nullable_to_non_nullable
@@ -184,10 +185,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'recargos_json')  String? recargosJson, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ExchangeRateModel() when $default != null:
-return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.recargosJson,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -205,10 +206,10 @@ return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeR
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'recargos_json')  String? recargosJson, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _ExchangeRateModel():
-return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);}
+return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.recargosJson,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -222,10 +223,10 @@ return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeR
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'tipo_cambio_id')  String id, @JsonKey(name: 'moneda_id_base')  String monedaIdBase, @JsonKey(name: 'moneda_id_target')  String monedaIdTarget, @JsonKey(name: 'exchange_rate')  double exchangeRate, @JsonKey(name: 'recargos_json')  String? recargosJson, @JsonKey(name: 'fecha_inicio')  DateTime fechaInicio, @JsonKey(name: 'fecha_expiracion')  DateTime? fechaExpiracion,  bool activo, @JsonKey(name: 'moneda_base')  CurrencyModel? monedaBase, @JsonKey(name: 'moneda_target')  CurrencyModel? monedaTarget, @JsonKey(name: 'created_at')  DateTime? createdAt, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ExchangeRateModel() when $default != null:
-return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeRate,_that.recargosJson,_that.fechaInicio,_that.fechaExpiracion,_that.activo,_that.monedaBase,_that.monedaTarget,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -237,13 +238,14 @@ return $default(_that.id,_that.monedaIdBase,_that.monedaIdTarget,_that.exchangeR
 @JsonSerializable()
 
 class _ExchangeRateModel implements ExchangeRateModel {
-  const _ExchangeRateModel({@JsonKey(name: 'tipo_cambio_id') required this.id, @JsonKey(name: 'moneda_id_base') required this.monedaIdBase, @JsonKey(name: 'moneda_id_target') required this.monedaIdTarget, @JsonKey(name: 'exchange_rate') required this.exchangeRate, @JsonKey(name: 'fecha_inicio') required this.fechaInicio, @JsonKey(name: 'fecha_expiracion') this.fechaExpiracion, this.activo = true, @JsonKey(name: 'moneda_base') this.monedaBase, @JsonKey(name: 'moneda_target') this.monedaTarget, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'updated_at') this.updatedAt});
+  const _ExchangeRateModel({@JsonKey(name: 'tipo_cambio_id') required this.id, @JsonKey(name: 'moneda_id_base') required this.monedaIdBase, @JsonKey(name: 'moneda_id_target') required this.monedaIdTarget, @JsonKey(name: 'exchange_rate') required this.exchangeRate, @JsonKey(name: 'recargos_json') this.recargosJson, @JsonKey(name: 'fecha_inicio') required this.fechaInicio, @JsonKey(name: 'fecha_expiracion') this.fechaExpiracion, this.activo = true, @JsonKey(name: 'moneda_base') this.monedaBase, @JsonKey(name: 'moneda_target') this.monedaTarget, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'updated_at') this.updatedAt});
   factory _ExchangeRateModel.fromJson(Map<String, dynamic> json) => _$ExchangeRateModelFromJson(json);
 
 @override@JsonKey(name: 'tipo_cambio_id') final  String id;
 @override@JsonKey(name: 'moneda_id_base') final  String monedaIdBase;
 @override@JsonKey(name: 'moneda_id_target') final  String monedaIdTarget;
 @override@JsonKey(name: 'exchange_rate') final  double exchangeRate;
+@override@JsonKey(name: 'recargos_json') final  String? recargosJson;
 @override@JsonKey(name: 'fecha_inicio') final  DateTime fechaInicio;
 @override@JsonKey(name: 'fecha_expiracion') final  DateTime? fechaExpiracion;
 @override@JsonKey() final  bool activo;
@@ -265,16 +267,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ExchangeRateModel&&(identical(other.id, id) || other.id == id)&&(identical(other.monedaIdBase, monedaIdBase) || other.monedaIdBase == monedaIdBase)&&(identical(other.monedaIdTarget, monedaIdTarget) || other.monedaIdTarget == monedaIdTarget)&&(identical(other.exchangeRate, exchangeRate) || other.exchangeRate == exchangeRate)&&(identical(other.fechaInicio, fechaInicio) || other.fechaInicio == fechaInicio)&&(identical(other.fechaExpiracion, fechaExpiracion) || other.fechaExpiracion == fechaExpiracion)&&(identical(other.activo, activo) || other.activo == activo)&&(identical(other.monedaBase, monedaBase) || other.monedaBase == monedaBase)&&(identical(other.monedaTarget, monedaTarget) || other.monedaTarget == monedaTarget)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ExchangeRateModel&&(identical(other.id, id) || other.id == id)&&(identical(other.monedaIdBase, monedaIdBase) || other.monedaIdBase == monedaIdBase)&&(identical(other.monedaIdTarget, monedaIdTarget) || other.monedaIdTarget == monedaIdTarget)&&(identical(other.exchangeRate, exchangeRate) || other.exchangeRate == exchangeRate)&&(identical(other.recargosJson, recargosJson) || other.recargosJson == recargosJson)&&(identical(other.fechaInicio, fechaInicio) || other.fechaInicio == fechaInicio)&&(identical(other.fechaExpiracion, fechaExpiracion) || other.fechaExpiracion == fechaExpiracion)&&(identical(other.activo, activo) || other.activo == activo)&&(identical(other.monedaBase, monedaBase) || other.monedaBase == monedaBase)&&(identical(other.monedaTarget, monedaTarget) || other.monedaTarget == monedaTarget)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,monedaIdBase,monedaIdTarget,exchangeRate,fechaInicio,fechaExpiracion,activo,monedaBase,monedaTarget,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,monedaIdBase,monedaIdTarget,exchangeRate,recargosJson,fechaInicio,fechaExpiracion,activo,monedaBase,monedaTarget,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'ExchangeRateModel(id: $id, monedaIdBase: $monedaIdBase, monedaIdTarget: $monedaIdTarget, exchangeRate: $exchangeRate, fechaInicio: $fechaInicio, fechaExpiracion: $fechaExpiracion, activo: $activo, monedaBase: $monedaBase, monedaTarget: $monedaTarget, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'ExchangeRateModel(id: $id, monedaIdBase: $monedaIdBase, monedaIdTarget: $monedaIdTarget, exchangeRate: $exchangeRate, recargosJson: $recargosJson, fechaInicio: $fechaInicio, fechaExpiracion: $fechaExpiracion, activo: $activo, monedaBase: $monedaBase, monedaTarget: $monedaTarget, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -285,7 +287,7 @@ abstract mixin class _$ExchangeRateModelCopyWith<$Res> implements $ExchangeRateM
   factory _$ExchangeRateModelCopyWith(_ExchangeRateModel value, $Res Function(_ExchangeRateModel) _then) = __$ExchangeRateModelCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'tipo_cambio_id') String id,@JsonKey(name: 'moneda_id_base') String monedaIdBase,@JsonKey(name: 'moneda_id_target') String monedaIdTarget,@JsonKey(name: 'exchange_rate') double exchangeRate,@JsonKey(name: 'fecha_inicio') DateTime fechaInicio,@JsonKey(name: 'fecha_expiracion') DateTime? fechaExpiracion, bool activo,@JsonKey(name: 'moneda_base') CurrencyModel? monedaBase,@JsonKey(name: 'moneda_target') CurrencyModel? monedaTarget,@JsonKey(name: 'created_at') DateTime? createdAt,@JsonKey(name: 'updated_at') DateTime? updatedAt
+@JsonKey(name: 'tipo_cambio_id') String id,@JsonKey(name: 'moneda_id_base') String monedaIdBase,@JsonKey(name: 'moneda_id_target') String monedaIdTarget,@JsonKey(name: 'exchange_rate') double exchangeRate,@JsonKey(name: 'recargos_json') String? recargosJson,@JsonKey(name: 'fecha_inicio') DateTime fechaInicio,@JsonKey(name: 'fecha_expiracion') DateTime? fechaExpiracion, bool activo,@JsonKey(name: 'moneda_base') CurrencyModel? monedaBase,@JsonKey(name: 'moneda_target') CurrencyModel? monedaTarget,@JsonKey(name: 'created_at') DateTime? createdAt,@JsonKey(name: 'updated_at') DateTime? updatedAt
 });
 
 
@@ -302,13 +304,14 @@ class __$ExchangeRateModelCopyWithImpl<$Res>
 
 /// Create a copy of ExchangeRateModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? monedaIdBase = null,Object? monedaIdTarget = null,Object? exchangeRate = null,Object? fechaInicio = null,Object? fechaExpiracion = freezed,Object? activo = null,Object? monedaBase = freezed,Object? monedaTarget = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? monedaIdBase = null,Object? monedaIdTarget = null,Object? exchangeRate = null,Object? recargosJson = freezed,Object? fechaInicio = null,Object? fechaExpiracion = freezed,Object? activo = null,Object? monedaBase = freezed,Object? monedaTarget = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,}) {
   return _then(_ExchangeRateModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,monedaIdBase: null == monedaIdBase ? _self.monedaIdBase : monedaIdBase // ignore: cast_nullable_to_non_nullable
 as String,monedaIdTarget: null == monedaIdTarget ? _self.monedaIdTarget : monedaIdTarget // ignore: cast_nullable_to_non_nullable
 as String,exchangeRate: null == exchangeRate ? _self.exchangeRate : exchangeRate // ignore: cast_nullable_to_non_nullable
-as double,fechaInicio: null == fechaInicio ? _self.fechaInicio : fechaInicio // ignore: cast_nullable_to_non_nullable
+as double,recargosJson: freezed == recargosJson ? _self.recargosJson : recargosJson // ignore: cast_nullable_to_non_nullable
+as String?,fechaInicio: null == fechaInicio ? _self.fechaInicio : fechaInicio // ignore: cast_nullable_to_non_nullable
 as DateTime,fechaExpiracion: freezed == fechaExpiracion ? _self.fechaExpiracion : fechaExpiracion // ignore: cast_nullable_to_non_nullable
 as DateTime?,activo: null == activo ? _self.activo : activo // ignore: cast_nullable_to_non_nullable
 as bool,monedaBase: freezed == monedaBase ? _self.monedaBase : monedaBase // ignore: cast_nullable_to_non_nullable

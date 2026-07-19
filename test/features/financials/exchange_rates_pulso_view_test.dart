@@ -5,6 +5,8 @@ import 'package:gym_client/src/core/sync/sync_status_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
+import 'package:gym_client/src/features/configuration/data/models/payment_type_model.dart';
+import 'package:gym_client/src/features/configuration/presentation/state/payment_type_notifier.dart';
 import 'package:gym_client/src/features/financials/data/models/currency_model.dart';
 import 'package:gym_client/src/features/financials/data/models/exchange_rate_model.dart';
 import 'package:gym_client/src/features/financials/presentation/providers/exchange_rate_notifier.dart';
@@ -166,6 +168,104 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('define un recargo por método y lo muestra en el detalle', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final rateNotifier = _RateNotifier([
+      ExchangeRateModel(
+        id: 'rate-activa',
+        monedaIdBase: 'cur-bob',
+        monedaIdTarget: 'cur-usd',
+        exchangeRate: 6.96,
+        recargosJson: '{"tp-transfer":"5.00"}',
+        fechaInicio: DateTime.utc(2026, 1, 1),
+      ),
+    ]);
+    await tester.pumpWidget(_harness(rateNotifier: rateNotifier));
+    await tester.pumpAndSettle();
+
+    // El detalle desglosa el recargo con el nombre del método.
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const PageStorageKey('pulso-rates-list')),
+        matching: find.text('BOB → USD', findRichText: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Transferencia +5.00 %'), findsOneWidget);
+
+    // Editar conserva el recargo, permite cambiarlo y lo envía normalizado.
+    await tester.tap(find.byTooltip('Editar BOB → USD'));
+    await tester.pumpAndSettle();
+    expect(find.text('RECARGOS POR MÉTODO DE PAGO'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-rate-surcharge-pct-0')),
+      '7,50',
+    );
+    await tester.tap(find.text('GUARDAR CAMBIOS'));
+    await tester.pumpAndSettle();
+
+    expect(rateNotifier.updates, hasLength(1));
+    final (_, data) = rateNotifier.updates.single;
+    expect(data['recargos'], {'tp-transfer': '7.50'});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('agrega un recargo nuevo desde el alta', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final rateNotifier = _RateNotifier([
+      ExchangeRateModel(
+        id: 'rate-vencida',
+        monedaIdBase: 'cur-usd',
+        monedaIdTarget: 'cur-bob',
+        exchangeRate: 0.14,
+        fechaInicio: DateTime.utc(2025, 1, 1),
+        fechaExpiracion: DateTime.utc(2025, 12, 31),
+      ),
+    ]);
+    await tester.pumpWidget(_harness(rateNotifier: rateNotifier));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const PageStorageKey('pulso-rates-list')),
+        matching: find.text('USD → BOB', findRichText: true),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('RENOVAR TASA'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('pulso-rate-add-surcharge')),
+    );
+    await tester.tap(find.byKey(const ValueKey('pulso-rate-add-surcharge')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pulso-rate-surcharge-type-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Transferencia').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-rate-surcharge-pct-0')),
+      '5.00',
+    );
+    await tester.tap(find.text('CREAR'));
+    await tester.pumpAndSettle();
+
+    expect(rateNotifier.creates, hasLength(1));
+    expect(rateNotifier.creates.single['recargos'], {'tp-transfer': '5.00'});
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra tasas vencidas', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -217,6 +317,12 @@ Widget _harness({_RateNotifier? rateNotifier}) {
         ),
       ),
       currencyProvider.overrideWith(() => _CurrencyNotifier([_bob, _usd])),
+      paymentTypeNotifierProvider.overrideWith(
+        () => _PaymentTypeNotifier([
+          PaymentTypeModel(id: 'tp-cash', name: 'Efectivo'),
+          PaymentTypeModel(id: 'tp-transfer', name: 'Transferencia'),
+        ]),
+      ),
       exchangeRateProvider.overrideWith(
         () =>
             rateNotifier ??
@@ -269,6 +375,14 @@ class _CurrencyNotifier extends CurrencyNotifier {
 
   @override
   Future<List<CurrencyModel>> build() async => items;
+}
+
+class _PaymentTypeNotifier extends PaymentTypeNotifier {
+  _PaymentTypeNotifier(this.items);
+  final List<PaymentTypeModel> items;
+
+  @override
+  Future<List<PaymentTypeModel>> build() async => items;
 }
 
 class _MemoryAppearanceStore implements AppearanceStore {
