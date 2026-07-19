@@ -9,6 +9,11 @@ import '../../../../core/time/app_clock.dart';
 import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../auth/presentation/state/auth_notifier.dart';
+import '../../../payments/presentation/widgets/process_payment_dialog.dart';
+import '../../../products/data/models/membresia_cuota_models.dart';
+import '../../../products/data/repositories/payment_plan_repository.dart';
+import '../../../products/presentation/widgets/membresia_cuotas_panel.dart';
+import '../../data/models/client_model.dart';
 import '../../data/models/client_record_model.dart';
 import '../../data/repositories/client_repository.dart';
 import '../../data/services/client_statement_export_service.dart';
@@ -799,8 +804,51 @@ class _MembershipBlock extends ConsumerStatefulWidget {
 class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
   bool _busy = false;
 
+  /// R5.2 — calendario de cuotas de la membresía (si contrató por cuotas).
+  List<MembresiaCuotaModel> _cuotas = const [];
+
   ClientMembershipRecord get membership => widget.membership;
   ClientRecordIdentity get client => widget.client;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCuotas();
+  }
+
+  Future<void> _loadCuotas() async {
+    try {
+      final cuotas = await ref
+          .read(paymentPlanRepositoryProvider)
+          .getMembresiaCuotas(membership.id);
+      if (mounted && cuotas.isNotEmpty) {
+        setState(() => _cuotas = cuotas);
+      }
+    } catch (_) {
+      // Sin cuotas legibles el bloque simplemente no se muestra.
+    }
+  }
+
+  Future<void> _payCuota(MembresiaCuotaModel cuota) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => ProcessPaymentDialog(
+        client: ClientModel(
+          id: client.id,
+          nombres: '${client.firstName} ${client.lastName}'.trim(),
+          membershipId: membership.id,
+        ),
+        planId: membership.planId,
+        cuotaNumero: cuota.numeroCuota,
+        cuotaImporte: cuota.importe,
+      ),
+    );
+    if (saved == true && mounted) {
+      await _loadCuotas();
+      await ref.read(clientNotifierProvider.notifier).refresh();
+      ref.invalidate(clientRecordProvider(client.id));
+    }
+  }
 
   Future<void> _pause() async {
     final reason = await showDialog<String>(
@@ -1073,6 +1121,16 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                       '${trainer.trainerName ?? trainer.trainerId} · ${_date(trainer.startDate)}${trainer.endDate == null ? ' → actual' : ' → ${_date(trainer.endDate!)}'} · ${trainer.status}',
                       style: TextStyle(color: tokens.chalkDim, fontSize: 11.5),
                     ),
+                  const SizedBox(height: 12),
+                ],
+                if (_cuotas.isNotEmpty) ...[
+                  const PulsoLabel('CUOTAS DEL PLAN'),
+                  const SizedBox(height: 6),
+                  MembresiaCuotasPanel(
+                    cuotas: _cuotas,
+                    symbol: '',
+                    onPayCuota: _busy ? null : _payCuota,
+                  ),
                   const SizedBox(height: 12),
                 ],
                 const PulsoLabel('PAGOS APLICADOS'),
