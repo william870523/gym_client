@@ -36,7 +36,7 @@ class GovernedExpensesPanel extends ConsumerStatefulWidget {
 }
 
 class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
-  late String? _month = widget.initialMonth;
+  late final String? _month = widget.initialMonth;
   final _search = TextEditingController();
   String _query = '';
 
@@ -219,7 +219,7 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final item = filtered[index];
                 return _buildExpenseRow(context, item);
@@ -534,6 +534,8 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
               if (categoryId == null || descCtrl.text.isEmpty || montoCtrl.text.isEmpty) {
                 return;
               }
+              final navigator = Navigator.of(dialogCtx);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await ref.read(accountingRepositoryProvider).createGovernedExpense({
                   'categoria_id': categoryId,
@@ -544,10 +546,10 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
                   'periodo_pertenencia_mes': mesCtrl.text,
                   'comprobante_referencia': refCtrl.text.isNotEmpty ? refCtrl.text : null,
                 });
-                Navigator.pop(dialogCtx);
+                navigator.pop();
                 _refresh();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text(_errorText(e))),
                 );
               }
@@ -603,6 +605,8 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
           ElevatedButton(
             onPressed: () async {
               if (montoCtrl.text.isEmpty) return;
+              final navigator = Navigator.of(dialogCtx);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await ref.read(accountingRepositoryProvider).payGovernedExpense(
                   item.gastoId,
@@ -612,10 +616,10 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
                     'comprobante_referencia': refCtrl.text.isNotEmpty ? refCtrl.text : null,
                   },
                 );
-                Navigator.pop(dialogCtx);
+                navigator.pop();
                 _refresh();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text(_errorText(e))),
                 );
               }
@@ -654,15 +658,17 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
               if (motivoCtrl.text.isEmpty) return;
+              final navigator = Navigator.of(dialogCtx);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await ref.read(accountingRepositoryProvider).reverseGovernedExpensePayment(
                   app.aplicacionId,
                   {'motivo': motivoCtrl.text},
                 );
-                Navigator.pop(dialogCtx);
+                navigator.pop();
                 _refresh();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text(_errorText(e))),
                 );
               }
@@ -727,15 +733,17 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
           ElevatedButton(
             onPressed: () async {
               if (nameCtrl.text.isEmpty) return;
+              final navigator = Navigator.of(dialogCtx);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await ref.read(accountingRepositoryProvider).createGovernedExpenseCategory({
                   'nombre': nameCtrl.text,
                   'naturaleza': nature,
                 });
-                Navigator.pop(dialogCtx);
+                navigator.pop();
                 _refresh();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text(_errorText(e))),
                 );
               }
@@ -794,15 +802,17 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
           ElevatedButton(
             onPressed: () async {
               if (nameCtrl.text.isEmpty) return;
+              final navigator = Navigator.of(dialogCtx);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await ref.read(accountingRepositoryProvider).createGovernedExpenseSupplier({
                   'nombre': nameCtrl.text,
                   'documento': docCtrl.text.isNotEmpty ? docCtrl.text : null,
                 });
-                Navigator.pop(dialogCtx);
+                navigator.pop();
                 _refresh();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text(_errorText(e))),
                 );
               }
