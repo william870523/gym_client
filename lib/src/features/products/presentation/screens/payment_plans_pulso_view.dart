@@ -119,10 +119,10 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
         onSubmit: (updated) async {
           final notifier = ref.read(paymentPlanProvider.notifier);
           if (plan == null) {
-            await notifier.create(updated);
-          } else {
-            await notifier.updatePlan(updated);
+            return notifier.create(updated);
           }
+          await notifier.updatePlan(updated);
+          return null;
         },
       ),
     );

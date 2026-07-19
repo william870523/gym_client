@@ -21,13 +21,13 @@ class PaymentPlanNotifier extends _$PaymentPlanNotifier {
     state = await AsyncValue.guard(() => _fetchPlans());
   }
 
-  Future<void> create(PaymentPlanModel plan) async {
+  /// Devuelve el plan creado (el servidor genera el id): el formulario lo
+  /// necesita para guardar el esquema de cuotas de un plan nuevo.
+  Future<PaymentPlanModel> create(PaymentPlanModel plan) async {
     final repository = ref.read(paymentPlanRepositoryProvider);
-    // Optimistic update or reload? Reload is safer for ID generation
-    await AsyncValue.guard(() async {
-      await repository.createPaymentPlan(plan);
-    });
+    final created = await repository.createPaymentPlan(plan);
     ref.invalidateSelf();
+    return created;
   }
 
   Future<void> updatePlan(PaymentPlanModel plan) async {

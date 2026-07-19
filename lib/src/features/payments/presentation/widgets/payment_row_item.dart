@@ -6,6 +6,7 @@ import 'package:gym_client/src/features/financials/presentation/providers/exchan
 import 'package:gym_client/src/features/configuration/data/models/payment_type_model.dart';
 import 'package:gym_client/src/features/financials/data/models/account_model.dart';
 import 'package:gym_client/src/features/financials/data/models/currency_model.dart';
+import 'package:gym_client/src/features/financials/data/models/exchange_rate_model.dart';
 import 'package:gym_client/src/features/financials/presentation/screens/exchange_rates_pulso_view.dart';
 import 'package:gym_client/src/features/financials/presentation/state/currency_notifier.dart';
 import 'package:gym_client/src/features/financials/presentation/widgets/exchange_rate_pulso_form.dart';
@@ -45,6 +46,10 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
   String? _currentRateId;
   bool _rateFound = false;
   bool _divideByRate = false;
+
+  /// R5.1 — recargos por método congelados en la tasa resuelta
+  /// (`tipo_pago_id → %`). Vacío en 1:1 o sin tasa.
+  Map<String, String> _rateSurcharges = const {};
 
   double? _lastEmittedAmount;
 
@@ -125,7 +130,21 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
 
   void _notifyChanged() {
     final amount = double.tryParse(_amountController.text) ?? 0.0;
-    final equivalent = _calculateEquivalent(amount);
+    final breakdown = _calculateSurchargeBreakdown(amount);
+    final baseInPayment = breakdown['baseInPayment']!;
+    final surchargeInPayment = breakdown['surchargeInPayment']!;
+
+    final equivalent = _rateFound && _currentRate > 0
+        ? (_divideByRate
+            ? baseInPayment / _currentRate
+            : baseInPayment * _currentRate)
+        : 0.0;
+
+    final surchargePlanCurrency = _rateFound && _currentRate > 0
+        ? (_divideByRate
+            ? surchargeInPayment / _currentRate
+            : surchargeInPayment * _currentRate)
+        : 0.0;
 
     _lastEmittedAmount = amount; // Track what we sent
 
@@ -136,6 +155,10 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       'rate': _currentRate,
       'rateOperation': _divideByRate ? 'divide' : 'multiply',
       'exchangeRateId': _currentRateId,
+      'surchargePct': _surchargePct,
+      'surchargeAmount': surchargeInPayment,
+      'surchargePlanCurrency': surchargePlanCurrency,
+      'baseAmount': baseInPayment,
       'equivalent': equivalent,
       'isValid':
           _selectedType != null &&
@@ -195,12 +218,23 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       String? rateId;
       bool found = false;
       bool divideByRate = false;
+      Map<String, String> surcharges = const {};
 
       // 1. Same Currency Case (1:1)
-      if (currencyId == widget.planCurrencyId) {
+      if (_isSameCurrencyId(currencyId, widget.planCurrencyId)) {
         rate = 1.0;
         found = true;
         rateId = null;
+        try {
+          final sameRateModel = rates.firstWhere(
+            (r) =>
+                _isSameCurrencyId(r.monedaIdBase, planCurrencyId) &&
+                _isSameCurrencyId(r.monedaIdTarget, accountCurrencyId) &&
+                r.activo,
+          );
+          surcharges = sameRateModel.recargos;
+          rateId = sameRateModel.id;
+        } catch (_) {}
       }
       // 2. Different Currencies
       else {
@@ -215,6 +249,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
           rateId = rateModel.id;
           found = true;
           divideByRate = true;
+          surcharges = rateModel.recargos;
         } catch (e) {
           try {
             final reverseRate = rates.firstWhere(
@@ -226,6 +261,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
             rate = reverseRate.exchangeRate;
             rateId = reverseRate.id; // Use the reverse rate ID
             found = true;
+            surcharges = reverseRate.recargos;
           } catch (_) {
             found = false;
           }
@@ -237,6 +273,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
         rate: rate,
         rateId: rateId,
         divideByRate: found && divideByRate,
+        surcharges: surcharges,
       );
     });
   }
@@ -246,6 +283,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
     required double rate,
     String? rateId,
     bool divideByRate = false,
+    Map<String, String> surcharges = const {},
   }) {
     if (!mounted) return;
 
@@ -254,13 +292,46 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       _currentRate = rate;
       _currentRateId = rateId;
       _divideByRate = found && divideByRate;
+      _rateSurcharges = found ? surcharges : const {};
     });
     _notifyChanged();
   }
 
+  /// % de recargo del método seleccionado en la tasa resuelta (0 si no hay).
+  double get _surchargePct {
+    final typeId = _selectedType?.id;
+    if (typeId == null) return 0.0;
+    return double.tryParse(_rateSurcharges[typeId] ?? '') ?? 0.0;
+  }
+
+  Map<String, double> _calculateSurchargeBreakdown(double paymentAmount) {
+    final pct = _surchargePct;
+    if (pct <= 0 || paymentAmount <= 0) {
+      return {
+        'baseInPayment': paymentAmount,
+        'surchargeInPayment': 0.0,
+        'pct': 0.0,
+      };
+    }
+    // R5.1: El recargo se calcula en la moneda de pago (ej. CUP) como un entero
+    // redondeado al entero superior (ceil).
+    final rawSurcharge = paymentAmount * (pct / (100.0 + pct));
+    final surchargeInPayment = rawSurcharge.ceilToDouble();
+    final baseInPayment = paymentAmount - surchargeInPayment;
+    return {
+      'baseInPayment': baseInPayment,
+      'surchargeInPayment': surchargeInPayment,
+      'pct': pct,
+    };
+  }
+
   double _calculateEquivalent(double amount) {
     if (!_rateFound || _currentRate <= 0) return 0.0;
-    return _divideByRate ? amount / _currentRate : amount * _currentRate;
+    final breakdown = _calculateSurchargeBreakdown(amount);
+    final baseInPayment = breakdown['baseInPayment']!;
+    return _divideByRate
+        ? baseInPayment / _currentRate
+        : baseInPayment * _currentRate;
   }
 
   bool _isSameCurrencyId(String a, String b) {
@@ -664,7 +735,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
                         color: tokens.chalk,
                       ),
                     ),
-                  if (_rateFound)
+                  if (_rateFound) ...[
                     Text(
                       _rateLabel(),
                       style: TextStyle(
@@ -672,8 +743,21 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
                         fontSize: 10,
                         color: tokens.muted,
                       ),
-                    )
-                  else if (_selectedAccount != null)
+                    ),
+                    // R5.1: el método paga un poco más; la diferencia es
+                    // ganancia del gimnasio y no cubre plan.
+                    if (_surchargePct > 0)
+                      Text(
+                        key: const ValueKey('payment-row-surcharge'),
+                        '+${_surchargePct.toStringAsFixed(2)} % RECARGO',
+                        style: TextStyle(
+                          fontFamily: PulsoFonts.mono,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.warning,
+                        ),
+                      ),
+                  ] else if (_selectedAccount != null)
                     _missingRateAction(tokens, planCurrencyLabel),
                 ],
               ),

@@ -8,8 +8,12 @@ import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../financials/data/models/currency_model.dart';
 import '../../../financials/presentation/state/currency_notifier.dart';
 import '../../data/models/payment_plan_model.dart';
+import '../../data/repositories/payment_plan_repository.dart';
 
-typedef PaymentPlanPulsoSubmit = Future<void> Function(PaymentPlanModel plan);
+/// Devuelve el plan persistido cuando el guardado lo produce (alta); el
+/// formulario usa su id para guardar el esquema de cuotas de planes nuevos.
+typedef PaymentPlanPulsoSubmit =
+    Future<PaymentPlanModel?> Function(PaymentPlanModel plan);
 
 class PaymentPlanPulsoForm extends ConsumerStatefulWidget {
   const PaymentPlanPulsoForm({super.key, this.plan, required this.onSubmit});
@@ -33,9 +37,11 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
   String _durationUnit = 'months';
   bool _active = true;
   bool _includesTrainer = false;
+  bool _aceptaCuotas = false;
   String _commissionType = 'NONE';
   bool _busy = false;
   String? _error;
+  List<_CuotaDraft> _cuotasDraft = [];
 
   bool get _isEdit => widget.plan != null;
 
@@ -53,6 +59,7 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     _currencyId = plan?.monedaId.isNotEmpty == true ? plan!.monedaId : null;
     _active = plan?.activo ?? true;
     _includesTrainer = plan?.incluyeEntrenador ?? false;
+    _aceptaCuotas = plan?.aceptaCuotas ?? false;
     _commissionType = plan?.comisionEntrenadorTipo ?? 'NONE';
 
     // Misma descomposición de duración que el catálogo (año/mes/semana/día).
@@ -74,6 +81,48 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
       _durationController = TextEditingController(text: duration.toString());
       _durationUnit = 'days';
     }
+
+    if (_aceptaCuotas) {
+      _loadCuotasScheme();
+    }
+  }
+
+  Future<void> _loadCuotasScheme() async {
+    final planId = widget.plan?.id;
+    if (planId != null && planId.isNotEmpty) {
+      try {
+        final repo = ref.read(paymentPlanRepositoryProvider);
+        final scheme = await repo.getPlanCuotasScheme(planId);
+        if (scheme.isNotEmpty && mounted) {
+          setState(() {
+            _cuotasDraft = scheme
+                .map((e) => _CuotaDraft(
+                      numeroCuota: ((e['numero_cuota'] ?? e['numeroCuota']) as num?)?.toInt() ?? 1,
+                      importe: (e['importe'] as num?)?.toDouble() ?? 0.0,
+                      dias: ((e['dias_cobertura'] ?? e['diasCobertura']) as num?)?.toInt() ?? 0,
+                    ))
+                .toList();
+          });
+          return;
+        }
+      } catch (_) {}
+    }
+    // Fallback/Default cuotas draft for new plan with cuotas
+    if (_cuotasDraft.isEmpty && mounted) {
+      final totalAmount = double.tryParse(_amountController.text.trim()) ?? 25.0;
+      final totalDays = _durationInDays();
+      final halfAmount = (totalAmount / 2 * 100).round() / 100;
+      final remAmount = ((totalAmount - halfAmount) * 100).round() / 100;
+      final halfDays = totalDays ~/ 3 > 0 ? totalDays ~/ 3 : 30;
+      final remDays = totalDays - halfDays > 0 ? totalDays - halfDays : 60;
+
+      setState(() {
+        _cuotasDraft = [
+          _CuotaDraft(numeroCuota: 1, importe: halfAmount > 0 ? halfAmount : 15.0, dias: halfDays),
+          _CuotaDraft(numeroCuota: 2, importe: remAmount > 0 ? remAmount : 10.0, dias: remDays),
+        ];
+      });
+    }
   }
 
   @override
@@ -82,6 +131,9 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     _amountController.dispose();
     _durationController.dispose();
     _commissionController.dispose();
+    for (final c in _cuotasDraft) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -95,16 +147,53 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     };
   }
 
+  double get _cuotasSumAmount =>
+      _cuotasDraft.fold(0.0, (sum, c) => sum + c.amount);
+
+  int get _cuotasSumDays => _cuotasDraft.fold(0, (sum, c) => sum + c.days);
+
+  double get _targetAmount =>
+      double.tryParse(_amountController.text.trim()) ?? 0.0;
+
+  /// El botón de guardar solo se habilita con el esquema cuadrado: cada cuota
+  /// con importe y días positivos, y las sumas iguales a la tarifa del plan.
+  bool get _schemeReady {
+    if (!_aceptaCuotas) return true;
+    if (_cuotasDraft.isEmpty) return false;
+    if (_cuotasDraft.any((c) => c.amount <= 0 || c.days <= 0)) return false;
+    return (_cuotasSumAmount - _targetAmount).abs() < 0.01 &&
+        _cuotasSumDays == _durationInDays();
+  }
+
   Future<void> _submit() async {
     if (_busy || !(_formKey.currentState?.validate() ?? false)) return;
     if (_currencyId == null) {
       setState(() => _error = 'Selecciona la moneda de cobro.');
       return;
     }
+
+    if (_aceptaCuotas && _cuotasDraft.isNotEmpty) {
+      final sumAmount = _cuotasDraft.fold(0.0, (sum, c) => sum + c.amount);
+      final sumDays = _cuotasDraft.fold(0, (sum, c) => sum + c.days);
+      final targetAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+      final targetDays = _durationInDays();
+
+      final amountOk = (sumAmount - targetAmount).abs() < 0.01;
+      final daysOk = sumDays == targetDays;
+
+      if (!amountOk || !daysOk) {
+        setState(() {
+          _error = 'El esquema de cuotas (€${sumAmount.toStringAsFixed(2)} / ${sumDays}d) no coincide con la tarifa del plan (€${targetAmount.toStringAsFixed(2)} / ${targetDays}d).';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _busy = true;
       _error = null;
     });
+
     final plan = PaymentPlanModel(
       id: widget.plan?.id,
       nombre: _nameController.text.trim(),
@@ -117,10 +206,29 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
       comisionEntrenadorValor: _includesTrainer
           ? double.tryParse(_commissionController.text)
           : null,
+      aceptaCuotas: _aceptaCuotas,
       gymId: widget.plan?.gymId ?? '123',
     );
     try {
-      await widget.onSubmit(plan);
+      final saved = await widget.onSubmit(plan);
+      // En un alta el id lo genera el servidor y llega en el plan devuelto.
+      final targetPlanId = widget.plan?.id ?? saved?.id;
+      if (_aceptaCuotas && targetPlanId != null && targetPlanId.isNotEmpty && _cuotasDraft.isNotEmpty) {
+        final repo = ref.read(paymentPlanRepositoryProvider);
+        final tranches = _cuotasDraft
+            .asMap()
+            .entries
+            .map((e) => {
+                  'numeroCuota': e.key + 1,
+                  'numero_cuota': e.key + 1,
+                  'importe': e.value.amount,
+                  'diasCobertura': e.value.days,
+                  'dias_cobertura': e.value.days,
+                  'orden': e.key + 1,
+                })
+            .toList();
+        await repo.savePlanCuotasScheme(targetPlanId, tranches);
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
@@ -185,7 +293,8 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
                             ),
                             PulsoPrimaryButton(
                               label: _isEdit ? 'Guardar cambios' : 'Crear',
-                              onPressed: _submit,
+                              // Con cuotas descuadradas no se puede guardar.
+                              onPressed: _schemeReady ? _submit : null,
                               busy: _busy,
                             ),
                           ],
@@ -261,6 +370,10 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
                               const SizedBox(height: 16),
                               _buildCommissionFields(context),
                             ],
+                            const SizedBox(height: 24),
+                            const PulsoLabel('Pago por cuotas'),
+                            const SizedBox(height: 12),
+                            _buildInstallmentsField(context),
                             const SizedBox(height: 24),
                             const PulsoLabel('Disponibilidad operativa'),
                             const SizedBox(height: 12),
@@ -557,6 +670,313 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
         ],
       ),
     );
+  }
+
+  Widget _buildInstallmentsField(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: tokens.raised,
+            border: Border.all(color: tokens.line),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_month_outlined, size: 20, color: tokens.accent),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Admite pago por cuotas',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: tokens.chalk,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Permite al cliente abonar el plan en cuotas asimétricas.',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.mono,
+                        fontSize: 10.5,
+                        color: tokens.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                key: const ValueKey('pulso-plan-cuotas-toggle'),
+                value: _aceptaCuotas,
+                activeThumbColor: tokens.accent,
+                onChanged: _busy
+                    ? null
+                    : (value) {
+                        setState(() => _aceptaCuotas = value);
+                        if (value && _cuotasDraft.isEmpty) {
+                          _loadCuotasScheme();
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+        if (_aceptaCuotas) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: tokens.surface,
+              border: Border.all(color: tokens.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'DESGLOSE DE CUOTAS Y TRAMOS',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.mono,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.accent,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () {
+                              setState(() {
+                                _cuotasDraft.add(_CuotaDraft(
+                                  numeroCuota: _cuotasDraft.length + 1,
+                                  importe: 0,
+                                  dias: 0,
+                                ));
+                              });
+                            },
+                      icon: const Icon(Icons.add, size: 14),
+                      label: const Text(
+                        'Añadir cuota',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ..._cuotasDraft.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final item = entry.value;
+                  // Restante tras esta cuota, para guiar el desglose sin
+                  // pasarse de la tarifa ni de los días del plan.
+                  var usedAmount = 0.0;
+                  var usedDays = 0;
+                  for (var i = 0; i <= idx; i++) {
+                    usedAmount += _cuotasDraft[i].amount;
+                    usedDays += _cuotasDraft[i].days;
+                  }
+                  final leftAmount = _targetAmount - usedAmount;
+                  final leftDays = _durationInDays() - usedDays;
+                  final overrun = leftAmount < -0.009 || leftDays < 0;
+                  final hint = idx == _cuotasDraft.length - 1
+                      ? (overrun
+                            ? 'Se pasa por €${(-leftAmount).clamp(0, double.infinity).toStringAsFixed(2)} · ${(-leftDays).clamp(0, 100000)}d'
+                            : null)
+                      : 'Quedan €${leftAmount.toStringAsFixed(2)} · ${leftDays}d para las siguientes';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCuotaRow(tokens, idx, item),
+                        if (hint != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 71, top: 2),
+                            child: Text(
+                              hint,
+                              key: ValueKey('plan-cuota-hint-$idx'),
+                              style: TextStyle(
+                                fontFamily: PulsoFonts.mono,
+                                fontSize: 9.5,
+                                color: overrun ? tokens.danger : tokens.muted,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 10),
+                _buildCuotasValidationSummary(tokens),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCuotaRow(PulsoTokens tokens, int idx, _CuotaDraft item) {
+    return Row(
+                      children: [
+                        SizedBox(
+                          width: 65,
+                          child: Text(
+                            'Cuota #${idx + 1}',
+                            style: TextStyle(
+                              fontFamily: PulsoFonts.mono,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11.5,
+                              color: tokens.chalk,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextFormField(
+                            controller: item.amountController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: TextStyle(fontSize: 12, color: tokens.chalk),
+                            decoration: const InputDecoration(
+                              labelText: 'Importe (€)',
+                              hintText: '15.00',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextFormField(
+                            controller: item.daysController,
+                            keyboardType: TextInputType.number,
+                            style: TextStyle(fontSize: 12, color: tokens.chalk),
+                            decoration: const InputDecoration(
+                              labelText: 'Días Cobertura',
+                              hintText: '30',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        if (_cuotasDraft.length > 1) ...[
+                          const SizedBox(width: 2),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, size: 18),
+                            color: tokens.danger,
+                            onPressed: _busy
+                                ? null
+                                : () {
+                                    setState(() {
+                                      final removed = _cuotasDraft.removeAt(idx);
+                                      removed.dispose();
+                                    });
+                                  },
+                          ),
+                        ],
+                      ],
+                    );
+  }
+
+  Widget _buildCuotasValidationSummary(PulsoTokens tokens) {
+    final sumAmount = _cuotasDraft.fold(0.0, (sum, c) => sum + c.amount);
+    final sumDays = _cuotasDraft.fold(0, (sum, c) => sum + c.days);
+    final targetAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+    final targetDays = _durationInDays();
+
+    final amountOk = (sumAmount - targetAmount).abs() < 0.01;
+    final daysOk = sumDays == targetDays;
+
+    final isOk = amountOk && daysOk;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isOk
+            ? tokens.success.withValues(alpha: 0.1)
+            : tokens.danger.withValues(alpha: 0.1),
+        border: Border.all(
+          color: isOk ? tokens.success : tokens.danger,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isOk ? Icons.check_circle : Icons.warning_amber_rounded,
+                size: 16,
+                color: isOk ? tokens.success : tokens.danger,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isOk ? 'Esquema de cuotas válido' : 'Revisar totales del esquema',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                  color: isOk ? tokens.success : tokens.danger,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Importe Total: €${sumAmount.toStringAsFixed(2)} / €${targetAmount.toStringAsFixed(2)} ${amountOk ? '✓' : '⚠️ Debe coincidir con la tarifa'}',
+            style: TextStyle(
+              fontFamily: PulsoFonts.mono,
+              fontSize: 10.5,
+              color: amountOk ? tokens.chalk : tokens.danger,
+            ),
+          ),
+          Text(
+            'Días Cobertura: ${sumDays}d / ${targetDays}d ${daysOk ? '✓' : '⚠️ Debe coincidir con los días del plan'}',
+            style: TextStyle(
+              fontFamily: PulsoFonts.mono,
+              fontSize: 10.5,
+              color: daysOk ? tokens.chalk : tokens.danger,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CuotaDraft {
+  _CuotaDraft({
+    required this.numeroCuota,
+    required double importe,
+    required int dias,
+  })  : amountController = TextEditingController(
+          text: importe > 0
+              ? (importe % 1 == 0 ? importe.toInt().toString() : importe.toStringAsFixed(2))
+              : '',
+        ),
+        daysController = TextEditingController(
+          text: dias > 0 ? dias.toString() : '',
+        );
+
+  final int numeroCuota;
+  final TextEditingController amountController;
+  final TextEditingController daysController;
+
+  double get amount => double.tryParse(amountController.text.trim()) ?? 0.0;
+  int get days => int.tryParse(daysController.text.trim()) ?? 0;
+
+  void dispose() {
+    amountController.dispose();
+    daysController.dispose();
   }
 }
 

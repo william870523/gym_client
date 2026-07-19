@@ -254,6 +254,25 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         return;
       }
 
+      final plans = ref.read(paymentPlanProvider).value ?? const [];
+      final selectedPlan = plans.where((p) => p.id == _planId).firstOrNull;
+
+      if (selectedPlan != null &&
+          selectedPlan.incluyeEntrenador &&
+          (_entrenadorId == null || _entrenadorId!.isEmpty)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'El plan seleccionado incluye entrenador. Debe asignar un entrenador personal al cliente.',
+              ),
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
       final client = ClientModel(
         id: _ciController.text.trim(),
         nombres: _nameController.text.trim(),
@@ -1330,14 +1349,19 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           initialValue: TextEditingValue(text: currentValue?.name ?? ''),
           displayStringForOption: (option) => option.name,
           optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) {
+            final query = textEditingValue.text.trim().toLowerCase();
+            if (query.isEmpty) return options;
+            if (currentValue != null && currentValue.name.toLowerCase() == query) {
               return options;
             }
-            return options.where(
-              (option) => option.name.toLowerCase().contains(
-                textEditingValue.text.toLowerCase(),
-              ),
+            final matches = options.where(
+              (o) => o.name.toLowerCase().contains(query),
+            ).toList();
+            if (matches.isEmpty) return options;
+            final nonMatches = options.where(
+              (o) => !o.name.toLowerCase().contains(query),
             );
+            return [...matches, ...nonMatches];
           },
           onSelected: (option) {
             setState(() {
@@ -1491,16 +1515,20 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           ),
           displayStringForOption: (option) => (option as dynamic).nombre,
           optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) {
+            final query = textEditingValue.text.trim().toLowerCase();
+            if (query.isEmpty) return options.cast<Object>();
+            if (currentValue != null &&
+                (currentValue as dynamic).nombre.toString().toLowerCase() == query) {
               return options.cast<Object>();
             }
-            return options
-                .where(
-                  (option) => (option as dynamic).nombre.toLowerCase().contains(
-                    textEditingValue.text.toLowerCase(),
-                  ),
-                )
-                .cast<Object>();
+            final matches = options.where(
+              (r) => (r as dynamic).nombre.toString().toLowerCase().contains(query),
+            ).toList();
+            if (matches.isEmpty) return options.cast<Object>();
+            final nonMatches = options.where(
+              (r) => !(r as dynamic).nombre.toString().toLowerCase().contains(query),
+            );
+            return [...matches, ...nonMatches].cast<Object>();
           },
           onSelected: (option) {
             setState(() {
@@ -1611,29 +1639,32 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           displayStringForOption: (option) =>
               (option as dynamic).nombre.toString(),
           optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) {
+            final query = textEditingValue.text.trim().toLowerCase();
+            if (query.isEmpty) return plans.cast<Object>();
+            if (selectedPlan != null &&
+                (selectedPlan as dynamic).nombre.toString().toLowerCase() == query) {
               return plans.cast<Object>();
             }
-            return plans
-                .where(
-                  (p) => p.nombre.toString().toLowerCase().contains(
-                    textEditingValue.text.toLowerCase(),
-                  ),
-                )
-                .cast<Object>();
+            final matches = plans.where(
+              (p) => (p as dynamic).nombre.toString().toLowerCase().contains(query),
+            ).toList();
+            if (matches.isEmpty) return plans.cast<Object>();
+            final nonMatches = plans.where(
+              (p) => !(p as dynamic).nombre.toString().toLowerCase().contains(query),
+            );
+            return [...matches, ...nonMatches].cast<Object>();
           },
           onSelected: (option) {
             final dynOption = option as dynamic;
-            setState(() => _planId = dynOption.id);
-            // Update End Date based on plan duration if possible
-            if (dynOption.duracion != null && dynOption.duracion is int) {
-              setState(() {
-                _endDate = _startDate.add(
-                  Duration(days: dynOption.duracion as int),
-                );
+            final durationDays = (dynOption.duracion as num?)?.toInt() ?? 0;
+            final baseToday = todayInZone(appClock.gymTimezone);
+            setState(() {
+              _planId = dynOption.id as String?;
+              if (durationDays > 0) {
+                _endDate = baseToday.add(Duration(days: durationDays));
                 _endDateController.text = _formatDate(_endDate);
-              });
-            }
+              }
+            });
           },
           fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
             return TextFormField(
@@ -1778,6 +1809,9 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
   Widget _buildTrainerDropdown(List<dynamic> trainers) {
     final palette = _ClientFormPalette.of(context);
+    final plans = ref.watch(paymentPlanProvider).value ?? const [];
+    final selectedPlan = plans.where((p) => p.id == _planId).firstOrNull;
+    final requiresTrainer = selectedPlan?.incluyeEntrenador == true;
 
     final selectedTrainer = _entrenadorId != null
         ? trainers.where((t) => t.id == _entrenadorId).firstOrNull
@@ -1786,12 +1820,24 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Entrenador Asignado',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: palette.textSecondary,
+        RichText(
+          text: TextSpan(
+            text: 'Entrenador Asignado',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: palette.textSecondary,
+            ),
+            children: [
+              if (requiresTrainer)
+                TextSpan(
+                  text: ' * (Requerido)',
+                  style: TextStyle(
+                    color: palette.danger,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 6),
@@ -1809,14 +1855,20 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             return '${t.nombres} ${t.apellidos}';
           },
           optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) return trainers.cast<Object>();
-            return trainers
-                .where(
-                  (t) => '${t.nombres} ${t.apellidos}'.toLowerCase().contains(
-                    textEditingValue.text.toLowerCase(),
-                  ),
-                )
-                .cast<Object>();
+            final query = textEditingValue.text.trim().toLowerCase();
+            if (query.isEmpty) return trainers.cast<Object>();
+            if (selectedTrainer != null &&
+                '${(selectedTrainer as dynamic).nombres} ${(selectedTrainer as dynamic).apellidos}'.toLowerCase() == query) {
+              return trainers.cast<Object>();
+            }
+            final matches = trainers.where(
+              (t) => '${t.nombres} ${t.apellidos}'.toLowerCase().contains(query),
+            ).toList();
+            if (matches.isEmpty) return trainers.cast<Object>();
+            final nonMatches = trainers.where(
+              (t) => !'${t.nombres} ${t.apellidos}'.toLowerCase().contains(query),
+            );
+            return [...matches, ...nonMatches].cast<Object>();
           },
           onSelected: (option) {
             final t = option as dynamic;
@@ -1826,8 +1878,14 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             return TextFormField(
               controller: controller,
               focusNode: focusNode,
+              validator: (val) {
+                if (requiresTrainer && (_entrenadorId == null || _entrenadorId!.isEmpty)) {
+                  return 'Debe seleccionar un entrenador personal.';
+                }
+                return null;
+              },
               decoration: InputDecoration(
-                hintText: 'Sin Entrenador Personal',
+                hintText: requiresTrainer ? 'Seleccionar Entrenador...' : 'Sin Entrenador Personal',
                 filled: true,
                 fillColor: palette.surfaceAlt,
                 contentPadding: const EdgeInsets.symmetric(

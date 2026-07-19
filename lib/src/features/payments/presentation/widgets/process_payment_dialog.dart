@@ -167,6 +167,103 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     return total;
   }
 
+  double get _totalSurcharge {
+    double total = 0;
+    for (final row in _paymentRows) {
+      final surcharge = row['surchargeAmount'];
+      if (surcharge != null && surcharge is num) {
+        total += surcharge.toDouble();
+      }
+    }
+    return total;
+  }
+
+  Widget _buildSurchargeBanner(PulsoTokens t, String planSymbol) {
+    final surcharge = _totalSurcharge;
+    if (surcharge <= 0) return const SizedBox.shrink();
+
+    final details = <String>[];
+    for (final row in _paymentRows) {
+      final sur = row['surchargeAmount'];
+      final surPlan = row['surchargePlanCurrency'];
+      final pct = row['surchargePct'];
+      final type = row['type'] as PaymentTypeModel?;
+      final account = row['account'] as AccountModel?;
+      if (sur != null && sur is num && sur > 0) {
+        final pctLabel = pct != null ? ' ($pct%)' : '';
+        final typeName = type?.name ?? 'Método con recargo';
+        final currCode = account != null && account.currencyId.length <= 5
+            ? account.currencyId.toUpperCase()
+            : '';
+        final currSuffix = currCode.isNotEmpty ? ' $currCode' : '';
+        final planSuffix = surPlan != null && surPlan is num && surPlan > 0
+            ? ' (+$planSymbol${surPlan.toDouble().toStringAsFixed(2)})'
+            : '';
+        details.add('$typeName$pctLabel: +${sur.toDouble().toStringAsFixed(2)}$currSuffix$planSuffix');
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: t.accent.withValues(alpha: 0.08),
+        border: Border.all(color: t.accent.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 16, color: t.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Recargo por método de pago (ganancia gimnasio - entero):',
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.body,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: t.chalk,
+                  ),
+                ),
+                Text(
+                  details.join(' | '),
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.body,
+                    fontSize: 12,
+                    color: t.chalkDim,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _remainingLabel(double remaining, String planSymbol) {
+    if (remaining <= 0) return 'Saldo restante: ${planSymbol}0.00';
+
+    final text = 'Saldo restante: $planSymbol${remaining.toStringAsFixed(2)}';
+
+    for (final row in _paymentRows) {
+      final account = row['account'] as AccountModel?;
+      final rate = row['rate'];
+      final rateOp = row['rateOperation'];
+      if (account != null && rate != null && rate is num && rate > 0 && rate != 1.0) {
+        final r = rate.toDouble();
+        final currencyCode = account.currencyId.length > 5
+            ? account.currencyId.substring(0, 5).toUpperCase()
+            : account.currencyId.toUpperCase();
+        final equiv = rateOp == 'divide' ? remaining * r : remaining / r;
+        return '$text (~${equiv.toStringAsFixed(2)} $currencyCode)';
+      }
+    }
+    return text;
+  }
+
   double _amountDueFor(PaymentPlanModel plan) {
     final balance = widget.client.membershipBalanceDue;
     if (widget.client.membershipId != null && balance != null && balance > 0) {
@@ -573,7 +670,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                           ),
                         ),
                         child: Text(
-                          'Saldo restante: $planSymbol${remaining.toStringAsFixed(2)}',
+                          _remainingLabel(remaining, planSymbol),
                           style: TextStyle(
                             fontFamily: PulsoFonts.mono,
                             fontSize: 11,
@@ -584,6 +681,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                       ),
                     ],
                   ),
+                  _buildSurchargeBanner(t, planSymbol),
                 ],
               );
             },
@@ -774,7 +872,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                     ),
                   );
                   final remaining = _amountDueFor(plan) - _totalPaid;
-                  final isPaid = remaining <= 0.01;
+                  final isPaid = remaining <= 0.001;
 
                   return Container(
                     width: double.infinity,
@@ -835,8 +933,8 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                             ? planCurrency!.symbol!.trim()
                             : '${planCurrency?.code ?? ''} ';
                         final remaining = _amountDueFor(plan) - _totalPaid;
-                        final isComplete = remaining <= 0.01;
-                        final isOverpaid = remaining < -0.01;
+                        final isComplete = remaining <= 0.001;
+                        final isOverpaid = remaining < -0.001;
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -979,8 +1077,9 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
               monedaId: '',
             ),
           );
-          final remaining = math.max(0.0, _amountDueFor(plan) - _totalPaid);
-          final isComplete = remaining <= 0.01 && _paymentRows.isNotEmpty;
+          final rawRemaining = _amountDueFor(plan) - _totalPaid;
+          final remaining = math.max(0.0, rawRemaining);
+          final isComplete = rawRemaining <= 0.001 && _paymentRows.isNotEmpty;
           final status = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

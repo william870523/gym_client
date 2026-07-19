@@ -70,4 +70,37 @@ class PaymentPlanRepository {
       throw Exception('Failed to delete payment plan: $e');
     }
   }
+
+  Future<List<Map<String, dynamic>>> getPlanCuotasScheme(String planId) async {
+    try {
+      final response = await _client.get('/planes-pago/$planId/cuotas');
+      return (response.data as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> savePlanCuotasScheme(
+    String planId,
+    List<Map<String, dynamic>> tranches,
+  ) async {
+    try {
+      await _client.put(
+        '/planes-pago/$planId/cuotas',
+        data: {'tranches': tranches},
+      );
+    } catch (e) {
+      // El servidor responde { error } con el motivo real; mostrarlo tal cual
+      // en lugar del volcado técnico de DioException.
+      if (e is DioException) {
+        final detail = e.response?.data is Map
+            ? (e.response!.data as Map)['error']?.toString()
+            : null;
+        if (detail != null && detail.trim().isNotEmpty) {
+          throw Exception(detail.trim());
+        }
+      }
+      throw Exception('Error al guardar el esquema de cuotas: $e');
+    }
+  }
 }

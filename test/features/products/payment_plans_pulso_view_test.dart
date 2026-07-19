@@ -1,5 +1,7 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gym_client/src/features/products/data/repositories/payment_plan_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_client/src/core/sync/sync_status_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
@@ -118,6 +120,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('bloquea guardar cuando el esquema de cuotas no cuadra', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final planNotifier = _PlanNotifier(_plans());
+    await tester.pumpWidget(_harness(planNotifier: planNotifier));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Editar Mensual'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('pulso-plan-cuotas-toggle')),
+    );
+    await tester.tap(find.byKey(const ValueKey('pulso-plan-cuotas-toggle')));
+    await tester.pumpAndSettle();
+
+    // El borrador por defecto cuadra (mitad y mitad): se puede guardar.
+    expect(find.text('Esquema de cuotas válido'), findsOneWidget);
+
+    // Pasarse de la tarifa invalida el esquema, avisa el exceso por cuota y
+    // deshabilita el guardado.
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Importe (€)').first,
+      '300',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Revisar totales del esquema'), findsOneWidget);
+    expect(find.textContaining('Se pasa por'), findsOneWidget);
+
+    await tester.tap(find.text('GUARDAR CAMBIOS'));
+    await tester.pumpAndSettle();
+    // El formulario sigue abierto y no se persistió nada.
+    expect(find.text('EDITAR PLAN'), findsOneWidget);
+    expect(planNotifier.updates, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra planes inactivos', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -193,9 +237,29 @@ Widget _harness({_PlanNotifier? planNotifier}) {
       paymentPlanProvider.overrideWith(
         () => planNotifier ?? _PlanNotifier(_plans()),
       ),
+      paymentPlanRepositoryProvider.overrideWith(
+        (ref) => _FakePlanRepository(),
+      ),
     ],
     child: const MaterialApp(home: Scaffold(body: PaymentPlansPulsoView())),
   );
+}
+
+class _FakePlanRepository extends PaymentPlanRepository {
+  _FakePlanRepository() : super(Dio());
+  final savedSchemes = <(String, List<Map<String, dynamic>>)>[];
+
+  @override
+  Future<List<Map<String, dynamic>>> getPlanCuotasScheme(String planId) async =>
+      const [];
+
+  @override
+  Future<void> savePlanCuotasScheme(
+    String planId,
+    List<Map<String, dynamic>> tranches,
+  ) async {
+    savedSchemes.add((planId, tranches));
+  }
 }
 
 class _PlanNotifier extends PaymentPlanNotifier {

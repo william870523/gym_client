@@ -8,6 +8,7 @@ class PaymentPlanModel {
   final bool incluyeEntrenador;
   final String comisionEntrenadorTipo; // NONE, PERCENTAGE, FIXED_AMOUNT
   final double? comisionEntrenadorValor;
+  final bool aceptaCuotas;
   final bool isDeleted;
   final String? gymId;
   final int version;
@@ -22,6 +23,7 @@ class PaymentPlanModel {
     this.incluyeEntrenador = false,
     this.comisionEntrenadorTipo = 'NONE',
     this.comisionEntrenadorValor,
+    this.aceptaCuotas = false,
     this.isDeleted = false,
     this.gymId,
     this.version = 1,
@@ -41,6 +43,7 @@ class PaymentPlanModel {
           json['comision_entrenador_tipo'] as String? ?? 'NONE',
       comisionEntrenadorValor:
           (json['comision_entrenador_valor'] as num?)?.toDouble(),
+      aceptaCuotas: json['acepta_cuotas'] == 1 || json['acepta_cuotas'] == true,
       isDeleted: json['is_deleted'] == 1 || json['is_deleted'] == true,
       gymId: json['gym_id'] as String?,
       version: json['version'] as int? ?? 1,
@@ -58,6 +61,7 @@ class PaymentPlanModel {
       'incluye_entrenador': incluyeEntrenador,
       'comision_entrenador_tipo': comisionEntrenadorTipo,
       'comision_entrenador_valor': comisionEntrenadorValor,
+      'acepta_cuotas': aceptaCuotas,
       'is_deleted': isDeleted,
       'gym_id': gymId,
       'version': version,
@@ -74,6 +78,7 @@ class PaymentPlanModel {
     bool? incluyeEntrenador,
     String? comisionEntrenadorTipo,
     double? comisionEntrenadorValor,
+    bool? aceptaCuotas,
     bool? isDeleted,
     String? gymId,
     int? version,
@@ -90,6 +95,7 @@ class PaymentPlanModel {
           comisionEntrenadorTipo ?? this.comisionEntrenadorTipo,
       comisionEntrenadorValor:
           comisionEntrenadorValor ?? this.comisionEntrenadorValor,
+      aceptaCuotas: aceptaCuotas ?? this.aceptaCuotas,
       isDeleted: isDeleted ?? this.isDeleted,
       gymId: gymId ?? this.gymId,
       version: version ?? this.version,
@@ -106,6 +112,6 @@ class PaymentPlanModel {
       final weeks = duracion ~/ 7;
       return '$weeks Semana${weeks > 1 ? "s" : ""}';
     }
-    return '$duracion Días';
+    return '$duracion Día${duracion > 1 ? "s" : ""}';
   }
 }
