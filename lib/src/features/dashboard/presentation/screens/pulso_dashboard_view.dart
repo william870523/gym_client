@@ -306,7 +306,13 @@ class _PulsoDashboardState extends ConsumerState<_PulsoDashboard> {
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: t.isDark ? 0.10 : 0.07),
-        border: Border(left: BorderSide(color: color, width: 3)),
+        // Encuadre completo (nada flota) + barra izquierda semántica.
+        border: Border(
+          left: BorderSide(color: color, width: 3),
+          top: BorderSide(color: color.withValues(alpha: 0.42)),
+          right: BorderSide(color: color.withValues(alpha: 0.42)),
+          bottom: BorderSide(color: color.withValues(alpha: 0.42)),
+        ),
       ),
       child: Text(
         text,
@@ -320,68 +326,79 @@ class _PulsoDashboardState extends ConsumerState<_PulsoDashboard> {
   }
 
   Widget _kpis(PulsoTokens t, _DashboardFacts f, double width) {
-    final columns = width >= 1040
-        ? 4
-        : width >= 600
-        ? 2
-        : 2;
-    final gap = 10.0;
-    final cardWidth =
-        (width -
-            (columns - 1) * gap -
-            (width < 600
-                ? 32
-                : width >= 1040
-                ? 64
-                : 44)) /
-        columns;
+    // Banda de métricas de un solo marco con divisores internos
+    // (PULSO_RECETARIO_VISUAL.md §3.2); nunca tarjetas KPI sueltas.
+    final attention = f.dueSoon.length + f.expired;
     final items = [
       (
-        '01',
         'ASISTENCIAS HOY',
         '${f.attendanceToday}',
         '${f.insideNow} dentro',
-        t.sync,
+        t.accent, // dato focal del turno
       ),
       (
-        '02',
         'SOCIOS ACTIVOS',
         '${f.activeClients}',
         'de ${f.totalClients} registrados',
-        t.success,
+        t.chalk,
       ),
       (
-        '03',
         'COBROS HOY',
         '${f.paymentCount}',
         '${f.income.length} moneda${f.income.length == 1 ? '' : 's'}',
-        t.warning,
+        t.chalk,
       ),
       (
-        '04',
         'ATENCIÓN',
-        '${f.dueSoon.length + f.expired}',
+        '$attention',
         '${f.expired} vencidas',
-        f.expired > 0 ? t.danger : t.accent,
+        f.expired > 0
+            ? t.danger
+            : attention > 0
+            ? t.warning
+            : t.chalk,
       ),
     ];
-    return Wrap(
-      spacing: gap,
-      runSpacing: gap,
-      children: [
-        for (final item in items)
-          SizedBox(
-            width: math.max(140, cardWidth),
-            child: _KpiCard(
-              number: item.$1,
-              label: item.$2,
-              value: item.$3,
-              note: item.$4,
-              color: item.$5,
-            ),
-          ),
+    final cells = [
+      for (var i = 0; i < items.length; i++) ...[
+        if (i > 0) Container(width: 1, color: t.line),
+        _MetricCell(
+          label: items[i].$1,
+          value: items[i].$2,
+          note: items[i].$3,
+          valueColor: items[i].$4,
+        ),
       ],
+    ];
+    final band = PulsoPanel(
+      key: const ValueKey('pulso-dashboard-metrics'),
+      padding: EdgeInsets.zero,
+      child: width >= 600
+          ? IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final cell in cells)
+                    cell is _MetricCell ? Expanded(child: cell) : cell,
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final cell in cells)
+                      cell is _MetricCell
+                          ? SizedBox(width: 150, child: cell)
+                          : cell,
+                  ],
+                ),
+              ),
+            ),
     );
+    return band;
   }
 
   Widget _hourlyPanel(PulsoTokens t, _DashboardFacts f) {
@@ -592,7 +609,7 @@ class _PulsoDashboardState extends ConsumerState<_PulsoDashboard> {
           const SizedBox(height: 10),
           if (f.activity.isEmpty)
             _empty(t, 'La jornada aún no tiene movimientos')
-          else
+          else ...[
             for (final item in f.activity.take(8))
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 9),
@@ -654,6 +671,21 @@ class _PulsoDashboardState extends ConsumerState<_PulsoDashboard> {
                   ],
                 ),
               ),
+            // pie de tabla con resumen (recetario §3.3)
+            Padding(
+              padding: const EdgeInsets.only(top: 9),
+              child: Text(
+                '${math.min(8, f.activity.length)} DE ${f.activity.length} '
+                'MOVIMIENTOS DE HOY',
+                style: TextStyle(
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.9,
+                  color: t.muted2,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -692,65 +724,67 @@ class _PulsoDashboardState extends ConsumerState<_PulsoDashboard> {
   static String _two(int n) => n.toString().padLeft(2, '0');
 }
 
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({
-    required this.number,
+class _MetricCell extends StatelessWidget {
+  const _MetricCell({
     required this.label,
     required this.value,
     required this.note,
-    required this.color,
+    required this.valueColor,
   });
 
-  final String number;
   final String label;
   final String value;
   final String note;
-  final Color color;
+  final Color valueColor;
 
   @override
   Widget build(BuildContext context) {
     final t = PulsoTokens.of(context);
-    return PulsoPanel(
-      padding: const EdgeInsets.all(13),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    // Celda de la banda: cifra display a la izquierda, etiqueta y nota al
+    // lado (recetario §3.2).
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Text(
-                number,
-                style: TextStyle(
-                  fontFamily: PulsoFonts.mono,
-                  fontSize: 9,
-                  color: color,
-                ),
-              ),
-              const Spacer(),
-              Container(width: 22, height: 3, color: color),
-            ],
-          ),
-          const SizedBox(height: 11),
-          PulsoLabel(label),
-          const SizedBox(height: 5),
           Text(
             value,
             style: TextStyle(
               fontFamily: PulsoFonts.display,
-              fontSize: 30,
+              fontSize: 29,
               height: 1,
-              fontWeight: FontWeight.w900,
-              color: t.chalk,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.8,
+              color: valueColor,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            note,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: PulsoFonts.mono,
-              fontSize: 9.5,
-              color: t.muted,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: t.chalkDim,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  note,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 9,
+                    color: t.muted2,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

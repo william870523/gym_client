@@ -12,6 +12,7 @@ import 'package:gym_client/src/features/financials/data/models/account_model.dar
 import 'package:gym_client/src/features/financials/data/models/currency_model.dart';
 import 'package:gym_client/src/features/financials/presentation/state/currency_notifier.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
+import 'package:gym_client/src/features/payments/data/models/payment_reversal_model.dart';
 import 'package:gym_client/src/features/payments/presentation/screens/payments_pulso_view.dart';
 import 'package:gym_client/src/features/payments/presentation/state/payment_notifier.dart';
 import 'package:gym_client/src/features/products/data/models/payment_plan_model.dart';
@@ -94,10 +95,16 @@ void main() {
     await tester.tap(find.text('ANULAR PAGO'));
     await tester.pumpAndSettle();
     expect(find.text('Anular pago'), findsOneWidget); // título del diálogo
+    await tester.enterText(
+      find.byKey(const ValueKey('payment-reversal-reason')),
+      'Cobro duplicado confirmado',
+    );
+    await tester.pump();
     await tester.tap(find.text('ANULAR PAGO').last);
     await tester.pumpAndSettle();
 
     expect(paymentNotifier.voided, ['payment-carlos']);
+    expect(paymentNotifier.reasons, ['Cobro duplicado confirmado']);
     expect(tester.takeException(), isNull);
   });
 
@@ -118,10 +125,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: list,
-        matching: find.text('Carlos Antonio Millán'),
-      ),
+      find.descendant(of: list, matching: find.text('Carlos Antonio Millán')),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -209,11 +213,17 @@ Widget _harness({_PaymentNotifier? paymentNotifier}) {
       ),
       trainerProvider.overrideWith(_TrainerNotifier.new),
       paymentTypesProvider.overrideWith(
-        (ref) async => [PaymentTypeModel(id: 'transfer', name: 'Transferencia')],
+        (ref) async => [
+          PaymentTypeModel(id: 'transfer', name: 'Transferencia'),
+        ],
       ),
       accountsProvider.overrideWith(
         (ref) async => [
-          AccountModel(id: 'account-mlc', name: 'Cuenta MLC', currencyId: 'mlc'),
+          AccountModel(
+            id: 'account-mlc',
+            name: 'Cuenta MLC',
+            currencyId: 'mlc',
+          ),
         ],
       ),
       exchangeRatesProvider.overrideWith((ref) async => const []),
@@ -226,6 +236,7 @@ class _PaymentNotifier extends PaymentNotifier {
   _PaymentNotifier(this.items);
   final List<PaymentModel> items;
   final voided = <String>[];
+  final reasons = <String>[];
 
   @override
   Future<List<PaymentModel>> build() async => items;
@@ -236,8 +247,22 @@ class _PaymentNotifier extends PaymentNotifier {
   }
 
   @override
-  Future<void> voidPayment(String id) async {
+  Future<PaymentReversalResult> voidPayment(
+    String id, {
+    required String reason,
+  }) async {
     voided.add(id);
+    reasons.add(reason);
+    return PaymentReversalResult(
+      reversalId: id,
+      paymentId: id,
+      reason: reason,
+      idempotent: false,
+      summary: const {
+        'membresias_pendientes': ['membership-1'],
+        'devengos_anulados': 1,
+      },
+    );
   }
 }
 

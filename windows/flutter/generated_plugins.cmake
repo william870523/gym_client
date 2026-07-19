@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   bitsdojo_window_windows
   camera_windows
   desktop_drop
+  printing
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

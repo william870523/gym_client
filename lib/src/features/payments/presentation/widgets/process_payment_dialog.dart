@@ -10,8 +10,6 @@ import '../../data/repositories/payment_repository.dart';
 import '../../../financials/data/models/account_model.dart';
 import '../../../configuration/data/models/payment_type_model.dart';
 import '../../../clients/data/models/client_model.dart';
-import '../../../clients/presentation/state/client_notifier.dart';
-
 import '../../../products/presentation/state/payment_plan_notifier.dart';
 import '../../../products/data/models/payment_plan_model.dart';
 
@@ -23,7 +21,7 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/widgets/app_flag.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
-import '../state/payment_notifier.dart';
+import '../state/payment_refresh_coordinator.dart';
 
 import 'payment_row_item.dart';
 
@@ -101,10 +99,17 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
         id: paymentId,
         ci: widget.client.id, // Assuming CI matches ID
         fecha: cleanDate,
-        amount: _totalPaid,
+        // El encabezado representa el precio aplicado al plan. Si recepción
+        // recibe efectivo de más, el excedente es cambio de caja, no ingreso.
+        amount:
+            widget.client.membershipBalanceDue != null &&
+                widget.client.membershipBalanceDue! > 0
+            ? widget.client.membershipBalanceDue!
+            : plan.importe,
         trainerId: widget.client.trainerId,
         planId: widget.planId,
         currencyId: plan.monedaId,
+        membershipId: widget.client.membershipId,
         isDeleted: false,
       );
 
@@ -124,8 +129,9 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       }).toList();
 
       await ref.read(paymentRepositoryProvider).createPayment(payment, details);
-      ref.invalidate(paymentNotifierProvider);
-      ref.invalidate(clientNotifierProvider);
+      await ref
+          .read(paymentRefreshCoordinatorProvider)
+          .afterSuccessfulPayment(widget.client.id);
 
       if (mounted) {
         Navigator.pop(context, true);
@@ -159,6 +165,14 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       }
     }
     return total;
+  }
+
+  double _amountDueFor(PaymentPlanModel plan) {
+    final balance = widget.client.membershipBalanceDue;
+    if (widget.client.membershipId != null && balance != null && balance > 0) {
+      return balance;
+    }
+    return plan.importe;
   }
 
   String get _planLabel {
@@ -405,7 +419,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const PulsoLabel('Total del plan'),
+                  const PulsoLabel('Total por cobrar'),
                   plansAsync.when(
                     data: (plans) {
                       final plan = plans.firstWhere(
@@ -457,7 +471,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${currency.symbol} ${plan.importe.toStringAsFixed(2)}',
+                                '${currency.symbol} ${_amountDueFor(plan).toStringAsFixed(2)}',
                                 style: TextStyle(
                                   fontFamily: PulsoFonts.display,
                                   fontSize: 26,
@@ -509,7 +523,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                   monedaId: '',
                 ),
               );
-              final total = plan.importe;
+              final total = _amountDueFor(plan);
               final progress = (total > 0)
                   ? (_totalPaid / total).clamp(0.0, 1.0)
                   : 0.0;
@@ -759,7 +773,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                       monedaId: '',
                     ),
                   );
-                  final remaining = plan.importe - _totalPaid;
+                  final remaining = _amountDueFor(plan) - _totalPaid;
                   final isPaid = remaining <= 0.01;
 
                   return Container(
@@ -820,7 +834,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                             planCurrency?.symbol?.trim().isNotEmpty == true
                             ? planCurrency!.symbol!.trim()
                             : '${planCurrency?.code ?? ''} ';
-                        final remaining = plan.importe - _totalPaid;
+                        final remaining = _amountDueFor(plan) - _totalPaid;
                         final isComplete = remaining <= 0.01;
                         final isOverpaid = remaining < -0.01;
 
@@ -965,7 +979,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
               monedaId: '',
             ),
           );
-          final remaining = math.max(0.0, plan.importe - _totalPaid);
+          final remaining = math.max(0.0, _amountDueFor(plan) - _totalPaid);
           final isComplete = remaining <= 0.01 && _paymentRows.isNotEmpty;
           final status = Column(
             crossAxisAlignment: CrossAxisAlignment.start,

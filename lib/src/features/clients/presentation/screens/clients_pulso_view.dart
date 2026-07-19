@@ -23,12 +23,28 @@ import '../state/client_notifier.dart';
 import '../state/weight_history_notifier.dart';
 import '../widgets/add_weight_pulso_dialog.dart';
 import '../widgets/client_form.dart';
+import '../widgets/client_record_dialog.dart';
+import '../widgets/membership_requests_dialog.dart';
 
 enum _ClientFilter { all, active, attention, inactive }
 
 enum _ClientSort { name, plan, validity }
 
-enum _MembershipState { active, expiring, expired, noPlan, inactive }
+typedef ClientPaymentFlow =
+    Future<bool?> Function(
+      BuildContext context,
+      ClientModel client,
+      String planId,
+    );
+
+enum _MembershipState {
+  active,
+  expiring,
+  expired,
+  pendingPayment,
+  noPlan,
+  inactive,
+}
 
 String _name(ClientModel client) {
   final value = '${client.nombres ?? ''} ${client.apellidos ?? ''}'.trim();
@@ -36,6 +52,9 @@ String _name(ClientModel client) {
 }
 
 _MembershipState _membership(ClientModel client, DateTime today) {
+  if (client.membershipStatus == 'PENDIENTE_PAGO') {
+    return _MembershipState.pendingPayment;
+  }
   if (!client.activo) return _MembershipState.inactive;
   if (client.planId == null ||
       client.planId!.isEmpty ||
@@ -58,11 +77,15 @@ String _membershipLabel(_MembershipState state) => switch (state) {
   _MembershipState.active => 'Vigente',
   _MembershipState.expiring => 'Por vencer',
   _MembershipState.expired => 'Vencida',
+  _MembershipState.pendingPayment => 'Pendiente de pago',
   _MembershipState.noPlan => 'Sin plan',
   _MembershipState.inactive => 'Inactivo',
 };
 
 String _nextAction(ClientModel client, _MembershipState state) {
+  if (state == _MembershipState.pendingPayment) {
+    return 'Cobrar plan seleccionado';
+  }
   if (state == _MembershipState.inactive) return 'Revisar estado del socio';
   if (state == _MembershipState.expired) return 'Renovar membresía';
   if (state == _MembershipState.expiring) return 'Preparar renovación';
@@ -76,7 +99,11 @@ String _nextAction(ClientModel client, _MembershipState state) {
 }
 
 class ClientsPulsoView extends ConsumerStatefulWidget {
-  const ClientsPulsoView({super.key});
+  const ClientsPulsoView({super.key, this.paymentFlow});
+
+  /// Punto de sustitución usado por pruebas de interacción. En producción se
+  /// abre [ProcessPaymentDialog].
+  final ClientPaymentFlow? paymentFlow;
 
   @override
   ConsumerState<ClientsPulsoView> createState() => _ClientsPulsoViewState();
@@ -117,6 +144,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
         _ClientFilter.attention =>
           state == _MembershipState.expiring ||
               state == _MembershipState.expired ||
+              state == _MembershipState.pendingPayment ||
               state == _MembershipState.noPlan,
         _ClientFilter.inactive => state == _MembershipState.inactive,
       };
@@ -153,10 +181,35 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   }
 
   Future<void> _openForm([ClientModel? client]) async {
-    await showDialog<void>(
+    final result = await showDialog<ClientFormResult>(
       context: context,
       barrierDismissible: false,
       builder: (context) => PulsoThemeScope(child: ClientForm(client: client)),
+    );
+    if (!mounted || result == null || !result.payNow) return;
+    final planId = result.client.planId;
+    if (planId == null || planId.isEmpty) return;
+
+    final paid = await _runPaymentFlow(result.client, planId);
+    if (paid == true && mounted) {
+      await ref.read(clientNotifierProvider.notifier).refresh();
+      ref.invalidate(clientPaymentHistoryProvider(result.client.id));
+    }
+  }
+
+  Future<void> _showMembershipRequests() => showDialog<void>(
+    context: context,
+    builder: (_) => const MembershipRequestsDialog(),
+  );
+
+  Future<bool?> _runPaymentFlow(ClientModel client, String planId) {
+    final customFlow = widget.paymentFlow;
+    if (customFlow != null) return customFlow(context, client, planId);
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) =>
+          ProcessPaymentDialog(client: client, planId: planId),
     );
   }
 
@@ -212,15 +265,25 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     if (saved == true) ref.invalidate(weightHistoryProvider(client.id));
   }
 
-  void _processPayment(ClientModel client) {
-    final planId = client.planId;
-    if (planId == null || planId.isEmpty) return;
+  void _showRecord(ClientModel client) {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (context) =>
-          ProcessPaymentDialog(client: client, planId: planId),
-    ).then((_) => ref.invalidate(clientPaymentHistoryProvider(client.id)));
+      builder: (_) => ClientRecordDialog(clientId: client.id),
+    );
+  }
+
+  Future<void> _processPayment(ClientModel client) async {
+    final planId = client.planId;
+    if (planId == null || planId.isEmpty) return;
+    final paid = await _runPaymentFlow(client, planId);
+    if (paid != true || !mounted) return;
+
+    // El diálogo productivo ya coordina el refresco global. Esta recarga en
+    // el punto de origen también protege flujos sustituidos/integrados y hace
+    // explícito que la tabla debe cambiar antes de devolver el control.
+    await ref.read(clientNotifierProvider.notifier).refresh();
+    ref.invalidate(clientPaymentHistoryProvider(client.id));
   }
 
   void _showDetail(
@@ -254,6 +317,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
                 _confirmDelete(client);
               },
               onWeight: () => _addWeight(client),
+              onRecord: () => _showRecord(client),
               onPayment: client.planId == null
                   ? null
                   : () => _processPayment(client),
@@ -315,6 +379,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     final attention = states.where((state) {
       return state == _MembershipState.expiring ||
           state == _MembershipState.expired ||
+          state == _MembershipState.pendingPayment ||
           state == _MembershipState.noPlan;
     }).length;
     ClientModel? selected;
@@ -376,6 +441,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
                   onEdit: _openForm,
                   onDelete: _confirmDelete,
                   onWeight: _addWeight,
+                  onRecord: _showRecord,
                   onPayment: _processPayment,
                 ),
         );
@@ -383,7 +449,10 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
           mainAxisSize: scrollPage ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _ClientHeader(onCreate: () => _openForm()),
+            _ClientHeader(
+              onCreate: () => _openForm(),
+              onRequests: _showMembershipRequests,
+            ),
             const SizedBox(height: 14),
             PulsoMetricStrip(
               metrics: [
@@ -446,8 +515,9 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
 }
 
 class _ClientHeader extends StatelessWidget {
-  const _ClientHeader({required this.onCreate});
+  const _ClientHeader({required this.onCreate, required this.onRequests});
   final VoidCallback onCreate;
+  final VoidCallback onRequests;
 
   @override
   Widget build(BuildContext context) {
@@ -478,22 +548,34 @@ class _ClientHeader extends StatelessWidget {
             ),
           ],
         );
-        final action = PulsoPrimaryButton(
-          label: 'Nuevo socio',
-          icon: Icons.person_add_alt_1_outlined,
-          onPressed: onCreate,
+        final actions = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            PulsoSecondaryButton(
+              label: 'Solicitudes',
+              icon: Icons.rule_folder_outlined,
+              onPressed: onRequests,
+            ),
+            PulsoPrimaryButton(
+              label: 'Nuevo socio',
+              icon: Icons.person_add_alt_1_outlined,
+              onPressed: onCreate,
+            ),
+          ],
         );
         return constraints.maxWidth < 680
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [copy, const SizedBox(height: 14), action],
+                children: [copy, const SizedBox(height: 14), actions],
               )
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(child: copy),
                   const SizedBox(width: 24),
-                  action,
+                  actions,
                 ],
               );
       },
@@ -634,6 +716,7 @@ class _ClientWorkspace extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onWeight,
+    required this.onRecord,
     required this.onPayment,
   });
   final List<ClientModel> items;
@@ -649,6 +732,7 @@ class _ClientWorkspace extends StatelessWidget {
   final ValueChanged<ClientModel> onEdit;
   final ValueChanged<ClientModel> onDelete;
   final ValueChanged<ClientModel> onWeight;
+  final ValueChanged<ClientModel> onRecord;
   final ValueChanged<ClientModel> onPayment;
 
   @override
@@ -693,6 +777,7 @@ class _ClientWorkspace extends StatelessWidget {
                       onEdit: () => onEdit(selected!),
                       onDelete: () => onDelete(selected!),
                       onWeight: () => onWeight(selected!),
+                      onRecord: () => onRecord(selected!),
                       onPayment: selected!.planId == null
                           ? null
                           : () => onPayment(selected!),
@@ -1045,6 +1130,7 @@ class _MembershipChip extends StatelessWidget {
       _MembershipState.active => (tokens.success, tokens.successSoft),
       _MembershipState.expiring => (tokens.warning, tokens.warningSoft),
       _MembershipState.expired => (tokens.danger, tokens.dangerSoft),
+      _MembershipState.pendingPayment => (tokens.warning, tokens.warningSoft),
       _MembershipState.noPlan => (tokens.warning, tokens.warningSoft),
       _MembershipState.inactive => (tokens.muted, tokens.raised2),
     };
@@ -1075,6 +1161,7 @@ class _ClientInsight extends ConsumerWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onWeight,
+    required this.onRecord,
     required this.onPayment,
   });
   final ClientModel client;
@@ -1084,6 +1171,7 @@ class _ClientInsight extends ConsumerWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onWeight;
+  final VoidCallback onRecord;
   final VoidCallback? onPayment;
 
   @override
@@ -1250,6 +1338,11 @@ class _ClientInsight extends ConsumerWidget {
                   label: 'Editar',
                   icon: Icons.edit_outlined,
                   onPressed: onEdit,
+                ),
+                PulsoSecondaryButton(
+                  label: 'Expediente',
+                  icon: Icons.folder_open_outlined,
+                  onPressed: onRecord,
                 ),
                 PulsoSecondaryButton(
                   label: 'Peso',

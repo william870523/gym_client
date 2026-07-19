@@ -26,6 +26,13 @@ import '../state/client_notifier.dart';
 import '../state/weight_history_notifier.dart';
 import 'add_weight_modal.dart';
 
+class ClientFormResult {
+  const ClientFormResult({required this.client, required this.payNow});
+
+  final ClientModel client;
+  final bool payNow;
+}
+
 class ClientForm extends ConsumerStatefulWidget {
   final ClientModel? client;
 
@@ -224,7 +231,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     });
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool payNow = false}) async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -273,13 +280,20 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         scheduleId: _horarioId,
       );
 
-      if (widget.client == null) {
-        await ref.read(clientNotifierProvider.notifier).createClient(client);
-      } else {
-        await ref.read(clientNotifierProvider.notifier).updateClient(client);
-      }
+      final saved = widget.client == null
+          ? await ref.read(clientNotifierProvider.notifier).createClient(client)
+          : await ref
+                .read(clientNotifierProvider.notifier)
+                .updateClient(client);
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop(
+          ClientFormResult(
+            client: saved,
+            payNow: widget.client == null && payNow,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -638,7 +652,9 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _submit,
+                          onPressed: _isLoading
+                              ? null
+                              : () => _submit(payNow: false),
                           icon: _isLoading
                               ? SizedBox(
                                   width: 20,
@@ -650,7 +666,11 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                 )
                               : const Icon(Icons.save),
                           label: Text(
-                            _isLoading ? 'Guardando...' : 'Guardar Cliente',
+                            _isLoading
+                                ? 'Guardando...'
+                                : widget.client == null
+                                ? 'Guardar'
+                                : 'Guardar cambios',
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryColor,
@@ -665,6 +685,28 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                             elevation: 2,
                           ),
                         ),
+                        if (widget.client == null && _planId != null) ...[
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () => _submit(payNow: true),
+                            icon: const Icon(Icons.payments_outlined),
+                            label: const Text('Guardar y cobrar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              foregroundColor: palette.accentInk,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              elevation: 2,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

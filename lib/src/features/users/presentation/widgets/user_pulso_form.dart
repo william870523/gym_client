@@ -46,7 +46,11 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
   bool get _hasSpecial =>
       _passwordController.text.contains(RegExp(r'[!@#\$&*~]'));
   bool get _passwordOk =>
-      _hasMinLength && _hasUppercase && _hasLowercase && _hasDigit && _hasSpecial;
+      _hasMinLength &&
+      _hasUppercase &&
+      _hasLowercase &&
+      _hasDigit &&
+      _hasSpecial;
 
   @override
   void initState() {
@@ -76,6 +80,7 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
   String _roleLabel(String role) => switch (role) {
     'admin' => 'Administrador',
     'reception' => 'Recepción',
+    'accounting' => 'Contabilidad / Control',
     'trainer' => 'Entrenador',
     'maintenance' => 'Mantenimiento',
     _ => role,
@@ -256,8 +261,7 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
                                 labelText: 'Correo corporativo',
                                 hintText: 'usuario@gimnasio.com',
                               ),
-                              validator: (value) =>
-                                  (value ?? '').trim().isEmpty
+                              validator: (value) => (value ?? '').trim().isEmpty
                                   ? 'Campo obligatorio.'
                                   : null,
                             ),
@@ -275,6 +279,7 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
                                 for (final role in const [
                                   'admin',
                                   'reception',
+                                  'accounting',
                                   'trainer',
                                   'maintenance',
                                 ])
@@ -467,7 +472,10 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
         _CriteriaRow(label: 'Una letra mayúscula', met: _hasUppercase),
         _CriteriaRow(label: 'Una letra minúscula', met: _hasLowercase),
         _CriteriaRow(label: 'Un número', met: _hasDigit),
-        _CriteriaRow(label: r'Un carácter especial (!@#$&*~)', met: _hasSpecial),
+        _CriteriaRow(
+          label: r'Un carácter especial (!@#$&*~)',
+          met: _hasSpecial,
+        ),
       ],
     );
   }

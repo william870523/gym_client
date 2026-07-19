@@ -21,6 +21,7 @@ String _roleLabel(User user) {
     'admin' || 'administrador' => 'Administrador',
     'trainer' || 'entrenador' => 'Entrenador',
     'reception' || 'recepcion' || 'recepción' => 'Recepción',
+    'accounting' || 'contabilidad' => 'Contabilidad / Control',
     'maintenance' || 'mantenimiento' => 'Mantenimiento',
     _ => user.role.isEmpty ? 'Sin rol' : user.role,
   };

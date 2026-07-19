@@ -23,6 +23,9 @@ class PaymentModel {
   @JsonKey(name: 'moneda_id')
   final String currencyId;
 
+  @JsonKey(name: 'membresia_id')
+  final String? membershipId;
+
   @JsonKey(name: 'is_deleted')
   final bool isDeleted;
 
@@ -44,6 +47,7 @@ class PaymentModel {
     this.trainerId,
     required this.planId,
     required this.currencyId,
+    this.membershipId,
     this.isDeleted = false,
     this.version = 1,
     this.details,

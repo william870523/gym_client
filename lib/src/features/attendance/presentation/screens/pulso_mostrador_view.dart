@@ -14,6 +14,7 @@ import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../clients/data/models/client_model.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
 import '../../../clients/presentation/widgets/client_form.dart';
+import '../../../payments/presentation/state/payment_notifier.dart';
 import '../../../payments/presentation/widgets/process_payment_dialog.dart';
 import '../../../schedules/data/models/horario_model.dart';
 import '../../../schedules/presentation/state/horario_notifier.dart';
@@ -257,7 +258,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     final inks = _MostradorInks.fromContext(context);
     final bar = switch (kind) {
       _ToastKind.ok => inks.verde,
-      _ToastKind.bad => p.verm,
+      _ToastKind.bad => p.danger,
       _ToastKind.info => inks.ocre,
     };
     ScaffoldMessenger.of(context)
@@ -303,6 +304,21 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     final clients = ref.watch(clientNotifierProvider).value ?? const [];
     final attendance = ref.watch(attendanceNotifierProvider).value ?? const [];
     final horarios = ref.watch(horarioNotifierProvider).value ?? const [];
+    final payments = ref.watch(paymentNotifierProvider).value ?? const [];
+
+    // Cobros de hoy en la zona del gimnasio (los instantes viven en UTC).
+    final todayWall = _gymNow();
+    bool sameGymDay(DateTime instant) {
+      final wall = toGymWallClock(instant.toUtc(), appClock.gymTimezone);
+      return wall.year == todayWall.year &&
+          wall.month == todayWall.month &&
+          wall.day == todayWall.day;
+    }
+
+    final paymentsToday = payments
+        .where((pay) => !pay.isDeleted && sameGymDay(pay.fecha))
+        .toList();
+    final monedasHoy = paymentsToday.map((pay) => pay.currencyId).toSet().length;
 
     final byCi = {for (final c in clients) c.id: c};
     final horariosById = {for (final h in horarios) h.id: h};
@@ -354,6 +370,8 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                   const SizedBox(height: 18),
                   _buildTitle(p),
                   const SizedBox(height: 14),
+                  _buildMetrics(p, inks, facts, paymentsToday.length, monedasHoy),
+                  const SizedBox(height: 14),
                   _buildSearch(p, inks, clients, facts),
                   const SizedBox(height: 18),
                 ];
@@ -395,37 +413,173 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
   }
 
   Widget _buildTitle(_MostradorPalette p) {
+    // Cabecera de página del mockup v3: eyebrow (guion en acento + mono en
+    // mayúsculas) sobre el H1 display con una palabra en acento.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            Container(width: 26, height: 2, color: p.verm),
+            const SizedBox(width: 9),
+            Flexible(
+              child: Text(
+                _dateLine().toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.3,
+                  color: p.ink3,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Text.rich(
           TextSpan(
-            text: 'MOSTRADOR',
+            text: 'CONTROL DE ',
             children: [
               TextSpan(
-                text: '.',
+                text: 'PISO',
                 style: TextStyle(color: p.verm),
               ),
             ],
           ),
           style: TextStyle(
             fontFamily: PulsoFonts.display,
-            fontSize: 46,
-            height: 0.95,
-            letterSpacing: -1.0,
+            fontSize: 52,
+            height: 0.86,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.8,
             color: p.ink,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          _dateLine(),
-          style: TextStyle(
-            fontFamily: PulsoFonts.mono,
-            fontSize: 13,
-            color: p.ink2,
-          ),
-        ),
       ],
+    );
+  }
+
+  Widget _buildMetrics(
+    _MostradorPalette p,
+    _MostradorInks inks,
+    _MostradorFacts f,
+    int cobrosHoy,
+    int monedasHoy,
+  ) {
+    // Banda de métricas del turno: un solo marco con divisores internos
+    // (PULSO_RECETARIO_VISUAL.md §3.2).
+    final accesosHoy = f.inside.length + f.history.length;
+    final atencion = f.dueList.length;
+    final paused = f.inside.where((s) => s.attendance.isPaused).length;
+    final cells = [
+      (
+        '${f.inside.length}',
+        'EN SALA',
+        paused > 0 ? '$paused en pausa' : 'ahora mismo',
+        p.verm,
+      ),
+      (
+        '$accesosHoy',
+        'ACCESOS HOY',
+        '${f.history.length} salidas',
+        p.ink,
+      ),
+      (
+        '$cobrosHoy',
+        'COBROS HOY',
+        monedasHoy > 0
+            ? '$monedasHoy moneda${monedasHoy == 1 ? '' : 's'}'
+            : 'sin cobros aún',
+        p.ink,
+      ),
+      (
+        '$atencion',
+        'REQUIEREN ATENCIÓN',
+        'vencen en ≤7 días',
+        atencion > 0 ? p.danger : p.ink,
+      ),
+    ];
+    Widget cell((String, String, String, Color) it) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+      child: Row(
+        children: [
+          Text(
+            it.$1,
+            style: TextStyle(
+              fontFamily: PulsoFonts.display,
+              fontSize: 27,
+              height: 1,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.8,
+              color: it.$4,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  it.$2,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: p.ink2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  it.$3,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 9,
+                    color: p.ink4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 600;
+        final row = IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) Container(width: 1, color: p.rule),
+                if (narrow)
+                  SizedBox(width: 152, child: cell(cells[i]))
+                else
+                  Expanded(child: cell(cells[i])),
+              ],
+            ],
+          ),
+        );
+        return Container(
+          decoration: BoxDecoration(
+            color: p.paper2.withValues(alpha: 0.45),
+            border: Border.all(color: p.rule),
+          ),
+          child: narrow
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: row,
+                )
+              : row,
+        );
+      },
     );
   }
 
@@ -591,6 +745,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
   ) {
     final queue = _buildQueuePanel(p, inks, f);
     final aforo = _buildAforoPanel(p, inks, f, byCi);
+    final memberships = _buildMembershipPanel(p, f);
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -600,17 +755,29 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
             children: [
               Expanded(flex: 27, child: queue),
               const SizedBox(width: 14),
-              Expanded(flex: 20, child: aforo),
+              Expanded(
+                flex: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 12, child: aforo),
+                    const SizedBox(height: 14),
+                    Expanded(flex: 7, child: memberships),
+                  ],
+                ),
+              ),
             ],
           );
         }
-        // En estrecho: cada panel ocupa la mitad del alto y scrollea solo.
+        // En estrecho: las tres unidades conservan su propio panel y scroll.
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: queue),
             const SizedBox(height: 14),
             Expanded(child: aforo),
+            const SizedBox(height: 14),
+            Expanded(child: memberships),
           ],
         );
       },
@@ -643,7 +810,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
           ),
           Expanded(
             child: f.queue.isEmpty
-                ? _emptyBlock(p, 'no hay socios pendientes de entrada ¶')
+                ? _emptyBlock(p, 'no hay socios pendientes de entrada')
                 : Scrollbar(
                     controller: _queueScroll,
                     thumbVisibility: true,
@@ -672,15 +839,19 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       _EtaLevel.far => p.ink3,
       _EtaLevel.soon => inks.ocre,
       _EtaLevel.now => p.verm,
-      _EtaLevel.late => p.verm,
+      _EtaLevel.late => p.danger,
     };
     final due = q.action != 'entrar';
     final urgent = eta.level == _EtaLevel.now || eta.level == _EtaLevel.late;
-    final leftColor = due || urgent ? p.verm : Colors.transparent;
-    final bg = due ? p.vermSoft : Colors.transparent;
+    final leftColor = due
+        ? p.danger
+        : urgent
+        ? p.verm
+        : Colors.transparent;
+    final bg = due ? p.dangerSoft : Colors.transparent;
 
     final (String actLabel, Color actColor) = switch (q.action) {
-      'cobrar' => ('COBRAR', p.verm),
+      'cobrar' => ('COBRAR', p.danger),
       'plan' => ('PLAN', p.ink2),
       _ => ('ENTRADA', inks.verde),
     };
@@ -758,7 +929,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                     fontFamily: PulsoFonts.mono,
                     fontSize: 9.5,
                     letterSpacing: 0.4,
-                    color: eta.level == _EtaLevel.late ? p.verm : p.ink3,
+                    color: eta.level == _EtaLevel.late ? p.danger : p.ink3,
                   ),
                 ),
               ],
@@ -775,6 +946,14 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     );
   }
 
+  TextStyle _columnHeadStyle(_MostradorPalette p) => TextStyle(
+    fontFamily: PulsoFonts.mono,
+    fontSize: 8.5,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 1.1,
+    color: p.ink4,
+  );
+
   Widget _buildAforoPanel(
     _MostradorPalette p,
     _MostradorInks inks,
@@ -787,30 +966,44 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // cabecera con tabs + contador
+          // cabecera con tabs segmentadas + contador
           Container(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 9),
             decoration: BoxDecoration(
               color: p.paper2,
-              border: Border(bottom: BorderSide(color: p.ruleStrong, width: 2)),
+              border: Border(bottom: BorderSide(color: p.rule)),
             ),
             child: Wrap(
               spacing: 20,
               runSpacing: 8,
               alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _AforoTabButton(
-                  p: p,
-                  label: 'DENTRO AHORA',
-                  active: _tab == _AforoTab.dentro,
-                  onTap: () => setState(() => _tab = _AforoTab.dentro),
-                ),
-                _AforoTabButton(
-                  p: p,
-                  label: 'HISTORIAL',
-                  active: _tab == _AforoTab.historial,
-                  onTap: () => setState(() => _tab = _AforoTab.historial),
+                // grupo segmentado enmarcado (recetario §3.8)
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: p.paper,
+                    border: Border.all(color: p.rule),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _AforoTabButton(
+                        p: p,
+                        label: 'DENTRO AHORA',
+                        active: _tab == _AforoTab.dentro,
+                        onTap: () => setState(() => _tab = _AforoTab.dentro),
+                      ),
+                      const SizedBox(width: 3),
+                      _AforoTabButton(
+                        p: p,
+                        label: 'HISTORIAL',
+                        active: _tab == _AforoTab.historial,
+                        onTap: () => setState(() => _tab = _AforoTab.historial),
+                      ),
+                    ],
+                  ),
                 ),
                 Text.rich(
                   TextSpan(
@@ -837,14 +1030,34 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
             ),
           ),
 
+          // cabecera de columnas (recetario §3.3)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: p.paper2,
+              border: Border(bottom: BorderSide(color: p.rule)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('SOCIO', style: _columnHeadStyle(p)),
+                ),
+                Text(
+                  _tab == _AforoTab.dentro ? 'TIEMPO · ACCIONES' : 'DURACIÓN',
+                  style: _columnHeadStyle(p),
+                ),
+              ],
+            ),
+          ),
+
           // alerta de tiempo cumplido
           if (_tab == _AforoTab.dentro && f.overLimit > 0)
             Container(
               margin: const EdgeInsets.only(top: 10),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: p.vermSoft,
-                border: Border(left: BorderSide(color: p.verm, width: 3)),
+                color: p.dangerSoft,
+                border: Border(left: BorderSide(color: p.danger, width: 3)),
               ),
               child: Text(
                 '${f.overLimit} ${f.overLimit == 1 ? 'socio pasó' : 'socios pasaron'} '
@@ -853,14 +1066,14 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.3,
-                  color: p.verm,
+                  color: p.danger,
                 ),
               ),
             ),
 
           const SizedBox(height: 2),
 
-          // Cuerpo scrolleable: lista de dentro/historial + alertas por vencer.
+          // Cuerpo scrolleable exclusivo de dentro/historial.
           Expanded(
             child: Scrollbar(
               controller: _aforoScroll,
@@ -873,18 +1086,55 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                   children: [
                     if (_tab == _AforoTab.dentro)
                       if (f.inside.isEmpty)
-                        _emptyBlock(p, 'nadie dentro en este momento ¶')
+                        _emptyBlock(p, 'nadie dentro en este momento')
                       else
                         for (final s in f.inside) _buildInsideRow(p, inks, s)
                     else if (f.history.isEmpty)
-                      _emptyBlock(p, 'sin salidas registradas hoy ¶')
+                      _emptyBlock(p, 'sin salidas registradas hoy')
                     else
                       for (final h in f.history) _buildHistoryRow(p, h),
-                    const SizedBox(height: 30),
-                    _buildAlerts(p, f),
                   ],
                 ),
               ),
+            ),
+          ),
+
+          // pie de tabla con resumen (recetario §3.3)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: p.paper2,
+              border: Border(top: BorderSide(color: p.rule)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${f.inside.length} EN SALA · '
+                    '${f.history.length} SALIDAS HOY',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: PulsoFonts.mono,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.9,
+                      color: p.ink4,
+                    ),
+                  ),
+                ),
+                if (f.overLimit > 0)
+                  Text(
+                    '${f.overLimit} TIEMPO CUMPLIDO',
+                    style: TextStyle(
+                      fontFamily: PulsoFonts.mono,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.9,
+                      color: p.danger,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -900,7 +1150,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     final Color tmrColor = switch (s.stayLevel) {
       _StayLevel.ok => p.ink,
       _StayLevel.soon => inks.ocre,
-      _StayLevel.over => p.verm,
+      _StayLevel.over => p.danger,
     };
     final paused = s.attendance.isPaused;
 
@@ -912,7 +1162,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
             bottom: BorderSide(color: p.rule),
             left: BorderSide(
               color: s.stayLevel == _StayLevel.over
-                  ? p.verm
+                  ? p.danger
                   : Colors.transparent,
               width: 3,
             ),
@@ -947,7 +1197,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                       color: paused
                           ? inks.ocre
                           : s.stayLevel == _StayLevel.over
-                          ? p.verm
+                          ? p.danger
                           : p.ink3,
                     ),
                   ),
@@ -1060,88 +1310,111 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     );
   }
 
-  Widget _buildAlerts(_MostradorPalette p, _MostradorFacts f) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: p.ruleStrong, width: 2)),
-          ),
-          child: Row(
-            children: [
-              Container(width: 8, height: 8, color: p.verm),
-              const SizedBox(width: 8),
-              Text(
-                'MEMBRESÍAS POR VENCER',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2.0,
-                  color: p.ink3,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (f.dueList.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'todos al día ✓',
-              style: TextStyle(
-                fontFamily: PulsoFonts.mono,
-                fontSize: 12,
-                color: p.ink3,
-              ),
+  Widget _buildMembershipPanel(_MostradorPalette p, _MostradorFacts f) {
+    return PulsoPanel(
+      key: const ValueKey('pulso-memberships-panel'),
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            decoration: BoxDecoration(
+              color: p.paper2,
+              border: Border(bottom: BorderSide(color: p.rule)),
             ),
-          )
-        else
-          for (final d in f.dueList.take(6))
-            Container(
-              key: ValueKey('membership-due-${d.client.id}'),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: p.rule, style: BorderStyle.solid),
+            child: Row(
+              children: [
+                Container(width: 8, height: 8, color: p.danger),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'MEMBRESÍAS POR VENCER',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: PulsoFonts.mono,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.6,
+                      color: p.ink3,
+                    ),
+                  ),
                 ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: Text(
-                      d.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: p.ink,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Divider(height: 1, color: p.ink4),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
+                if (f.dueList.isNotEmpty)
                   Text(
-                    d.whenLabel,
+                    '${f.dueList.length}',
                     style: TextStyle(
                       fontFamily: PulsoFonts.mono,
                       fontSize: 12,
-                      color: p.verm,
+                      fontWeight: FontWeight.w600,
+                      color: p.danger,
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
-      ],
+          ),
+          Expanded(
+            child: f.dueList.isEmpty
+                ? Center(
+                    child: Text(
+                      'todos al día ✓',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.mono,
+                        fontSize: 12,
+                        color: p.ink3,
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (final d in f.dueList.take(12))
+                        Container(
+                          key: ValueKey('membership-due-${d.client.id}'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: p.rule,
+                                style: BorderStyle.solid,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  d.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: p.ink,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                d.whenLabel,
+                                style: TextStyle(
+                                  fontFamily: PulsoFonts.mono,
+                                  fontSize: 12,
+                                  color: p.danger,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1162,7 +1435,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     return Container(
       padding: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: p.ruleStrong, width: 3)),
+        border: Border(top: BorderSide(color: p.rule)),
       ),
       child: Wrap(
         alignment: WrapAlignment.spaceBetween,
@@ -1173,7 +1446,8 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
             children: [
               sw(p.ink3, 'lejos'),
               sw(inks.ocre, '≤20 min / por salir'),
-              sw(p.verm, 'su turno / tiempo cumplido'),
+              sw(p.verm, 'su turno'),
+              sw(p.danger, 'tarde / tiempo cumplido / cobrar'),
               sw(inks.verde, 'entrada'),
             ],
           ),
@@ -1193,7 +1467,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     return Container(
       padding: const EdgeInsets.only(bottom: 7),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: p.ruleStrong, width: 2)),
+        border: Border(bottom: BorderSide(color: p.rule)),
       ),
       child: Row(
         children: [
@@ -1202,8 +1476,9 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
           Text(
             title,
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
+              fontFamily: PulsoFonts.mono,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
               letterSpacing: 1.6,
               color: p.ink2,
             ),
@@ -1216,8 +1491,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontFamily: PulsoFonts.mono,
-                fontSize: 11,
-                fontStyle: FontStyle.italic,
+                fontSize: 10,
                 color: p.ink3,
               ),
             ),
@@ -1232,11 +1506,11 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       padding: const EdgeInsets.symmetric(vertical: 40),
       alignment: Alignment.center,
       child: Text(
-        msg,
+        msg.toUpperCase(),
         style: TextStyle(
           fontFamily: PulsoFonts.mono,
-          fontSize: 13,
-          fontStyle: FontStyle.italic,
+          fontSize: 10,
+          letterSpacing: 1.2,
           color: p.ink3,
         ),
       ),
@@ -1750,7 +2024,10 @@ class _MiniButtonState extends State<_MiniButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
           decoration: BoxDecoration(
-            border: Border.all(color: _hover ? hi : p.ruleStrong, width: 1.5),
+            color: _hover && widget.accent == null
+                ? p.accentSoft
+                : Colors.transparent,
+            border: Border.all(color: _hover ? hi : p.rule),
           ),
           child: Text(
             widget.label,
@@ -1781,13 +2058,16 @@ class _AforoTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Segmento del grupo enmarcado (recetario §3.8): la activa lleva fondo
+    // accentSoft y subrayado interior de 2 px en acento.
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.only(bottom: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
           decoration: BoxDecoration(
+            color: active ? p.accentSoft : Colors.transparent,
             border: Border(
               bottom: BorderSide(
                 color: active ? p.verm : Colors.transparent,
@@ -1798,9 +2078,10 @@ class _AforoTabButton extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
+              fontFamily: PulsoFonts.mono,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
               color: active ? p.verm : p.ink3,
             ),
           ),
@@ -1840,7 +2121,7 @@ class _SuggestRowState extends State<_SuggestRow> {
   Widget build(BuildContext context) {
     final p = widget.p;
     final (String label, Color color) = switch (widget.action) {
-      'cobrar' => ('COBRAR', p.verm),
+      'cobrar' => ('COBRAR', p.danger),
       'plan' => ('PLAN', p.ink3),
       'salida' => ('SALIDA', widget.inks.azul),
       _ => ('ENTRADA', widget.inks.verde),
@@ -2026,6 +2307,9 @@ class _MostradorPalette {
     required this.ruleStrong,
     required this.verm,
     required this.vermSoft,
+    required this.accentSoft,
+    required this.danger,
+    required this.dangerSoft,
   });
 
   factory _MostradorPalette.fromContext(BuildContext context) {
@@ -2042,8 +2326,13 @@ class _MostradorPalette {
       ink4: tokens.muted2,
       rule: tokens.line,
       ruleStrong: tokens.lineStrong,
+      // `verm` es el acento de marca: foco, selección, tab activa.
+      // Vencido/bloqueado/error usan `danger`; nunca el acento.
       verm: tokens.accent,
-      vermSoft: tokens.dangerSoft,
+      vermSoft: tokens.accentSoft,
+      accentSoft: tokens.accentSoft,
+      danger: tokens.danger,
+      dangerSoft: tokens.dangerSoft,
     );
   }
 
@@ -2057,6 +2346,9 @@ class _MostradorPalette {
   final Color ruleStrong;
   final Color verm;
   final Color vermSoft;
+  final Color accentSoft;
+  final Color danger;
+  final Color dangerSoft;
 }
 
 class _MostradorInks {

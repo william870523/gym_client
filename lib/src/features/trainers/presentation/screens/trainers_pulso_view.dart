@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/base64_image.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
+import '../../../payments/presentation/state/payment_notifier.dart';
 import '../../data/models/trainer_model.dart';
+import '../../data/models/trainer_offboarding_impact.dart';
+import '../../data/models/trainer_offboarding_case.dart';
+import '../../data/repositories/trainer_repository.dart';
 import '../providers/trainer_notifier.dart';
+import '../widgets/trainer_offboarding_case_dialog.dart';
 import '../widgets/trainer_pulso_form.dart';
 
 enum _TrainerFilter { all, active, inactive }
@@ -158,18 +164,34 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
   }
 
   Future<void> _confirmDelete(TrainerModel trainer, _TrainerStats stats) async {
-    final tokens = PulsoTokens.of(context);
-    final count = stats.of(trainer);
+    TrainerOffboardingImpact impact;
+    try {
+      impact = await ref
+          .read(trainerRepositoryProvider)
+          .getOffboardingImpact(trainer.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text('No se pudo analizar la baja: $error'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (!impact.canDeleteDirectly) {
+      await _showOffboardingImpact(impact);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => PulsoThemeScope(
         child: AlertDialog(
-          title: const Text('Eliminar entrenador'),
+          title: const Text('Confirmar baja sin impacto'),
           content: Text(
-            stats.ready && count > 0
-                ? 'Se eliminará a “${_fullName(trainer)}”. Hay $count socio${count == 1 ? '' : 's'} '
-                      'asignado${count == 1 ? '' : 's'} a este entrenador; sus expedientes no se modifican.'
-                : 'Se eliminará a “${_fullName(trainer)}” (CI ${trainer.ci}) del registro.',
+            'No existen membresías, perfiles vigentes ni saldos por resolver. '
+            '“${_fullName(trainer)}” quedará inactivo y su historia se conservará.',
           ),
           actions: [
             PulsoSecondaryButton(
@@ -177,7 +199,7 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
               onPressed: () => Navigator.of(context).pop(false),
             ),
             PulsoSecondaryButton(
-              label: 'Eliminar',
+              label: 'Confirmar baja',
               danger: true,
               onPressed: () => Navigator.of(context).pop(true),
             ),
@@ -191,17 +213,241 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
       if (!mounted) return;
       if (_selectedId == trainer.id) setState(() => _selectedId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('“${_fullName(trainer)}” fue eliminado.')),
+        SnackBar(content: Text('“${_fullName(trainer)}” quedó de baja.')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: tokens.danger,
+          backgroundColor: Theme.of(context).colorScheme.error,
           content: Text('No se pudo eliminar: $error'),
         ),
       );
     }
+  }
+
+  Future<void> _showOffboardingImpact(TrainerOffboardingImpact impact) async {
+    final openCase = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => PulsoThemeScope(
+        child: Builder(
+          builder: (context) {
+            final tokens = PulsoTokens.of(context);
+            final compactDialog = MediaQuery.sizeOf(context).width < 700;
+            final availableHeight = (MediaQuery.sizeOf(context).height - 220)
+                .clamp(380.0, 620.0);
+            return AlertDialog(
+              title: const Text('Preparar baja de entrenador'),
+              content: SizedBox(
+                width: 760,
+                height: availableHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      color: tokens.warningSoft,
+                      child: Text(
+                        'La baja no se ejecutó. Primero hay que resolver ${impact.memberships.length} membresía${impact.memberships.length == 1 ? '' : 's'}, ${impact.activeProfiles} perfil${impact.activeProfiles == 1 ? '' : 'es'} vigente${impact.activeProfiles == 1 ? '' : 's'} y los saldos mostrados por moneda.',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const PulsoLabel('Impacto financiero'),
+                    const SizedBox(height: 8),
+                    if (impact.finances.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: Text(
+                          'Sin compromisos financieros registrados.',
+                          style: TextStyle(color: tokens.muted),
+                        ),
+                      )
+                    else
+                      SizedBox(
+                        height: compactDialog ? 96 : 250,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: impact.finances.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) => compactDialog
+                              ? _OffboardingFinanceCompactCard(
+                                  item: impact.finances[index],
+                                )
+                              : _OffboardingFinanceCard(
+                                  item: impact.finances[index],
+                                ),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: PulsoLabel('Membresías afectadas'),
+                        ),
+                        Text(
+                          '${impact.memberships.length}',
+                          style: TextStyle(
+                            color: tokens.accent,
+                            fontFamily: PulsoFonts.mono,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _OffboardingImpactTable(items: impact.memberships),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                PulsoSecondaryButton(
+                  label: 'Cerrar',
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                PulsoPrimaryButton(
+                  label: 'Abrir expediente',
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    if (openCase == true && mounted) await _openOffboardingCase(impact);
+  }
+
+  Future<void> _openOffboardingCase(TrainerOffboardingImpact impact) async {
+    final repository = ref.read(trainerRepositoryProvider);
+    TrainerOffboardingCase? offboardingCase;
+    try {
+      offboardingCase = await repository.getOpenOffboardingCase(
+        impact.trainerId,
+      );
+      if (offboardingCase == null) {
+        if (!mounted) return;
+        final draft = await showDialog<_NewOffboardingCaseInput>(
+          context: context,
+          builder: (context) => PulsoThemeScope(
+            child: _CreateOffboardingCaseDialog(
+              trainerName: impact.trainerName,
+              businessDate: impact.businessDate,
+            ),
+          ),
+        );
+        if (draft == null || !mounted) return;
+        offboardingCase = await repository.createOffboardingCase(
+          trainerId: impact.trainerId,
+          effectiveDate: draft.effectiveDate,
+          reason: draft.reason,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text('No se pudo abrir el expediente: $error'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final caseToShow = offboardingCase;
+    final executionOperationId = const Uuid().v4();
+    final trainers = ref.read(trainerProvider).value ?? const <TrainerModel>[];
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PulsoThemeScope(
+        child: TrainerOffboardingCaseDialog(
+          initialCase: caseToShow,
+          availableTrainers: trainers,
+          onUpdate:
+              ({required decision, required type, targetTrainerId, reason}) =>
+                  repository.updateOffboardingDecision(
+                    trainerId: impact.trainerId,
+                    caseId: caseToShow.id,
+                    membershipId: decision.membershipId,
+                    type: type,
+                    targetTrainerId: targetTrainerId,
+                    reason: reason,
+                  ),
+          onExecute: () async {
+            final updated = await repository.executeOffboardingCase(
+              trainerId: impact.trainerId,
+              caseId: caseToShow.id,
+              operationId: executionOperationId,
+            );
+            ref.invalidate(trainerProvider);
+            ref.invalidate(clientNotifierProvider);
+            return updated;
+          },
+          onPreviewFinancial: ({required decision, type, destinationPlanId}) =>
+              repository.previewOffboardingFinancial(
+                trainerId: impact.trainerId,
+                caseId: caseToShow.id,
+                membershipId: decision.membershipId,
+                type: type,
+                destinationPlanId: destinationPlanId,
+              ),
+          onResolveFinancial:
+              ({
+                required decision,
+                required type,
+                destinationPlanId,
+                targetTrainerId,
+                required reason,
+              }) async {
+                final updated = await repository.resolveOffboardingFinancial(
+                  trainerId: impact.trainerId,
+                  caseId: caseToShow.id,
+                  membershipId: decision.membershipId,
+                  type: type,
+                  destinationPlanId: destinationPlanId,
+                  targetTrainerId: targetTrainerId,
+                  reason: reason,
+                );
+                ref.invalidate(clientNotifierProvider);
+                ref.invalidate(paymentNotifierProvider);
+                return updated;
+              },
+          onPreviewFinalSettlement: () => repository.previewFinalSettlement(
+            trainerId: impact.trainerId,
+            caseId: caseToShow.id,
+          ),
+          onCreateFinalSettlement:
+              ({
+                required currencyId,
+                required accountId,
+                required paymentTypeId,
+                notes,
+              }) async {
+                final result = await repository.createFinalSettlement(
+                  trainerId: impact.trainerId,
+                  caseId: caseToShow.id,
+                  currencyId: currencyId,
+                  accountId: accountId,
+                  paymentTypeId: paymentTypeId,
+                  notes: notes,
+                );
+                ref.invalidate(trainerProvider);
+                return result;
+              },
+          onCloseFinalSettlement: () async {
+            final result = await repository.closeFinalSettlement(
+              trainerId: impact.trainerId,
+              caseId: caseToShow.id,
+            );
+            ref.invalidate(trainerProvider);
+            return result;
+          },
+        ),
+      ),
+    );
   }
 
   _TrainerStats _buildStats(List<TrainerModel> all) {
@@ -843,6 +1089,398 @@ class _SortButton extends StatelessWidget {
   }
 }
 
+class _OffboardingFinanceCard extends StatelessWidget {
+  const _OffboardingFinanceCard({required this.item});
+  final TrainerOffboardingFinanceImpact item;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Container(
+      width: 222,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(border: Border.all(color: tokens.lineStrong)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: PulsoLabel(item.currencyCode)),
+              Text(
+                (item.pendingCommission + item.pendingFixed).toStringAsFixed(2),
+                style: TextStyle(
+                  color: tokens.warning,
+                  fontFamily: PulsoFonts.mono,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          _OffboardingMoneyLine(
+            label: 'Comisión ganada',
+            value: item.earnedCommission,
+          ),
+          _OffboardingMoneyLine(
+            label: 'Comisión pagada',
+            value: item.paidCommission,
+          ),
+          _OffboardingMoneyLine(
+            label: 'Comisión pendiente',
+            value: item.pendingCommission,
+            warning: true,
+          ),
+          _OffboardingMoneyLine(
+            label: 'Comisión futura',
+            value: item.futureCommission,
+          ),
+          _OffboardingMoneyLine(
+            label: 'Fijo pendiente',
+            value: item.pendingFixed,
+            warning: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OffboardingFinanceCompactCard extends StatelessWidget {
+  const _OffboardingFinanceCompactCard({required this.item});
+  final TrainerOffboardingFinanceImpact item;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final pending = item.pendingCommission + item.pendingFixed;
+    return Container(
+      width: 218,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(border: Border.all(color: tokens.lineStrong)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: PulsoLabel(item.currencyCode)),
+              Text(
+                pending.toStringAsFixed(2),
+                style: TextStyle(
+                  color: pending > 0 ? tokens.warning : tokens.success,
+                  fontFamily: PulsoFonts.mono,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'pendiente ganado · futuro ${item.futureCommission.toStringAsFixed(2)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: tokens.muted, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OffboardingMoneyLine extends StatelessWidget {
+  const _OffboardingMoneyLine({
+    required this.label,
+    required this.value,
+    this.warning = false,
+  });
+  final String label;
+  final double value;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: tokens.muted, fontSize: 11),
+            ),
+          ),
+          Text(
+            value.toStringAsFixed(2),
+            style: TextStyle(
+              color: warning && value > 0 ? tokens.warning : tokens.chalkDim,
+              fontFamily: PulsoFonts.mono,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OffboardingMembershipRow extends StatelessWidget {
+  const _OffboardingMembershipRow({required this.item});
+  final TrainerOffboardingMembershipImpact item;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: tokens.line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.clientName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${item.clientId} · ${item.planName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: tokens.muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'hasta ${_dateFmt.format(item.endDate.toUtc())}',
+              style: const TextStyle(fontFamily: PulsoFonts.mono, fontSize: 10),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'REASIGNAR',
+            style: TextStyle(
+              color: tokens.accent,
+              fontFamily: PulsoFonts.mono,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OffboardingImpactTable extends StatefulWidget {
+  const _OffboardingImpactTable({required this.items});
+  final List<TrainerOffboardingMembershipImpact> items;
+
+  @override
+  State<_OffboardingImpactTable> createState() =>
+      _OffboardingImpactTableState();
+}
+
+class _OffboardingImpactTableState extends State<_OffboardingImpactTable> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(border: Border.all(color: tokens.line)),
+      child: Column(
+        children: [
+          Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            color: tokens.raised,
+            child: const Row(
+              children: [
+                Expanded(flex: 3, child: PulsoLabel('Socio / plan')),
+                SizedBox(width: 12),
+                Expanded(flex: 2, child: PulsoLabel('Vigencia')),
+                SizedBox(width: 12),
+                PulsoLabel('Sugerencia'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: widget.items.isEmpty
+                ? Center(
+                    child: Text(
+                      'No hay membresías vigentes asignadas.',
+                      style: TextStyle(color: tokens.muted),
+                    ),
+                  )
+                : Scrollbar(
+                    key: const Key('offboarding-impact-table-scrollbar'),
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    child: ListView.builder(
+                      key: const PageStorageKey('offboarding-impact-table'),
+                      controller: _scrollController,
+                      primary: false,
+                      itemCount: widget.items.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: _OffboardingMembershipRow(
+                          item: widget.items[index],
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CreateOffboardingCaseDialog extends StatefulWidget {
+  const _CreateOffboardingCaseDialog({
+    required this.trainerName,
+    required this.businessDate,
+  });
+  final String trainerName;
+  final String businessDate;
+
+  @override
+  State<_CreateOffboardingCaseDialog> createState() =>
+      _CreateOffboardingCaseDialogState();
+}
+
+class _CreateOffboardingCaseDialogState
+    extends State<_CreateOffboardingCaseDialog> {
+  late DateTime _effectiveDate;
+  final _reason = TextEditingController();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _effectiveDate =
+        DateTime.tryParse('${widget.businessDate}T00:00:00.000Z')?.toUtc() ??
+        DateTime.utc(2000);
+  }
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _effectiveDate,
+      firstDate: _effectiveDate,
+      lastDate: DateTime.utc(_effectiveDate.year + 2, 12, 31),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _effectiveDate = DateTime.utc(picked.year, picked.month, picked.day);
+        _error = null;
+      });
+    }
+  }
+
+  void _submit() {
+    final reason = _reason.text.trim();
+    if (reason.length < 5) {
+      setState(() => _error = 'Explique brevemente el motivo de la baja.');
+      return;
+    }
+    Navigator.of(context).pop(
+      _NewOffboardingCaseInput(
+        effectiveDate: _dateFmt.format(_effectiveDate),
+        reason: reason,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Crear expediente de baja'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Entrenador: ${widget.trainerName}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Fecha efectiva',
+                  suffixIcon: Icon(Icons.calendar_month_outlined),
+                ),
+                child: Text(_dateFmt.format(_effectiveDate)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _reason,
+              autofocus: true,
+              maxLength: 500,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Motivo administrativo',
+                hintText:
+                    'Ej.: terminación de contrato solicitada por el entrenador',
+              ),
+            ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        PulsoSecondaryButton(
+          label: 'Cancelar',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        PulsoPrimaryButton(label: 'Crear expediente', onPressed: _submit),
+      ],
+    );
+  }
+}
+
+class _NewOffboardingCaseInput {
+  const _NewOffboardingCaseInput({
+    required this.effectiveDate,
+    required this.reason,
+  });
+  final String effectiveDate;
+  final String reason;
+}
+
 class _TrainerRow extends StatelessWidget {
   const _TrainerRow({
     super.key,
@@ -973,7 +1611,7 @@ class _TrainerRow extends StatelessWidget {
                       const SizedBox(width: 4),
                       PulsoIconButton(
                         icon: Icons.delete_outline,
-                        tooltip: 'Eliminar $name',
+                        tooltip: 'Preparar baja de $name',
                         danger: true,
                         onPressed: onDelete,
                       ),
@@ -988,7 +1626,10 @@ class _TrainerRow extends StatelessWidget {
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Preparar baja'),
+                    ),
                   ],
                 ),
             ],
@@ -1119,7 +1760,7 @@ class _TrainerDetail extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           PulsoSecondaryButton(
-            label: 'Eliminar',
+            label: 'Preparar baja',
             icon: Icons.delete_outline,
             danger: true,
             onPressed: onDelete,

@@ -14,6 +14,7 @@ PaymentModel _$PaymentModelFromJson(Map<String, dynamic> json) => PaymentModel(
   trainerId: json['id_entrenador'] as String?,
   planId: json['id_planes_pago'] as String,
   currencyId: json['moneda_id'] as String,
+  membershipId: json['membresia_id'] as String?,
   isDeleted: json['is_deleted'] as bool? ?? false,
   version: (json['version'] as num?)?.toInt() ?? 1,
   details: (json['details'] as List<dynamic>?)
@@ -31,6 +32,7 @@ Map<String, dynamic> _$PaymentModelToJson(PaymentModel instance) =>
       'id_entrenador': instance.trainerId,
       'id_planes_pago': instance.planId,
       'moneda_id': instance.currencyId,
+      'membresia_id': instance.membershipId,
       'is_deleted': instance.isDeleted,
       'version': instance.version,
     };

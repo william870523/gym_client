@@ -60,7 +60,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(_harness(const PulsoAdminDashboardView()));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('income-eur')), findsOneWidget);
     expect(find.byKey(const ValueKey('income-usd')), findsOneWidget);

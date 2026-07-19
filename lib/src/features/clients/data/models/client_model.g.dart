@@ -30,6 +30,11 @@ ClientModel _$ClientModelFromJson(Map<String, dynamic> json) => ClientModel(
   referralId: json['referencia_id'] as String?,
   trainerId: json['id_entrenador'] as String?,
   scheduleId: json['id_horarios'] as String?,
+  membershipId: json['membresia_id'] as String?,
+  membershipStatus: json['membresia_estado'] as String?,
+  membershipPrice: (json['membresia_precio'] as num?)?.toDouble(),
+  membershipPaid: (json['membresia_importe_pagado'] as num?)?.toDouble(),
+  membershipBalanceDue: (json['membresia_saldo_pendiente'] as num?)?.toDouble(),
 );
 
 Map<String, dynamic> _$ClientModelToJson(ClientModel instance) =>
@@ -53,4 +58,9 @@ Map<String, dynamic> _$ClientModelToJson(ClientModel instance) =>
       'referencia_id': instance.referralId,
       'id_entrenador': instance.trainerId,
       'id_horarios': instance.scheduleId,
+      'membresia_id': instance.membershipId,
+      'membresia_estado': instance.membershipStatus,
+      'membresia_precio': instance.membershipPrice,
+      'membresia_importe_pagado': instance.membershipPaid,
+      'membresia_saldo_pendiente': instance.membershipBalanceDue,
     };

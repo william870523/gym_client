@@ -124,19 +124,27 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                   Expanded(
                                     child: Row(
                                       children: [
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            image: const DecorationImage(
-                                              image: AssetImage(
-                                                'assets/images/diamond_logo.png',
-                                              ),
-                                              fit: BoxFit.contain,
-                                            ),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: Image.asset(
+                                            'assets/images/diamond_logo.png',
+                                            width: 40,
+                                            height: 40,
+                                            fit: BoxFit.contain,
+                                            filterQuality: FilterQuality.high,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    ColoredBox(
+                                                      color:
+                                                          widget.surfaceColor,
+                                                      child: Icon(
+                                                        Icons.diamond_outlined,
+                                                        color: textMain,
+                                                        size: 28,
+                                                      ),
+                                                    ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -261,6 +269,15 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                 textMain: primary,
                                 textMuted: textMuted,
                                 accentColor: const Color(0xFF3B82F6), // Blue
+                              ),
+                              _buildNavItem(
+                                Icons.monitor_heart_outlined,
+                                'Control y Calidad',
+                                index: 23,
+                                isActive: widget.selectedIndex == 23,
+                                textMain: primary,
+                                textMuted: textMuted,
+                                accentColor: const Color(0xFFD9481C),
                               ),
                               _buildNavItem(
                                 Icons.calendar_today_outlined,
@@ -412,6 +429,16 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                     textMuted: textMuted,
                                     accentColor: const Color(0xFFF59E0B),
                                   ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.rule_folder_outlined,
+                                      'Retención',
+                                      index: 24,
+                                      isActive: widget.selectedIndex == 24,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
                                 ],
                               ),
                             ],

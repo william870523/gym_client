@@ -3,6 +3,11 @@ import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/trainer_model.dart';
+import '../models/trainer_offboarding_impact.dart';
+import '../models/trainer_offboarding_case.dart';
+import '../models/trainer_offboarding_financial.dart';
+import '../models/trainer_final_settlement.dart';
+import 'package:uuid/uuid.dart';
 
 part 'trainer_repository.g.dart';
 
@@ -199,6 +204,167 @@ class TrainerRepository {
     } catch (e) {
       rethrow;
     }
+  }
+
+  Future<TrainerOffboardingImpact> getOffboardingImpact(String id) async {
+    final response = await _dio.get('/entrenadores/$id/offboarding-impact');
+    return TrainerOffboardingImpact.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingCase?> getOpenOffboardingCase(
+    String trainerId,
+  ) async {
+    final response = await _dio.get(
+      '/entrenadores/$trainerId/offboarding-case',
+    );
+    final data = response.data;
+    if (data is Map && data['data'] == null) return null;
+    return TrainerOffboardingCase.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingCase> createOffboardingCase({
+    required String trainerId,
+    required String effectiveDate,
+    required String reason,
+  }) async {
+    final response = await _dio.post(
+      '/entrenadores/$trainerId/offboarding-cases',
+      data: {'fecha_efectiva': effectiveDate, 'motivo': reason},
+    );
+    return TrainerOffboardingCase.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingCase> updateOffboardingDecision({
+    required String trainerId,
+    required String caseId,
+    required String membershipId,
+    required String type,
+    String? targetTrainerId,
+    String? reason,
+  }) async {
+    final response = await _dio.patch(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/decisions/$membershipId',
+      data: {
+        'operation_id': const Uuid().v4(),
+        'tipo': type,
+        'id_entrenador_destino': targetTrainerId,
+        'motivo': reason,
+      },
+    );
+    return TrainerOffboardingCase.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingCase> executeOffboardingCase({
+    required String trainerId,
+    required String caseId,
+    required String operationId,
+  }) async {
+    final response = await _dio.post(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/execute',
+      data: {'operation_id': operationId},
+    );
+    return TrainerOffboardingCase.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingFinancialPreview> previewOffboardingFinancial({
+    required String trainerId,
+    required String caseId,
+    required String membershipId,
+    String? type,
+    String? destinationPlanId,
+  }) async {
+    final response = await _dio.get(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/decisions/$membershipId/financial-preview',
+      queryParameters: {
+        if (type != null) 'tipo': type,
+        if (destinationPlanId != null) 'plan_destino_id': destinationPlanId,
+      },
+    );
+    return TrainerOffboardingFinancialPreview.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerOffboardingCase> resolveOffboardingFinancial({
+    required String trainerId,
+    required String caseId,
+    required String membershipId,
+    required String type,
+    String? destinationPlanId,
+    String? targetTrainerId,
+    required String reason,
+  }) async {
+    final response = await _dio.post(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/decisions/$membershipId/financial-resolution',
+      data: {
+        'operation_id': const Uuid().v4(),
+        'tipo': type,
+        'plan_destino_id': destinationPlanId,
+        'id_entrenador_destino': targetTrainerId,
+        'motivo': reason,
+      },
+    );
+    return TrainerOffboardingCase.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerFinalSettlementPreview> previewFinalSettlement({
+    required String trainerId,
+    required String caseId,
+  }) async {
+    final response = await _dio.get(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/final-settlement',
+    );
+    return TrainerFinalSettlementPreview.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerFinalSettlementResult> createFinalSettlement({
+    required String trainerId,
+    required String caseId,
+    required String currencyId,
+    required String accountId,
+    required String paymentTypeId,
+    String? notes,
+  }) async {
+    final response = await _dio.post(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/final-settlement',
+      data: {
+        'operacion_id': const Uuid().v4(),
+        'moneda_id': currencyId,
+        'cuenta_id': accountId,
+        'tipo_pago_id': paymentTypeId,
+        'notas': notes,
+      },
+    );
+    return TrainerFinalSettlementResult.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TrainerFinalSettlementResult> closeFinalSettlement({
+    required String trainerId,
+    required String caseId,
+  }) async {
+    final response = await _dio.post(
+      '/entrenadores/$trainerId/offboarding-cases/$caseId/final-settlement/close',
+      data: {'operacion_id': const Uuid().v4()},
+    );
+    return TrainerFinalSettlementResult.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
   }
 }
 

@@ -21,6 +21,7 @@ import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
 import '../../data/models/payment_model.dart';
 import '../state/payment_notifier.dart';
+import '../state/payment_refresh_coordinator.dart';
 import '../widgets/client_picker_dialog.dart';
 import '../widgets/process_payment_dialog.dart';
 
@@ -117,36 +118,89 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
   }
 
   Future<void> _voidPayment(PaymentModel payment) async {
-    final confirmed = await showDialog<bool>(
+    var reasonDraft = '';
+    final reason = await showDialog<String>(
       context: context,
       builder: (context) => PulsoThemeScope(
-        child: AlertDialog(
-          title: const Text('Anular pago'),
-          content: Text(
-            'El pago ${_shortPaymentId(payment.id)} quedará marcado como '
-            'anulado y dejará de contabilizarse en el parte del día.',
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            scrollable: true,
+            title: const Text('Anular pago'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'El pago ${_shortPaymentId(payment.id)} dejará de contar '
+                  'como ingreso. La membresía volverá a pendiente y las '
+                  'comisiones no pagadas serán anuladas.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  key: const ValueKey('payment-reversal-reason'),
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 500,
+                  autofocus: true,
+                  onChanged: (value) => setDialogState(() {
+                    reasonDraft = value;
+                  }),
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de la anulación',
+                    hintText: 'Ej.: cobro duplicado o método incorrecto',
+                    helperText:
+                        'Quedará guardado en el historial de auditoría.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Si ya se pagó una cuota al entrenador, la operación será '
+                  'bloqueada para proteger la contabilidad.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            actions: [
+              PulsoSecondaryButton(
+                label: 'Cancelar',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              PulsoSecondaryButton(
+                label: 'Anular pago',
+                danger: true,
+                onPressed: reasonDraft.trim().length < 5
+                    ? null
+                    : () => Navigator.of(context).pop(reasonDraft.trim()),
+              ),
+            ],
           ),
-          actions: [
-            PulsoSecondaryButton(
-              label: 'Cancelar',
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            PulsoSecondaryButton(
-              label: 'Anular pago',
-              danger: true,
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
         ),
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (reason == null || !mounted) return;
 
     try {
-      await ref.read(paymentNotifierProvider.notifier).voidPayment(payment.id);
+      final result = await ref
+          .read(paymentNotifierProvider.notifier)
+          .voidPayment(payment.id, reason: reason);
+      await ref
+          .read(paymentRefreshCoordinatorProvider)
+          .afterPaymentMutation(payment.ci, refreshPayments: false);
       if (!mounted) return;
+      final impact = <String>[
+        if (result.membershipsPending > 0)
+          '${result.membershipsPending} membresía(s) pendiente(s)',
+        if (result.commissionsVoided > 0)
+          '${result.commissionsVoided} comisión(es) anulada(s)',
+      ];
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pago marcado como anulado.')),
+        SnackBar(
+          content: Text(
+            impact.isEmpty
+                ? 'Pago anulado y vistas actualizadas.'
+                : 'Pago anulado: ${impact.join(' · ')}.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
@@ -402,8 +456,7 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
                                             : data.accounts[detail.accountId],
                                         rate: detail.exchangeRateId == null
                                             ? null
-                                            : data.rates[detail
-                                                  .exchangeRateId],
+                                            : data.rates[detail.exchangeRateId],
                                         currencies: data.currencies,
                                       ),
                                     if (payment.details?.isNotEmpty != true)
@@ -987,8 +1040,7 @@ class _PaymentList extends StatelessWidget {
   final bool showColumnFilters;
   final Map<_PaySort, String> columnFilters;
   final String Function(PaymentModel, Map<String, ClientModel>) clientName;
-  final String Function(PaymentModel, Map<String, PaymentTypeModel>)
-  methodName;
+  final String Function(PaymentModel, Map<String, PaymentTypeModel>) methodName;
   final ValueChanged<_PaySort> onSort;
   final void Function(_PaySort, String) onColumnFilter;
   final ValueChanged<PaymentModel> onSelect;
@@ -1283,7 +1335,8 @@ class _PaymentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
     final when = _paymentTimeInGym(payment.fecha);
-    final amount = '${currency?.symbol ?? r'$'}${_money.format(payment.amount)}';
+    final amount =
+        '${currency?.symbol ?? r'$'}${_money.format(payment.amount)}';
     final statusColor = payment.isDeleted ? tokens.warning : tokens.success;
     return Material(
       color: selected ? tokens.accentSoftStrong : Colors.transparent,
@@ -1482,8 +1535,7 @@ class _PaymentReceiptPanel extends StatelessWidget {
     final details = payment.details ?? const <PaymentDetailModel>[];
     final accountNames = <String>{
       for (final detail in details)
-        if (detail.accountId != null &&
-            data.accounts[detail.accountId] != null)
+        if (detail.accountId != null && data.accounts[detail.accountId] != null)
           data.accounts[detail.accountId]!.name,
     }.join(' + ');
     final trainerName = data.trainer == null

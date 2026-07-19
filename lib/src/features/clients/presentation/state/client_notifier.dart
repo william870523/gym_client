@@ -20,22 +20,27 @@ class ClientNotifier extends AsyncNotifier<List<ClientModel>> {
     );
   }
 
-
-  Future<void> createClient(ClientModel client) async {
+  Future<ClientModel> createClient(ClientModel client) async {
     final prevState = state;
     try {
-      await ref.read(clientRepositoryProvider).createClient(client);
+      final created = await ref
+          .read(clientRepositoryProvider)
+          .createClient(client);
       await refresh();
+      return created;
     } catch (e) {
       state = prevState;
       rethrow;
     }
   }
 
-  Future<void> updateClient(ClientModel client) async {
+  Future<ClientModel> updateClient(ClientModel client) async {
     try {
-      await ref.read(clientRepositoryProvider).updateClient(client);
+      final updated = await ref
+          .read(clientRepositoryProvider)
+          .updateClient(client);
       await refresh();
+      return updated;
     } catch (e) {
       rethrow;
     }

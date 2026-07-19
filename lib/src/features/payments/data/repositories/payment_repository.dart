@@ -5,6 +5,8 @@ import 'package:gym_client/src/features/configuration/data/models/payment_type_m
 import 'package:gym_client/src/features/financials/data/models/account_model.dart';
 import 'package:gym_client/src/features/financials/data/models/exchange_rate_model.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
+import 'package:gym_client/src/features/payments/data/models/payment_reversal_model.dart';
+import 'package:uuid/uuid.dart';
 
 final paymentRepositoryProvider = Provider<PaymentRepository>((ref) {
   return PaymentRepository(ref.read(apiClientProvider));
@@ -74,9 +76,18 @@ class PaymentRepository {
     }
   }
 
-  Future<void> voidPayment(String paymentId) async {
+  Future<PaymentReversalResult> voidPayment(
+    String paymentId, {
+    required String reason,
+  }) async {
     try {
-      await _client.delete('/pagos/$paymentId');
+      final response = await _client.post(
+        '/pagos/$paymentId/reversar',
+        data: {'operation_id': const Uuid().v4(), 'motivo': reason.trim()},
+      );
+      return PaymentReversalResult.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
     } on DioException catch (e) {
       final responseData = e.response?.data;
       final serverMessage = responseData is Map

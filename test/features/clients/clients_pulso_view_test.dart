@@ -107,7 +107,7 @@ void main() {
     _expectOriginalFormGeometry(tester);
 
     await tester.enterText(find.byType(TextFormField).at(1), 'Ana María');
-    await tester.tap(find.text('Guardar Cliente'));
+    await tester.tap(find.text('Guardar cambios'));
     await tester.pumpAndSettle();
 
     expect(notifier.updates, hasLength(1));
@@ -139,7 +139,7 @@ void main() {
     expect(find.text('Estado de la Cuenta'), findsOneWidget);
     expect(find.text('Información Personal'), findsOneWidget);
     expect(find.text('Membresía y Plan'), findsOneWidget);
-    expect(find.text('Guardar Cliente'), findsOneWidget);
+    expect(find.text('Guardar'), findsOneWidget);
     _expectOriginalFormGeometry(tester);
 
     final photo = tester.getTopLeft(find.text('Foto del Cliente'));
@@ -165,6 +165,48 @@ void main() {
       find.descendant(of: list, matching: find.text('Ana Pérez')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un cobro confirmado actualiza la vigencia sin botón manual', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final active = _clients();
+    final pending = [
+      active.first.copyWith(membershipStatus: 'PENDIENTE_PAGO'),
+      ...active.skip(1),
+    ];
+    final notifier = _RefreshClientNotifier(pending, active);
+
+    await tester.pumpWidget(
+      _harness(
+        notifier: notifier,
+        view: ClientsPulsoView(paymentFlow: (_, _, _) async => true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pendiente de pago'), findsOneWidget);
+    final anaRow = find.descendant(
+      of: find.byKey(const PageStorageKey('pulso-clients-list')),
+      matching: find.text('Ana Pérez'),
+    );
+    await tester.tap(anaRow);
+    await tester.pumpAndSettle();
+    expect(find.text('LECTURA OPERATIVA'), findsOneWidget);
+    await tester.ensureVisible(find.text('COBRAR'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COBRAR'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.refreshCount, 1);
+    expect(find.text('Pendiente de pago'), findsNothing);
+    expect(find.text('Vigente'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }
@@ -245,7 +287,7 @@ List<ClientModel> _clients() {
   ];
 }
 
-Widget _harness({_ClientNotifier? notifier}) {
+Widget _harness({_ClientNotifier? notifier, Widget? view}) {
   final clients = _clients();
   return ProviderScope(
     overrides: [
@@ -279,7 +321,7 @@ Widget _harness({_ClientNotifier? notifier}) {
         weightHistoryProvider(client.id).overrideWith((ref) async => const []),
       ],
     ],
-    child: const MaterialApp(home: Scaffold(body: ClientsPulsoView())),
+    child: MaterialApp(home: Scaffold(body: view ?? const ClientsPulsoView())),
   );
 }
 
@@ -321,8 +363,22 @@ class _ClientNotifier extends ClientNotifier {
   Future<List<ClientModel>> build() async => items;
 
   @override
-  Future<void> updateClient(ClientModel client) async {
+  Future<ClientModel> updateClient(ClientModel client) async {
     updates.add(client);
+    return client;
+  }
+}
+
+class _RefreshClientNotifier extends _ClientNotifier {
+  _RefreshClientNotifier(super.items, this.refreshedItems);
+
+  final List<ClientModel> refreshedItems;
+  int refreshCount = 0;
+
+  @override
+  Future<void> refresh() async {
+    refreshCount++;
+    state = AsyncValue.data(refreshedItems);
   }
 }
 

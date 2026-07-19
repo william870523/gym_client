@@ -12,6 +12,8 @@ import 'package:gym_client/src/features/attendance/presentation/screens/attendan
 import 'package:gym_client/src/features/attendance/presentation/state/attendance_notifier.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
+import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
+import 'package:gym_client/src/features/payments/presentation/state/payment_notifier.dart';
 import 'package:gym_client/src/features/schedules/data/models/horario_model.dart';
 import 'package:gym_client/src/features/schedules/presentation/state/horario_notifier.dart';
 
@@ -32,10 +34,15 @@ void main() {
       await tester.pumpWidget(_harness());
       await tester.pump();
 
-      expect(find.text('MOSTRADOR.', findRichText: true), findsOneWidget);
+      expect(find.text('CONTROL DE PISO', findRichText: true), findsOneWidget);
+      expect(find.text('EN SALA'), findsOneWidget);
       expect(find.text('Ana Pérez'), findsOneWidget);
       expect(find.text('Luis Gómez'), findsOneWidget);
       expect(find.text('DENTRO AHORA'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pulso-memberships-panel')),
+        findsOneWidget,
+      );
       expect(find.byTooltip('Escanear código (lector físico)'), findsOneWidget);
       expect(find.textContaining('GYMOS · PULSO'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -116,8 +123,10 @@ void main() {
 
     final arrivals = find.byKey(const ValueKey('pulso-arrivals-panel'));
     final inside = find.byKey(const ValueKey('pulso-inside-panel'));
+    final memberships = find.byKey(const ValueKey('pulso-memberships-panel'));
     expect(arrivals, findsOneWidget);
     expect(inside, findsOneWidget);
+    expect(memberships, findsOneWidget);
     expect(find.text('Carla Libre'), findsOneWidget);
     expect(
       find.textContaining('acceso libre · Plan', findRichText: true),
@@ -127,6 +136,10 @@ void main() {
     expect(
       tester.getTopLeft(arrivals).dx,
       lessThan(tester.getTopLeft(inside).dx),
+    );
+    expect(
+      tester.getTopLeft(memberships).dy,
+      greaterThan(tester.getTopLeft(inside).dy),
     );
     expect(tester.takeException(), isNull);
   });
@@ -241,6 +254,7 @@ Widget _harness({
         ),
       ),
       clientNotifierProvider.overrideWith(() => _ClientNotifier(clients)),
+      paymentNotifierProvider.overrideWith(_PaymentNotifier.new),
       attendanceNotifierProvider.overrideWith(
         () => notifier ?? _AttendanceNotifier(attendances),
       ),
@@ -383,6 +397,11 @@ class _AttendanceNotifier extends AttendanceNotifier {
       photoUrl: item.photoUrl,
     );
   }
+}
+
+class _PaymentNotifier extends PaymentNotifier {
+  @override
+  Future<List<PaymentModel>> build() async => const [];
 }
 
 class _ClientNotifier extends ClientNotifier {

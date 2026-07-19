@@ -1,10 +1,13 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../products/data/models/payment_plan_model.dart';
 import '../../../products/presentation/state/payment_plan_notifier.dart';
@@ -12,9 +15,24 @@ import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
 import '../../data/models/accounting_models.dart';
 import '../../data/repositories/accounting_repository.dart';
+import '../../data/services/trainer_liquidation_receipt_service.dart';
 import '../state/accounting_providers.dart';
+import '../widgets/compensation_profiles_panel.dart';
+import '../widgets/governed_expenses_panel.dart';
+import '../widgets/operational_cash_results_panel.dart';
+import '../widgets/treasury_ledger_panel.dart';
+import '../widgets/treasury_refunds_panel.dart';
 
-enum _AccountingTab { summary, installments, rules, payroll }
+enum _AccountingTab {
+  summary,
+  operationalResults,
+  treasury,
+  expenses,
+  installments,
+  refunds,
+  rules,
+  payroll,
+}
 
 final _amount = NumberFormat('#,##0.00');
 final _date = DateFormat('dd/MM/yyyy');
@@ -22,6 +40,14 @@ final _date = DateFormat('dd/MM/yyyy');
 // Estas fechas llegan como fechas contractuales/contables. Se presentan por
 // componentes UTC para conservar el año/mes/día, sin usar la zona del equipo.
 String _calendarDate(DateTime value) => _date.format(value.toUtc());
+
+String _requestError(Object error) {
+  if (error is DioException) {
+    final data = error.response?.data;
+    if (data is Map && data['error'] != null) return data['error'].toString();
+  }
+  return 'No se pudo completar la operación. Revise los datos e inténtelo de nuevo.';
+}
 
 class AccountingView extends ConsumerStatefulWidget {
   const AccountingView({super.key});
@@ -33,11 +59,25 @@ class AccountingView extends ConsumerStatefulWidget {
 class _AccountingViewState extends ConsumerState<AccountingView> {
   _AccountingTab _tab = _AccountingTab.summary;
   String _period = 'BIWEEKLY';
+  String? _expensesMonth;
 
   void _refresh() {
     ref.invalidate(accountingSummaryProvider);
     ref.invalidate(trainerCommissionInstallmentsProvider);
+    ref.invalidate(trainerPayablesProvider);
     ref.invalidate(trainerCommissionRulesProvider);
+    ref.invalidate(trainerPayoutOptionsProvider);
+    ref.invalidate(trainerLiquidationsProvider);
+    ref.invalidate(trainerCompensationProfilesProvider);
+    ref.invalidate(trainerFixedObligationsProvider);
+    ref.invalidate(treasuryRefundsProvider);
+    ref.invalidate(treasuryRefundOptionsProvider);
+    ref.invalidate(treasuryManualOptionsProvider);
+    ref.invalidate(treasuryLedgerProvider);
+    ref.invalidate(treasuryMonthlySummaryProvider);
+    ref.invalidate(operationalResultsProvider);
+    ref.invalidate(operationalAnnualResultsProvider);
+    ref.invalidate(membershipRevenueProvider);
     ref.read(paymentPlanProvider.notifier).refresh();
     ref.read(trainerProvider.notifier).refresh();
   }
@@ -63,13 +103,54 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
             : constraints.maxWidth < 840
             ? 24.0
             : 32.0;
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            padding,
-            compact ? 16 : 20,
-            padding,
-            compact ? 18 : 24,
+        final content = switch (_tab) {
+          _AccountingTab.summary => _buildSummary(),
+          _AccountingTab.operationalResults => OperationalCashResultsPanel(
+            onOpenTrainerPayments: () =>
+                setState(() => _tab = _AccountingTab.installments),
+            onOpenRefunds: () => setState(() => _tab = _AccountingTab.refunds),
+            onOpenTreasury: () =>
+                setState(() => _tab = _AccountingTab.treasury),
           ),
+          _AccountingTab.treasury => _buildTreasury(),
+          _AccountingTab.expenses => GovernedExpensesPanel(
+            initialMonth: _expensesMonth,
+            onMonthChanged: (m) => setState(() => _expensesMonth = m),
+            onBack: () => setState(() => _tab = _AccountingTab.summary),
+          ),
+          _AccountingTab.installments => _buildInstallments(),
+          _AccountingTab.refunds => _buildRefunds(),
+          _AccountingTab.rules => _buildRules(),
+          _AccountingTab.payroll => _buildPayroll(),
+        };
+        final pagePadding = EdgeInsets.fromLTRB(
+          padding,
+          compact ? 16 : 20,
+          padding,
+          compact ? 18 : 24,
+        );
+        if (_tab == _AccountingTab.operationalResults) {
+          return Padding(
+            padding: pagePadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _AccountingHeader(onRefresh: _refresh),
+                const SizedBox(height: 16),
+                _AccountingTabs(
+                  selected: _tab,
+                  onSelected: (value) => setState(() => _tab = value),
+                ),
+                const SizedBox(height: 14),
+                Expanded(child: content),
+                const SizedBox(height: 10),
+                _AccountingFooter(period: _period),
+              ],
+            ),
+          );
+        }
+        return SingleChildScrollView(
+          padding: pagePadding,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -80,12 +161,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                 onSelected: (value) => setState(() => _tab = value),
               ),
               const SizedBox(height: 14),
-              switch (_tab) {
-                _AccountingTab.summary => _buildSummary(),
-                _AccountingTab.installments => _buildInstallments(),
-                _AccountingTab.rules => _buildRules(),
-                _AccountingTab.payroll => _buildPayroll(),
-              },
+              content,
               const SizedBox(height: 10),
               _AccountingFooter(period: _period),
             ],
@@ -97,7 +173,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
 
   Widget _buildSummary() {
     final summaryState = ref.watch(accountingSummaryProvider);
-    final installmentsState = ref.watch(trainerCommissionInstallmentsProvider);
+    final payablesState = ref.watch(trainerPayablesProvider);
     return summaryState.when(
       loading: () => const PulsoPanel(
         child: PulsoStateView(
@@ -113,36 +189,55 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
         ),
       ),
       data: (summary) {
+        final payables = payablesState.value ?? const <TrainerPayableModel>[];
         final byCurrency = <String, double>{};
-        for (final item
-            in installmentsState.value ??
-                const <TrainerCommissionInstallmentModel>[]) {
+        for (final item in payables) {
           final code = item.currencyCode.trim().isEmpty
               ? 'SIN MONEDA'
               : item.currencyCode.toUpperCase();
-          byCurrency[code] = (byCurrency[code] ?? 0) + item.amount;
+          byCurrency[code] = (byCurrency[code] ?? 0) + item.remainingAmount;
         }
+        final commissionPending = payables
+            .where((item) => item.isCommission)
+            .length;
+        final fixedPending = payables.where((item) => item.isFixed).length;
+        final overdue = payables
+            .where(
+              (item) =>
+                  item.payable &&
+                  item.scheduledDate.toUtc().isBefore(appClock.nowUtc()),
+            )
+            .length;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             PulsoMetricStrip(
               metrics: [
                 PulsoMetricData(
-                  value: '${summary.pendingTrainerCount}',
-                  label: 'Cuotas pendientes',
-                  note: 'comisiones por liquidar',
+                  value:
+                      '${payablesState.hasValue ? payables.length : summary.pendingTrainerCount}',
+                  label: 'Conceptos pendientes',
+                  note: payablesState.hasValue
+                      ? '$commissionPending comisión · $fixedPending fijo'
+                      : 'pagos por liquidar',
                   emphasis: true,
                 ),
                 PulsoMetricData(
-                  value: '${summary.overdueTrainerCount}',
+                  value:
+                      '${payablesState.hasValue ? overdue : summary.overdueTrainerCount}',
                   label: 'Vencidas',
                   note: 'requieren revisión',
-                  warning: summary.overdueTrainerCount > 0,
+                  warning: payablesState.hasValue
+                      ? overdue > 0
+                      : summary.overdueTrainerCount > 0,
                 ),
                 PulsoMetricData(
                   value: '${summary.activeRuleCount}',
                   label: 'Reglas activas',
-                  note: '${summary.individualRuleCount} individuales',
+                  note: summary.conflictRuleCount > 0
+                      ? '${summary.conflictRuleCount} con conflicto'
+                      : '${summary.scheduledRuleCount} programadas',
+                  warning: summary.conflictRuleCount > 0,
                 ),
                 PulsoMetricData(
                   value: '${summary.paidTrainerCount}',
@@ -156,7 +251,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
               builder: (context, constraints) {
                 final breakdown = _CurrencyBreakdown(
                   values: byCurrency,
-                  loading: installmentsState.isLoading,
+                  loading: payablesState.isLoading,
                 );
                 final policy = _SettlementPolicy(
                   value: _period,
@@ -186,29 +281,45 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
   }
 
   Widget _buildInstallments() {
-    final state = ref.watch(trainerCommissionInstallmentsProvider);
-    return state.when(
-      loading: () => const PulsoPanel(
-        child: PulsoStateView(
-          kind: PulsoStateKind.loading,
-          message: 'Cargando cuotas de entrenadores…',
+    final state = ref.watch(trainerPayablesProvider);
+    final history = ref.watch(trainerLiquidationsProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        state.when(
+          loading: () => const PulsoPanel(
+            child: PulsoStateView(
+              kind: PulsoStateKind.loading,
+              message: 'Cargando pagos pendientes de entrenadores…',
+            ),
+          ),
+          error: (error, _) => PulsoPanel(
+            child: PulsoStateView(
+              kind: PulsoStateKind.error,
+              message: 'No se pudieron cargar los pagos pendientes.\n$error',
+              onRetry: _refresh,
+            ),
+          ),
+          data: (items) => items.isEmpty
+              ? const PulsoPanel(
+                  child: PulsoStateView(
+                    kind: PulsoStateKind.empty,
+                    message:
+                        'No hay comisiones ni obligaciones fijas pendientes.',
+                  ),
+                )
+              : _InstallmentCatalog(
+                  items: items,
+                  onLiquidate: _openLiquidationDialog,
+                ),
         ),
-      ),
-      error: (error, _) => PulsoPanel(
-        child: PulsoStateView(
-          kind: PulsoStateKind.error,
-          message: 'No se pudieron cargar las cuotas.\n$error',
+        const SizedBox(height: 14),
+        _LiquidationHistory(
+          state: history,
+          onOpen: _openLiquidationReceipt,
           onRetry: _refresh,
         ),
-      ),
-      data: (items) => items.isEmpty
-          ? const PulsoPanel(
-              child: PulsoStateView(
-                kind: PulsoStateKind.empty,
-                message: 'No hay comisiones pendientes de pago.',
-              ),
-            )
-          : _InstallmentCatalog(items: items),
+      ],
     );
   }
 
@@ -247,10 +358,17 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                     message: 'No hay reglas de comisión configuradas.',
                   ),
                 )
-              : _RuleCatalog(
-                  rules: rules,
-                  onEdit: _openRuleDialog,
-                  onDelete: _deleteRule,
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _RuleGuide(rules: rules),
+                    const SizedBox(height: 12),
+                    _RuleCatalog(
+                      rules: rules,
+                      onEdit: _openRuleDialog,
+                      onDelete: _deleteRule,
+                    ),
+                  ],
                 ),
         ),
       ],
@@ -258,51 +376,476 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
   }
 
   Widget _buildPayroll() {
-    final state = ref.watch(accountingSummaryProvider);
-    return state.when(
-      loading: () => const PulsoPanel(
-        child: PulsoStateView(
-          kind: PulsoStateKind.loading,
-          message: 'Consultando nómina fija…',
+    return CompensationProfilesPanel(onChanged: _refresh);
+  }
+
+  Widget _buildTreasury() {
+    return TreasuryLedgerPanel(onChanged: _refresh);
+  }
+
+  Widget _buildRefunds() {
+    return TreasuryRefundsPanel(onChanged: _refresh);
+  }
+
+  Future<void> _openLiquidationDialog(
+    List<TrainerPayableModel> installments,
+  ) async {
+    if (installments.isEmpty) return;
+    final options = await ref.read(trainerPayoutOptionsProvider.future);
+    if (!mounted) return;
+    final currencyId = installments.first.currencyId;
+    final accounts = options.accounts
+        .where((account) => account.currencyId == currencyId)
+        .toList();
+    if (accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No existe una cuenta de salida para ${installments.first.currencyCode}.',
+          ),
         ),
-      ),
-      error: (error, _) => PulsoPanel(
-        child: PulsoStateView(
-          kind: PulsoStateKind.error,
-          message: 'No se pudo consultar la nómina.\n$error',
-          onRetry: _refresh,
+      );
+      return;
+    }
+    final operationId = const Uuid().v4();
+    final amountControllers = {
+      for (final item in installments)
+        item.id: TextEditingController(
+          text: item.remainingAmount.toStringAsFixed(2),
         ),
-      ),
-      data: (summary) => Builder(
-        builder: (context) => PulsoPanel(
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const PulsoLabel('Nómina fija'),
-              const SizedBox(height: 10),
-              Text(
-                '${summary.fixedPayrollProfiles} perfiles activos',
-                style: Theme.of(context).textTheme.headlineSmall,
+    };
+    final notesController = TextEditingController();
+    String? accountId = accounts.first.id;
+    String? paymentTypeId =
+        accounts.first.paymentTypeId ?? options.methods.firstOrNull?.id;
+    bool saving = false;
+    String? error;
+
+    final receipt = await showDialog<TrainerLiquidationModel>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PulsoThemeScope(
+        child: StatefulBuilder(
+          builder: (context, setLocalState) {
+            final tokens = PulsoTokens.of(context);
+            final compactPaymentFields = MediaQuery.sizeOf(context).width < 700;
+            final selectedAccount = accounts
+                .where((account) => account.id == accountId)
+                .firstOrNull;
+            final compatibleMethods = selectedAccount?.paymentTypeId == null
+                ? options.methods
+                : options.methods
+                      .where(
+                        (method) => method.id == selectedAccount!.paymentTypeId,
+                      )
+                      .toList();
+            final total = amountControllers.values.fold<double>(
+              0,
+              (sum, controller) =>
+                  sum +
+                  (double.tryParse(controller.text.replaceAll(',', '.')) ?? 0),
+            );
+            double subtotal(bool fixed) => installments
+                .where((item) => item.isFixed == fixed)
+                .fold<double>(
+                  0,
+                  (sum, item) =>
+                      sum +
+                      (double.tryParse(
+                            amountControllers[item.id]!.text.replaceAll(
+                              ',',
+                              '.',
+                            ),
+                          ) ??
+                          0),
+                );
+            final commissionTotal = subtotal(false);
+            final fixedTotal = subtotal(true);
+            final accountField = DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: accountId,
+              decoration: const InputDecoration(labelText: 'Cuenta de salida'),
+              items: [
+                for (final account in accounts)
+                  DropdownMenuItem(
+                    value: account.id,
+                    child: Text(
+                      '${account.name} · ${account.currencyCode}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (value) {
+                setLocalState(() {
+                  accountId = value;
+                  final selected = accounts
+                      .where((item) => item.id == value)
+                      .firstOrNull;
+                  paymentTypeId =
+                      selected?.paymentTypeId ??
+                      options.methods.firstOrNull?.id;
+                });
+              },
+            );
+            final methodField = DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue:
+                  compatibleMethods.any((item) => item.id == paymentTypeId)
+                  ? paymentTypeId
+                  : null,
+              decoration: const InputDecoration(labelText: 'Método de salida'),
+              items: [
+                for (final method in compatibleMethods)
+                  DropdownMenuItem(value: method.id, child: Text(method.name)),
+              ],
+              onChanged: compatibleMethods.length == 1
+                  ? null
+                  : (value) => setLocalState(() => paymentTypeId = value),
+            );
+            return AlertDialog(
+              title: const Text('Liquidar entrenador'),
+              content: SizedBox(
+                width: 660,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        color: tokens.raised,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const PulsoLabel('Entrenador'),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    installments.first.trainerName,
+                                    style: TextStyle(
+                                      color: tokens.chalk,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${installments.first.currencyCode} ${_amount.format(total)}',
+                                  style: TextStyle(
+                                    color: tokens.accent,
+                                    fontFamily: PulsoFonts.display,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 22,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Comisión ${_amount.format(commissionTotal)} · fijo ${_amount.format(fixedTotal)}',
+                                  style: TextStyle(
+                                    color: tokens.muted,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const PulsoLabel('Aplicación por concepto y periodo'),
+                      const SizedBox(height: 8),
+                      _LiquidationApplicationEditor(
+                        items: installments,
+                        controllers: amountControllers,
+                        onChanged: () => setLocalState(() {}),
+                      ),
+                      const SizedBox(height: 4),
+                      if (compactPaymentFields)
+                        Column(
+                          children: [
+                            accountField,
+                            const SizedBox(height: 12),
+                            methodField,
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(child: accountField),
+                            const SizedBox(width: 12),
+                            Expanded(child: methodField),
+                          ],
+                        ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: notesController,
+                        maxLength: 500,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Notas (opcional)',
+                          hintText: 'Referencia del pago o detalle operativo',
+                        ),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          error!,
+                          style: TextStyle(color: tokens.danger, fontSize: 12),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'El comprobante conservará cada aplicación. Una corrección posterior se registra como contramovimiento; no borra este pago.',
+                        style: TextStyle(color: tokens.muted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                summary.fixedPayrollProfiles == 0
-                    ? 'Todavía no hay perfiles de sueldo fijo configurados. La liquidación disponible actualmente corresponde a comisiones.'
-                    : '${summary.fixedPayrollPending} pagos de periodo están pendientes.',
-                style: TextStyle(color: PulsoTokens.of(context).muted),
+              actions: [
+                PulsoSecondaryButton(
+                  label: 'Cancelar',
+                  onPressed: saving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                ),
+                PulsoPrimaryButton(
+                  label: 'Confirmar pago',
+                  busy: saving,
+                  onPressed:
+                      saving || accountId == null || paymentTypeId == null
+                      ? null
+                      : () async {
+                          final applications = <Map<String, dynamic>>[];
+                          final fixedApplications = <Map<String, dynamic>>[];
+                          for (final item in installments) {
+                            final value = double.tryParse(
+                              amountControllers[item.id]!.text.replaceAll(
+                                ',',
+                                '.',
+                              ),
+                            );
+                            if (value == null ||
+                                value <= 0 ||
+                                value > item.remainingAmount + 0.0001) {
+                              setLocalState(() {
+                                error =
+                                    'Revise el importe de ${_calendarDate(item.periodEnd)}; debe ser mayor que cero y no superar el saldo.';
+                              });
+                              return;
+                            }
+                            final payload = {
+                              if (item.isFixed)
+                                'obligacion_id': item.id
+                              else
+                                'cuota_id': item.id,
+                              'monto': value.toStringAsFixed(2),
+                            };
+                            if (item.isFixed) {
+                              fixedApplications.add(payload);
+                            } else {
+                              applications.add(payload);
+                            }
+                          }
+                          setLocalState(() {
+                            saving = true;
+                            error = null;
+                          });
+                          try {
+                            final result = await ref
+                                .read(accountingRepositoryProvider)
+                                .createTrainerLiquidation(
+                                  operationId: operationId,
+                                  accountId: accountId!,
+                                  paymentTypeId: paymentTypeId!,
+                                  applications: applications,
+                                  fixedApplications: fixedApplications,
+                                  notes: notesController.text.trim(),
+                                );
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop(result);
+                            }
+                          } catch (caught) {
+                            setLocalState(() {
+                              saving = false;
+                              error = _requestError(caught);
+                            });
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    for (final controller in amountControllers.values) {
+      controller.dispose();
+    }
+    notesController.dispose();
+    if (receipt == null || !mounted) return;
+    _refresh();
+    await _showLiquidationReceipt(receipt);
+  }
+
+  Future<void> _openLiquidationReceipt(TrainerLiquidationModel item) async {
+    try {
+      final receipt = await ref
+          .read(accountingRepositoryProvider)
+          .getTrainerLiquidation(item.id);
+      if (!mounted) return;
+      await _showLiquidationReceipt(receipt);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_requestError(error))));
+    }
+  }
+
+  Future<void> _showLiquidationReceipt(TrainerLiquidationModel receipt) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => PulsoThemeScope(
+        child: AlertDialog(
+          title: Text(receipt.receiptNumber),
+          content: SizedBox(
+            width: 620,
+            child: _LiquidationReceipt(receipt: receipt),
+          ),
+          actions: [
+            if (receipt.status == 'PAGADA')
+              PulsoSecondaryButton(
+                label: 'Registrar reverso',
+                danger: true,
+                onPressed: () => Navigator.of(dialogContext).pop('reverse'),
+              ),
+            PulsoSecondaryButton(
+              label: 'Imprimir',
+              icon: Icons.print_outlined,
+              onPressed: () async {
+                await const TrainerLiquidationReceiptService().printReceipt(
+                  receipt,
+                );
+              },
+            ),
+            PulsoPrimaryButton(
+              label: 'Cerrar',
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'reverse' && mounted) {
+      await _reverseLiquidation(receipt);
+    }
+  }
+
+  Future<void> _reverseLiquidation(TrainerLiquidationModel receipt) async {
+    final controller = TextEditingController();
+    String? error;
+    bool saving = false;
+    final reversed = await showDialog<TrainerLiquidationModel>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PulsoThemeScope(
+        child: StatefulBuilder(
+          builder: (context, setLocalState) => AlertDialog(
+            title: const Text('Registrar contramovimiento'),
+            content: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Se anulará ${receipt.receiptNumber} por ${receipt.currencyCode} ${_amount.format(receipt.total)}. Las cuotas recuperarán solo el saldo de este pago.',
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    maxLength: 500,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Motivo obligatorio',
+                      errorText: error,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              PulsoSecondaryButton(
+                label: 'Cancelar',
+                onPressed: saving
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+              ),
+              PulsoPrimaryButton(
+                label: 'Confirmar reverso',
+                busy: saving,
+                onPressed: saving
+                    ? null
+                    : () async {
+                        final reason = controller.text.trim();
+                        if (reason.length < 8) {
+                          setLocalState(
+                            () => error =
+                                'Escriba un motivo de al menos 8 caracteres.',
+                          );
+                          return;
+                        }
+                        setLocalState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        try {
+                          final result = await ref
+                              .read(accountingRepositoryProvider)
+                              .reverseTrainerLiquidation(
+                                id: receipt.id,
+                                operationId: const Uuid().v4(),
+                                reason: reason,
+                              );
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop(result);
+                          }
+                        } catch (caught) {
+                          setLocalState(() {
+                            saving = false;
+                            error = _requestError(caught);
+                          });
+                        }
+                      },
               ),
             ],
           ),
         ),
       ),
     );
+    controller.dispose();
+    if (reversed == null || !mounted) return;
+    _refresh();
+    await _showLiquidationReceipt(reversed);
   }
 
   Future<void> _openRuleDialog([TrainerCommissionRuleModel? initial]) async {
     final plans =
         (ref.read(paymentPlanProvider).value ?? const <PaymentPlanModel>[])
-            .where((plan) => plan.id != null && plan.activo && !plan.isDeleted)
+            .where(
+              (plan) =>
+                  plan.id != null &&
+                  plan.activo &&
+                  !plan.isDeleted &&
+                  plan.incluyeEntrenador,
+            )
             .toList();
     final trainers = (ref.read(trainerProvider).value ?? const <TrainerModel>[])
         .where((trainer) => trainer.activo && !trainer.isDeleted)
@@ -310,7 +853,12 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
     String? planId = initial?.planId;
     String? trainerId = initial?.trainerId;
     String type = initial?.type ?? 'PERCENTAGE';
-    bool active = initial?.active ?? true;
+    DateTime startDate =
+        initial?.startDate.toUtc() ??
+        calendarDateToUtc(todayInZone(appClock.gymTimezone));
+    DateTime? endDate = initial?.endDate?.toUtc();
+    final replacingCurrent = initial?.validityStatus == 'VIGENTE';
+    bool saving = false;
     String? error;
     final controller = TextEditingController(
       text: initial?.value.toString() ?? '',
@@ -349,7 +897,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                               ),
                             ),
                         ],
-                        onChanged: plans.isEmpty
+                        onChanged: plans.isEmpty || replacingCurrent
                             ? null
                             : (value) => setLocalState(() => planId = value),
                       ),
@@ -375,8 +923,9 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                               ),
                             ),
                         ],
-                        onChanged: (value) =>
-                            setLocalState(() => trainerId = value),
+                        onChanged: replacingCurrent
+                            ? null
+                            : (value) => setLocalState(() => trainerId = value),
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
@@ -411,16 +960,74 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                           errorText: error,
                         ),
                       ),
-                      SwitchListTile(
-                        value: active,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Regla activa'),
-                        subtitle: const Text(
-                          'Se aplicará a nuevas liquidaciones compatibles.',
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _RuleDateField(
+                              label: 'Inicio de vigencia',
+                              value: startDate,
+                              enabled: !replacingCurrent,
+                              onTap: () async {
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: startDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime(2100),
+                                );
+                                if (picked != null) {
+                                  setLocalState(() {
+                                    startDate = calendarDateToUtc(picked);
+                                    if (endDate != null &&
+                                        !endDate!.isAfter(startDate)) {
+                                      endDate = null;
+                                    }
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _RuleDateField(
+                              label: 'Fin (no incluye)',
+                              value: endDate,
+                              onTap: () async {
+                                final initialEnd =
+                                    endDate ??
+                                    startDate.add(const Duration(days: 30));
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: initialEnd,
+                                  firstDate: startDate.add(
+                                    const Duration(days: 1),
+                                  ),
+                                  lastDate: DateTime(2100),
+                                );
+                                if (picked != null) {
+                                  setLocalState(
+                                    () => endDate = calendarDateToUtc(picked),
+                                  );
+                                }
+                              },
+                              onClear: endDate == null
+                                  ? null
+                                  : () => setLocalState(() => endDate = null),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        color: tokens.raised,
+                        child: Text(
+                          replacingCurrent
+                              ? 'Al guardar, la vigencia actual se cerrará ahora y se creará una nueva. Los devengos anteriores conservarán su cálculo.'
+                              : 'La excepción de un entrenador tiene prioridad sobre la regla general del mismo plan. Las vigencias del mismo alcance no pueden solaparse.',
+                          style: TextStyle(color: tokens.muted, fontSize: 12),
                         ),
-                        activeTrackColor: tokens.success,
-                        onChanged: (value) =>
-                            setLocalState(() => active = value),
                       ),
                     ],
                   ),
@@ -433,7 +1040,8 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                 ),
                 PulsoPrimaryButton(
                   label: 'Guardar',
-                  onPressed: planId == null
+                  busy: saving,
+                  onPressed: planId == null || saving
                       ? null
                       : () async {
                           final value = double.tryParse(
@@ -456,21 +1064,34 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                             'id_entrenador': trainerId,
                             'tipo_calculo': type,
                             'valor_calculo': value,
-                            'activo': active,
+                            'activo': true,
+                            'fecha_inicio': startDate.toUtc().toIso8601String(),
+                            'fecha_fin': endDate?.toUtc().toIso8601String(),
                           };
-                          final repository = ref.read(
-                            accountingRepositoryProvider,
-                          );
-                          if (initial == null) {
-                            await repository.createTrainerRule(payload);
-                          } else {
-                            await repository.updateTrainerRule(
-                              initial.id,
-                              payload,
+                          setLocalState(() {
+                            saving = true;
+                            error = null;
+                          });
+                          try {
+                            final repository = ref.read(
+                              accountingRepositoryProvider,
                             );
-                          }
-                          if (dialogContext.mounted) {
-                            Navigator.of(dialogContext).pop(true);
+                            if (initial == null) {
+                              await repository.createTrainerRule(payload);
+                            } else {
+                              await repository.updateTrainerRule(
+                                initial.id,
+                                payload,
+                              );
+                            }
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop(true);
+                            }
+                          } catch (caught) {
+                            setLocalState(() {
+                              saving = false;
+                              error = _requestError(caught);
+                            });
                           }
                         },
                 ),
@@ -492,13 +1113,18 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
   }
 
   Future<void> _deleteRule(TrainerCommissionRuleModel rule) async {
+    final scheduled = rule.validityStatus == 'PROGRAMADA';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => PulsoThemeScope(
         child: AlertDialog(
-          title: const Text('Eliminar regla'),
+          title: Text(
+            scheduled ? 'Cancelar regla programada' : 'Finalizar regla',
+          ),
           content: Text(
-            'Se eliminará la regla de comisión para “${rule.planName}”.',
+            scheduled
+                ? 'La regla de “${rule.planName}” todavía no comenzó y se cancelará.'
+                : 'La regla de “${rule.planName}” terminará ahora. Su historial y los devengos ya calculados se conservarán.',
           ),
           actions: [
             PulsoSecondaryButton(
@@ -506,7 +1132,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
               onPressed: () => Navigator.of(dialogContext).pop(false),
             ),
             PulsoSecondaryButton(
-              label: 'Eliminar',
+              label: scheduled ? 'Cancelar regla' : 'Finalizar',
               danger: true,
               onPressed: () => Navigator.of(dialogContext).pop(true),
             ),
@@ -518,6 +1144,56 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
     await ref.read(accountingRepositoryProvider).deleteTrainerRule(rule.id);
     ref.invalidate(trainerCommissionRulesProvider);
     ref.invalidate(accountingSummaryProvider);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(scheduled ? 'Regla cancelada.' : 'Vigencia finalizada.'),
+      ),
+    );
+  }
+}
+
+class _RuleDateField extends StatelessWidget {
+  const _RuleDateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.onClear,
+    this.enabled = true,
+  });
+
+  final String label;
+  final DateTime? value;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: onClear != null
+              ? IconButton(
+                  tooltip: 'Sin fecha de fin',
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close, size: 17),
+                )
+              : const Icon(Icons.calendar_today_outlined, size: 17),
+        ),
+        child: Text(
+          value == null ? 'Sin fecha' : _calendarDate(value!),
+          style: TextStyle(
+            fontFamily: PulsoFonts.mono,
+            fontSize: 11,
+            color: enabled ? tokens.chalkDim : tokens.muted,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -604,9 +1280,24 @@ class _AccountingTabs extends StatelessWidget {
               onTap: () => onSelected(_AccountingTab.summary),
             ),
             _TabButton(
+              label: 'Tesorería · cierre',
+              selected: selected == _AccountingTab.treasury,
+              onTap: () => onSelected(_AccountingTab.treasury),
+            ),
+            _TabButton(
+              label: 'Gastos devengados',
+              selected: selected == _AccountingTab.expenses,
+              onTap: () => onSelected(_AccountingTab.expenses),
+            ),
+            _TabButton(
               label: 'Cuotas entrenadores',
               selected: selected == _AccountingTab.installments,
               onTap: () => onSelected(_AccountingTab.installments),
+            ),
+            _TabButton(
+              label: 'Tesorería · reembolsos',
+              selected: selected == _AccountingTab.refunds,
+              onTap: () => onSelected(_AccountingTab.refunds),
             ),
             _TabButton(
               label: 'Reglas de comisión',
@@ -614,9 +1305,14 @@ class _AccountingTabs extends StatelessWidget {
               onTap: () => onSelected(_AccountingTab.rules),
             ),
             _TabButton(
-              label: 'Nómina fija',
+              label: 'Perfiles y nómina',
               selected: selected == _AccountingTab.payroll,
               onTap: () => onSelected(_AccountingTab.payroll),
+            ),
+            _TabButton(
+              label: 'Resultado de caja',
+              selected: selected == _AccountingTab.operationalResults,
+              onTap: () => onSelected(_AccountingTab.operationalResults),
             ),
           ],
         ),
@@ -801,26 +1497,289 @@ class _RuleCoverage extends StatelessWidget {
   }
 }
 
-class _InstallmentCatalog extends StatelessWidget {
-  const _InstallmentCatalog({required this.items});
-  final List<TrainerCommissionInstallmentModel> items;
+class _RuleGuide extends StatelessWidget {
+  const _RuleGuide({required this.rules});
+  final List<TrainerCommissionRuleModel> rules;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final conflicts = rules.where((rule) => rule.hasConflict).length;
+    final scheduled = rules
+        .where((rule) => rule.validityStatus == 'PROGRAMADA')
+        .length;
     return PulsoPanel(
-      padding: EdgeInsets.zero,
-      child: LayoutBuilder(
-        builder: (context, constraints) => constraints.maxWidth < 760
-            ? _InstallmentCards(items: items)
-            : _InstallmentTable(items: items),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            conflicts > 0 ? Icons.warning_amber_outlined : Icons.rule_outlined,
+            color: conflicts > 0 ? tokens.danger : tokens.accent,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  conflicts > 0
+                      ? '$conflicts reglas requieren resolver su vigencia'
+                      : 'Excepción individual primero; regla general después',
+                  style: TextStyle(
+                    color: tokens.chalk,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  conflicts > 0
+                      ? 'Puede ocurrir si dos equipos crean reglas del mismo alcance sin conexión. La selección del cobro sigue siendo determinista, pero conviene corregir las fechas.'
+                      : '$scheduled programadas · las reglas finalizadas se conservan para auditoría y nunca cambian devengos anteriores.',
+                  style: TextStyle(color: tokens.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _InstallmentTable extends StatelessWidget {
-  const _InstallmentTable({required this.items});
-  final List<TrainerCommissionInstallmentModel> items;
+class _LiquidationApplicationEditor extends StatefulWidget {
+  const _LiquidationApplicationEditor({
+    required this.items,
+    required this.controllers,
+    required this.onChanged,
+  });
+
+  final List<TrainerPayableModel> items;
+  final Map<String, TextEditingController> controllers;
+  final VoidCallback onChanged;
+
+  @override
+  State<_LiquidationApplicationEditor> createState() =>
+      _LiquidationApplicationEditorState();
+}
+
+class _LiquidationApplicationEditorState
+    extends State<_LiquidationApplicationEditor> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return SizedBox(
+      height: (widget.items.length * 76.0).clamp(76.0, 244.0),
+      child: Scrollbar(
+        key: const Key('trainer-liquidation-editor-scrollbar'),
+        controller: _controller,
+        thumbVisibility: widget.items.length > 3,
+        child: ListView.separated(
+          controller: _controller,
+          itemCount: widget.items.length,
+          separatorBuilder: (_, _) => Divider(height: 1, color: tokens.line),
+          itemBuilder: (context, index) {
+            final item = widget.items[index];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${item.sourceLabel.toUpperCase()} · ${_calendarDate(item.periodStart)} – ${_calendarDate(item.periodEnd)}',
+                          style: TextStyle(
+                            color: tokens.chalk,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Saldo ${item.currencyCode} ${_amount.format(item.remainingAmount)}'
+                          '${item.appliedAmount > 0 ? ' · abonado ${_amount.format(item.appliedAmount)}' : ''}',
+                          style: TextStyle(color: tokens.muted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: widget.controllers[item.id],
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Importe',
+                        prefixText: '${item.currencyCode} ',
+                      ),
+                      onChanged: (_) => widget.onChanged(),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _InstallmentCatalog extends StatefulWidget {
+  const _InstallmentCatalog({required this.items, required this.onLiquidate});
+  final List<TrainerPayableModel> items;
+  final ValueChanged<List<TrainerPayableModel>> onLiquidate;
+
+  @override
+  State<_InstallmentCatalog> createState() => _InstallmentCatalogState();
+}
+
+class _InstallmentCatalogState extends State<_InstallmentCatalog> {
+  final Set<String> _selected = {};
+
+  List<TrainerPayableModel> get _selectedItems =>
+      widget.items.where((item) => _selected.contains(item.id)).toList();
+
+  bool _compatible(TrainerPayableModel item) {
+    final first = _selectedItems.firstOrNull;
+    return first == null ||
+        (first.trainerId == item.trainerId &&
+            first.currencyId == item.currencyId);
+  }
+
+  void _toggle(TrainerPayableModel item, bool value) {
+    setState(() {
+      if (value) {
+        _selected.add(item.id);
+      } else {
+        _selected.remove(item.id);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final selected = _selectedItems;
+    final total = selected.fold<double>(
+      0,
+      (sum, item) => sum + item.remainingAmount,
+    );
+    final commissionTotal = selected
+        .where((item) => item.isCommission)
+        .fold<double>(0, (sum, item) => sum + item.remainingAmount);
+    final fixedTotal = selected
+        .where((item) => item.isFixed)
+        .fold<double>(0, (sum, item) => sum + item.remainingAmount);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PulsoPanel(
+          padding: const EdgeInsets.all(14),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final summary = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const PulsoLabel('Preparar liquidación'),
+                  const SizedBox(height: 4),
+                  Text(
+                    selected.isEmpty
+                        ? 'Seleccione conceptos del mismo entrenador y moneda.'
+                        : '${selected.length} concepto(s) · ${selected.first.currencyCode} ${_amount.format(total)} · comisión ${_amount.format(commissionTotal)} · fijo ${_amount.format(fixedTotal)}',
+                    style: TextStyle(
+                      color: selected.isEmpty ? tokens.muted : tokens.chalk,
+                      fontWeight: selected.isEmpty
+                          ? FontWeight.w400
+                          : FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+              final button = PulsoPrimaryButton(
+                label: 'Liquidar selección',
+                icon: Icons.payments_outlined,
+                onPressed: selected.isEmpty
+                    ? null
+                    : () => widget.onLiquidate(selected),
+              );
+              if (constraints.maxWidth < 620) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [summary, const SizedBox(height: 12), button],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: summary),
+                  const SizedBox(width: 16),
+                  button,
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        PulsoPanel(
+          padding: EdgeInsets.zero,
+          child: LayoutBuilder(
+            builder: (context, constraints) => constraints.maxWidth < 760
+                ? _InstallmentCards(
+                    items: widget.items,
+                    selected: _selected,
+                    compatible: _compatible,
+                    onToggle: _toggle,
+                  )
+                : _InstallmentTable(
+                    items: widget.items,
+                    selected: _selected,
+                    compatible: _compatible,
+                    onToggle: _toggle,
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InstallmentTable extends StatefulWidget {
+  const _InstallmentTable({
+    required this.items,
+    required this.selected,
+    required this.compatible,
+    required this.onToggle,
+  });
+  final List<TrainerPayableModel> items;
+  final Set<String> selected;
+  final bool Function(TrainerPayableModel) compatible;
+  final void Function(TrainerPayableModel, bool) onToggle;
+
+  @override
+  State<_InstallmentTable> createState() => _InstallmentTableState();
+}
+
+class _InstallmentTableState extends State<_InstallmentTable> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -832,7 +1791,9 @@ class _InstallmentTable extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           child: const Row(
             children: [
+              SizedBox(width: 44),
               Expanded(flex: 3, child: PulsoLabel('Entrenador')),
+              Expanded(flex: 2, child: PulsoLabel('Concepto')),
               Expanded(flex: 2, child: PulsoLabel('Programada')),
               Expanded(flex: 2, child: PulsoLabel('Periodo')),
               Expanded(flex: 2, child: PulsoLabel('Estado')),
@@ -840,17 +1801,47 @@ class _InstallmentTable extends StatelessWidget {
             ],
           ),
         ),
-        for (var index = 0; index < items.length; index++)
-          _InstallmentRow(item: items[index], alternate: index.isOdd),
+        SizedBox(
+          height: (widget.items.length * 58.0).clamp(58.0, 360.0),
+          child: Scrollbar(
+            key: const Key('trainer-payables-table-scrollbar'),
+            controller: _controller,
+            thumbVisibility: widget.items.length > 6,
+            child: ListView.builder(
+              controller: _controller,
+              itemCount: widget.items.length,
+              itemExtent: 58,
+              itemBuilder: (context, index) => _InstallmentRow(
+                item: widget.items[index],
+                alternate: index.isOdd,
+                selected: widget.selected.contains(widget.items[index].id),
+                enabled:
+                    widget.items[index].payable &&
+                    widget.compatible(widget.items[index]),
+                onChanged: (value) =>
+                    widget.onToggle(widget.items[index], value),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
 class _InstallmentRow extends StatelessWidget {
-  const _InstallmentRow({required this.item, required this.alternate});
-  final TrainerCommissionInstallmentModel item;
+  const _InstallmentRow({
+    required this.item,
+    required this.alternate,
+    required this.selected,
+    required this.enabled,
+    required this.onChanged,
+  });
+  final TrainerPayableModel item;
   final bool alternate;
+  final bool selected;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -863,6 +1854,13 @@ class _InstallmentRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
       child: Row(
         children: [
+          SizedBox(
+            width: 44,
+            child: Checkbox(
+              value: selected,
+              onChanged: enabled ? (value) => onChanged(value ?? false) : null,
+            ),
+          ),
           Expanded(
             flex: 3,
             child: Text(
@@ -871,6 +1869,14 @@ class _InstallmentRow extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: tokens.chalk,
               ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _MonoText(
+              item.sourceLabel.toUpperCase(),
+              color: item.isFixed ? tokens.accent : tokens.chalkDim,
+              strong: true,
             ),
           ),
           Expanded(
@@ -886,14 +1892,22 @@ class _InstallmentRow extends StatelessWidget {
           Expanded(
             flex: 2,
             child: _MonoText(
-              overdue ? 'VENCIDA' : item.status.toUpperCase(),
-              color: overdue ? tokens.danger : tokens.warning,
+              !item.payable
+                  ? 'FUTURA'
+                  : overdue
+                  ? 'VENCIDA'
+                  : item.status.toUpperCase(),
+              color: !item.payable
+                  ? tokens.muted
+                  : overdue
+                  ? tokens.danger
+                  : tokens.warning,
             ),
           ),
           Expanded(
             flex: 2,
             child: _MonoText(
-              '${item.currencyCode} ${_amount.format(item.amount)}',
+              '${item.currencyCode} ${_amount.format(item.remainingAmount)}',
               strong: true,
             ),
           ),
@@ -903,27 +1917,73 @@ class _InstallmentRow extends StatelessWidget {
   }
 }
 
-class _InstallmentCards extends StatelessWidget {
-  const _InstallmentCards({required this.items});
-  final List<TrainerCommissionInstallmentModel> items;
+class _InstallmentCards extends StatefulWidget {
+  const _InstallmentCards({
+    required this.items,
+    required this.selected,
+    required this.compatible,
+    required this.onToggle,
+  });
+  final List<TrainerPayableModel> items;
+  final Set<String> selected;
+  final bool Function(TrainerPayableModel) compatible;
+  final void Function(TrainerPayableModel, bool) onToggle;
+
+  @override
+  State<_InstallmentCards> createState() => _InstallmentCardsState();
+}
+
+class _InstallmentCardsState extends State<_InstallmentCards> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
-    return Column(
-      children: [
-        for (var index = 0; index < items.length; index++) ...[
-          Padding(
+    return SizedBox(
+      height: (widget.items.length * 178.0).clamp(178.0, 420.0),
+      child: Scrollbar(
+        key: const Key('trainer-payables-cards-scrollbar'),
+        controller: _controller,
+        thumbVisibility: widget.items.length > 2,
+        child: ListView.separated(
+          controller: _controller,
+          itemCount: widget.items.length,
+          separatorBuilder: (_, _) => Divider(height: 1, color: tokens.line),
+          itemBuilder: (context, index) => Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  items[index].trainerName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: tokens.chalk,
-                  ),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: widget.selected.contains(widget.items[index].id),
+                      onChanged:
+                          widget.items[index].payable &&
+                              widget.compatible(widget.items[index])
+                          ? (value) => widget.onToggle(
+                              widget.items[index],
+                              value ?? false,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        widget.items[index].trainerName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: tokens.chalk,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -931,23 +1991,523 @@ class _InstallmentCards extends StatelessWidget {
                   runSpacing: 12,
                   children: [
                     _Datum(
-                      label: 'Programada',
-                      value: _calendarDate(items[index].scheduledDate),
+                      label: 'Concepto',
+                      value: widget.items[index].sourceLabel,
                     ),
-                    _Datum(label: 'Estado', value: items[index].status),
                     _Datum(
-                      label: 'Monto',
+                      label: 'Programada',
+                      value: _calendarDate(widget.items[index].scheduledDate),
+                    ),
+                    _Datum(label: 'Estado', value: widget.items[index].status),
+                    _Datum(
+                      label: 'Saldo',
                       value:
-                          '${items[index].currencyCode} ${_amount.format(items[index].amount)}',
+                          '${widget.items[index].currencyCode} ${_amount.format(widget.items[index].remainingAmount)}',
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          if (index != items.length - 1) Divider(height: 1, color: tokens.line),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LiquidationHistory extends StatelessWidget {
+  const _LiquidationHistory({
+    required this.state,
+    required this.onOpen,
+    required this.onRetry,
+  });
+
+  final AsyncValue<List<TrainerLiquidationModel>> state;
+  final ValueChanged<TrainerLiquidationModel> onOpen;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PulsoLabel('Tesorería', color: tokens.accent),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Liquidaciones recientes',
+                    style: TextStyle(
+                      color: tokens.chalk,
+                      fontFamily: PulsoFonts.display,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Comprobantes pagados y contramovimientos, sin borrar el historial.',
+                    style: TextStyle(color: tokens.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        state.when(
+          loading: () => const PulsoPanel(
+            child: PulsoStateView(
+              kind: PulsoStateKind.loading,
+              message: 'Cargando liquidaciones…',
+            ),
+          ),
+          error: (error, _) => PulsoPanel(
+            child: PulsoStateView(
+              kind: PulsoStateKind.error,
+              message: 'No se pudo cargar el historial.\n$error',
+              onRetry: onRetry,
+            ),
+          ),
+          data: (items) => items.isEmpty
+              ? const PulsoPanel(
+                  child: PulsoStateView(
+                    kind: PulsoStateKind.empty,
+                    message: 'Todavía no se ha emitido ninguna liquidación.',
+                  ),
+                )
+              : PulsoPanel(
+                  padding: EdgeInsets.zero,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) =>
+                        constraints.maxWidth < 760
+                        ? _LiquidationHistoryCards(items: items, onOpen: onOpen)
+                        : _LiquidationHistoryTable(
+                            items: items,
+                            onOpen: onOpen,
+                          ),
+                  ),
+                ),
+        ),
       ],
+    );
+  }
+}
+
+class _LiquidationHistoryTable extends StatefulWidget {
+  const _LiquidationHistoryTable({required this.items, required this.onOpen});
+  final List<TrainerLiquidationModel> items;
+  final ValueChanged<TrainerLiquidationModel> onOpen;
+
+  @override
+  State<_LiquidationHistoryTable> createState() =>
+      _LiquidationHistoryTableState();
+}
+
+class _LiquidationHistoryTableState extends State<_LiquidationHistoryTable> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Column(
+      children: [
+        Container(
+          color: tokens.raised,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          child: const Row(
+            children: [
+              Expanded(flex: 2, child: PulsoLabel('Comprobante')),
+              Expanded(flex: 3, child: PulsoLabel('Entrenador')),
+              Expanded(flex: 2, child: PulsoLabel('Fecha')),
+              Expanded(flex: 2, child: PulsoLabel('Estado')),
+              Expanded(flex: 2, child: PulsoLabel('Total')),
+              SizedBox(width: 48),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: (widget.items.length * 62.0).clamp(62.0, 310.0),
+          child: Scrollbar(
+            key: const Key('trainer-liquidations-table-scrollbar'),
+            controller: _controller,
+            thumbVisibility: widget.items.length > 5,
+            child: ListView.builder(
+              controller: _controller,
+              itemCount: widget.items.length,
+              itemExtent: 62,
+              itemBuilder: (context, index) {
+                final item = widget.items[index];
+                return Container(
+                  color: index.isOdd
+                      ? tokens.raised.withValues(alpha: 0.55)
+                      : tokens.surface,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _MonoText(item.receiptNumber, strong: true),
+                            if (item.type == 'BAJA_FINAL')
+                              Text(
+                                'BAJA FINAL',
+                                style: TextStyle(
+                                  color: tokens.accent,
+                                  fontFamily: PulsoFonts.mono,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          item.trainerName,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: tokens.chalk,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: _MonoText(
+                          formatDateInZone(
+                            item.paidAt,
+                            appClock.gymTimezone,
+                            pattern: 'dd/MM/yyyy HH:mm',
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: _MonoText(
+                          item.status,
+                          color: item.status == 'PAGADA'
+                              ? tokens.success
+                              : tokens.danger,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _MonoText(
+                              '${item.currencyCode} ${_amount.format(item.total)}',
+                              strong: true,
+                            ),
+                            Text(
+                              'C ${_amount.format(item.commissionTotal)} · F ${_amount.format(item.fixedTotal)}',
+                              style: TextStyle(
+                                color: tokens.muted,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 48,
+                        child: PulsoIconButton(
+                          icon: Icons.receipt_long_outlined,
+                          tooltip: 'Ver ${item.receiptNumber}',
+                          onPressed: () => widget.onOpen(item),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LiquidationHistoryCards extends StatefulWidget {
+  const _LiquidationHistoryCards({required this.items, required this.onOpen});
+  final List<TrainerLiquidationModel> items;
+  final ValueChanged<TrainerLiquidationModel> onOpen;
+
+  @override
+  State<_LiquidationHistoryCards> createState() =>
+      _LiquidationHistoryCardsState();
+}
+
+class _LiquidationHistoryCardsState extends State<_LiquidationHistoryCards> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return SizedBox(
+      height: (widget.items.length * 155.0).clamp(155.0, 380.0),
+      child: Scrollbar(
+        key: const Key('trainer-liquidations-cards-scrollbar'),
+        controller: _controller,
+        thumbVisibility: widget.items.length > 2,
+        child: ListView.separated(
+          controller: _controller,
+          itemCount: widget.items.length,
+          separatorBuilder: (_, _) => Divider(height: 1, color: tokens.line),
+          itemBuilder: (context, index) {
+            final item = widget.items[index];
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _MonoText(item.receiptNumber, strong: true),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.trainerName,
+                          style: TextStyle(
+                            color: tokens.chalk,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 18,
+                          runSpacing: 10,
+                          children: [
+                            _Datum(label: 'Estado', value: item.status),
+                            _Datum(
+                              label: 'Total',
+                              value:
+                                  '${item.currencyCode} ${_amount.format(item.total)}',
+                            ),
+                            _Datum(
+                              label: 'Desglose',
+                              value:
+                                  'Comisión ${_amount.format(item.commissionTotal)} · fijo ${_amount.format(item.fixedTotal)}',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  PulsoIconButton(
+                    icon: Icons.receipt_long_outlined,
+                    tooltip: 'Ver comprobante',
+                    onPressed: () => widget.onOpen(item),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LiquidationReceipt extends StatelessWidget {
+  const _LiquidationReceipt({required this.receipt});
+  final TrainerLiquidationModel receipt;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: tokens.raised,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      PulsoLabel(
+                        receipt.status,
+                        color: receipt.status == 'PAGADA'
+                            ? tokens.success
+                            : tokens.danger,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        receipt.trainerName,
+                        style: TextStyle(
+                          color: tokens.chalk,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${receipt.currencyCode} ${_amount.format(receipt.total)}',
+                      style: TextStyle(
+                        color: tokens.accent,
+                        fontFamily: PulsoFonts.display,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Comisión ${_amount.format(receipt.commissionTotal)} · fijo ${_amount.format(receipt.fixedTotal)}',
+                      style: TextStyle(color: tokens.muted, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 24,
+            runSpacing: 14,
+            children: [
+              _Datum(
+                label: 'Fecha',
+                value: formatDateInZone(
+                  receipt.paidAt,
+                  appClock.gymTimezone,
+                  pattern: 'dd/MM/yyyy HH:mm',
+                ),
+              ),
+              _Datum(label: 'Cuenta', value: receipt.accountName),
+              _Datum(label: 'Método', value: receipt.paymentTypeName),
+              _Datum(label: 'Registró', value: receipt.operatorName),
+            ],
+          ),
+          if (receipt.notes?.trim().isNotEmpty == true) ...[
+            const SizedBox(height: 14),
+            Text(receipt.notes!, style: TextStyle(color: tokens.chalkDim)),
+          ],
+          const SizedBox(height: 16),
+          PulsoLabel(
+            'Comisiones · ${receipt.currencyCode} ${_amount.format(receipt.commissionTotal)}',
+          ),
+          const SizedBox(height: 8),
+          for (final item in receipt.applications)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: tokens.line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.periodStart == null || item.periodEnd == null
+                          ? item.installmentId
+                          : '${_calendarDate(item.periodStart!)} – ${_calendarDate(item.periodEnd!)}',
+                      style: TextStyle(color: tokens.chalkDim),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _MonoText(
+                    '${receipt.currencyCode} ${_amount.format(item.amount)}',
+                    strong: true,
+                  ),
+                ],
+              ),
+            ),
+          if (receipt.fixedApplications.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            PulsoLabel(
+              'Obligaciones fijas · ${receipt.currencyCode} ${_amount.format(receipt.fixedTotal)}',
+            ),
+            const SizedBox(height: 8),
+            for (final item in receipt.fixedApplications)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: tokens.line)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.periodStart == null || item.periodEnd == null
+                            ? item.obligationId
+                            : '${_calendarDate(item.periodStart!)} – ${_calendarDate(item.periodEnd!)}',
+                        style: TextStyle(color: tokens.chalkDim),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _MonoText(
+                      '${receipt.currencyCode} ${_amount.format(item.amount)}',
+                      strong: true,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          if (receipt.reversal != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: tokens.danger),
+                color: tokens.danger.withValues(alpha: 0.06),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PulsoLabel('Contramovimiento', color: tokens.danger),
+                  const SizedBox(height: 6),
+                  Text(
+                    receipt.reversal!.reason,
+                    style: TextStyle(color: tokens.chalk),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${receipt.reversal!.operatorName} · ${formatDateInZone(receipt.reversal!.registeredAt, appClock.gymTimezone, pattern: 'dd/MM/yyyy HH:mm')}',
+                    style: TextStyle(color: tokens.muted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -998,7 +2558,8 @@ class _RuleTable extends StatelessWidget {
               Expanded(flex: 3, child: PulsoLabel('Plan')),
               Expanded(flex: 3, child: PulsoLabel('Entrenador')),
               Expanded(flex: 2, child: PulsoLabel('Cálculo')),
-              Expanded(flex: 2, child: PulsoLabel('Estado')),
+              Expanded(flex: 2, child: PulsoLabel('Vigencia')),
+              Expanded(flex: 3, child: PulsoLabel('Periodo')),
               SizedBox(width: 108, child: PulsoLabel('Acciones')),
             ],
           ),
@@ -1026,10 +2587,13 @@ class _RuleTable extends StatelessWidget {
                 Expanded(
                   flex: 2,
                   child: _MonoText(
-                    rules[index].active ? 'ACTIVA' : 'INACTIVA',
-                    color: rules[index].active ? tokens.success : tokens.muted,
+                    rules[index].hasConflict
+                        ? 'CONFLICTO'
+                        : rules[index].validityStatus,
+                    color: _ruleStatusColor(tokens, rules[index]),
                   ),
                 ),
+                Expanded(flex: 3, child: _MonoText(_rulePeriod(rules[index]))),
                 SizedBox(
                   width: 108,
                   child: Row(
@@ -1037,14 +2601,18 @@ class _RuleTable extends StatelessWidget {
                       PulsoIconButton(
                         icon: Icons.edit_outlined,
                         tooltip: 'Editar ${rules[index].planName}',
-                        onPressed: () => onEdit(rules[index]),
+                        onPressed: rules[index].validityStatus == 'FINALIZADA'
+                            ? null
+                            : () => onEdit(rules[index]),
                       ),
                       const SizedBox(width: 4),
                       PulsoIconButton(
                         icon: Icons.delete_outline,
                         tooltip: 'Eliminar ${rules[index].planName}',
                         danger: true,
-                        onPressed: () => onDelete(rules[index]),
+                        onPressed: rules[index].validityStatus == 'FINALIZADA'
+                            ? null
+                            : () => onDelete(rules[index]),
                       ),
                     ],
                   ),
@@ -1092,14 +2660,18 @@ class _RuleCards extends StatelessWidget {
                     PulsoIconButton(
                       icon: Icons.edit_outlined,
                       tooltip: 'Editar ${rules[index].planName}',
-                      onPressed: () => onEdit(rules[index]),
+                      onPressed: rules[index].validityStatus == 'FINALIZADA'
+                          ? null
+                          : () => onEdit(rules[index]),
                     ),
                     const SizedBox(width: 4),
                     PulsoIconButton(
                       icon: Icons.delete_outline,
                       tooltip: 'Eliminar ${rules[index].planName}',
                       danger: true,
-                      onPressed: () => onDelete(rules[index]),
+                      onPressed: rules[index].validityStatus == 'FINALIZADA'
+                          ? null
+                          : () => onDelete(rules[index]),
                     ),
                   ],
                 ),
@@ -1114,9 +2686,12 @@ class _RuleCards extends StatelessWidget {
                     ),
                     _Datum(label: 'Cálculo', value: _ruleValue(rules[index])),
                     _Datum(
-                      label: 'Estado',
-                      value: rules[index].active ? 'Activa' : 'Inactiva',
+                      label: 'Vigencia',
+                      value: rules[index].hasConflict
+                          ? 'Conflicto'
+                          : rules[index].validityStatus,
                     ),
+                    _Datum(label: 'Periodo', value: _rulePeriod(rules[index])),
                   ],
                 ),
               ],
@@ -1132,6 +2707,18 @@ class _RuleCards extends StatelessWidget {
 String _ruleValue(TrainerCommissionRuleModel rule) => rule.type == 'PERCENTAGE'
     ? '${rule.value.toStringAsFixed(2)}%'
     : _amount.format(rule.value);
+
+String _rulePeriod(TrainerCommissionRuleModel rule) =>
+    '${_calendarDate(rule.startDate)} → ${rule.endDate == null ? 'sin fin' : _calendarDate(rule.endDate!)}';
+
+Color _ruleStatusColor(PulsoTokens tokens, TrainerCommissionRuleModel rule) {
+  if (rule.hasConflict) return tokens.danger;
+  return switch (rule.validityStatus) {
+    'VIGENTE' => tokens.success,
+    'PROGRAMADA' => tokens.warning,
+    _ => tokens.muted,
+  };
+}
 
 class _Datum extends StatelessWidget {
   const _Datum({required this.label, required this.value});

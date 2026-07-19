@@ -125,6 +125,12 @@ class DesktopWindowFrame extends ConsumerWidget {
                         child: Image.asset(
                           'assets/images/diamond_logo.png',
                           height: 22,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            Icons.diamond_outlined,
+                            size: 22,
+                            color: textColor,
+                          ),
                         ),
                       ),
                       Text(

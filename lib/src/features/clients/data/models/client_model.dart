@@ -38,6 +38,16 @@ class ClientModel {
   final String? trainerId;
   @JsonKey(name: 'id_horarios')
   final String? scheduleId;
+  @JsonKey(name: 'membresia_id')
+  final String? membershipId;
+  @JsonKey(name: 'membresia_estado')
+  final String? membershipStatus;
+  @JsonKey(name: 'membresia_precio')
+  final double? membershipPrice;
+  @JsonKey(name: 'membresia_importe_pagado')
+  final double? membershipPaid;
+  @JsonKey(name: 'membresia_saldo_pendiente')
+  final double? membershipBalanceDue;
 
   ClientModel({
     required this.id,
@@ -59,6 +69,11 @@ class ClientModel {
     this.referralId,
     this.trainerId,
     this.scheduleId,
+    this.membershipId,
+    this.membershipStatus,
+    this.membershipPrice,
+    this.membershipPaid,
+    this.membershipBalanceDue,
   });
 
   factory ClientModel.fromJson(Map<String, dynamic> json) =>
@@ -86,6 +101,11 @@ class ClientModel {
     String? referralId,
     String? trainerId,
     String? scheduleId,
+    String? membershipId,
+    String? membershipStatus,
+    double? membershipPrice,
+    double? membershipPaid,
+    double? membershipBalanceDue,
   }) {
     return ClientModel(
       id: id ?? this.id,
@@ -107,6 +127,11 @@ class ClientModel {
       referralId: referralId ?? this.referralId,
       trainerId: trainerId ?? this.trainerId,
       scheduleId: scheduleId ?? this.scheduleId,
+      membershipId: membershipId ?? this.membershipId,
+      membershipStatus: membershipStatus ?? this.membershipStatus,
+      membershipPrice: membershipPrice ?? this.membershipPrice,
+      membershipPaid: membershipPaid ?? this.membershipPaid,
+      membershipBalanceDue: membershipBalanceDue ?? this.membershipBalanceDue,
     );
   }
 

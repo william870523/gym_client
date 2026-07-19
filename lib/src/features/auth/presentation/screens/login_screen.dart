@@ -100,7 +100,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             children: [
               // --- 1. Global Background Image ---
               if (isDesktop)
-                Image.asset('assets/images/gym_bg_2.jpg', fit: BoxFit.cover),
+                Image.asset(
+                  'assets/images/gym_bg_2.jpg',
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.high,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const ColoredBox(color: Color(0xFF0F172A)),
+                ),
 
               // --- 2. Smooth Transition Gradient (Blue -> NeuBackground) ---
               if (isDesktop)
@@ -225,6 +231,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   child: Image.asset(
                                     'assets/images/diamond_logo.png',
                                     height: 80,
+                                    filterQuality: FilterQuality.high,
+                                    errorBuilder:
+                                        (context, error, stackTrace) => Icon(
+                                          Icons.diamond_outlined,
+                                          size: 72,
+                                          color:
+                                              NeumorphicTheme.defaultTextColor(
+                                                context,
+                                              ),
+                                        ),
                                     // Make logo adapt or keep original colors if it's an image that works on both
                                     // Removing color override if it's a colored logo
                                   ),

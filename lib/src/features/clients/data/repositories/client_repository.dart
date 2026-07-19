@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/client_model.dart';
+import '../models/client_record_model.dart';
 
 final clientRepositoryProvider = Provider<ClientRepository>((ref) {
   return ClientRepository(ref.watch(apiClientProvider));
@@ -34,12 +36,103 @@ class ClientRepository {
     }
   }
 
+  Future<ClientRecordModel> getClientRecord(String ci) async {
+    if (ci.trim().isEmpty) {
+      throw const FormatException('La cédula del cliente es obligatoria.');
+    }
+    final response = await _dio.get('/clientes/$ci/expediente');
+    return ClientRecordModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<void> pauseMembership({
+    required String clientId,
+    required String membershipId,
+    required String reason,
+  }) async {
+    final operationId = const Uuid().v4();
+    await _dio.post(
+      '/clientes/$clientId/membresias/$membershipId/pausar',
+      data: {'operation_id': operationId, 'motivo': reason.trim()},
+    );
+  }
+
+  Future<void> resumeMembership({
+    required String clientId,
+    required String membershipId,
+  }) async {
+    final operationId = const Uuid().v4();
+    await _dio.post(
+      '/clientes/$clientId/membresias/$membershipId/reanudar',
+      data: {'operation_id': operationId},
+    );
+  }
+
+  Future<void> requestMembershipAction({
+    required String clientId,
+    required String membershipId,
+    required String kind,
+    required String reason,
+  }) async {
+    await _dio.post(
+      '/membresias/solicitudes',
+      data: {
+        'operation_id': const Uuid().v4(),
+        'ci': clientId,
+        'membresia_id': membershipId,
+        'tipo': kind,
+        'motivo': reason.trim(),
+      },
+    );
+  }
+
+  Future<List<ClientMembershipRequest>> getMembershipRequests({
+    String? state,
+  }) async {
+    final response = await _dio.get(
+      '/membresias/solicitudes',
+      queryParameters: state == null ? null : {'estado': state},
+    );
+    final body = Map<String, dynamic>.from(response.data as Map);
+    final items = body['data'] is List ? body['data'] as List : const [];
+    return items
+        .map(
+          (item) => ClientMembershipRequest.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> approveMembershipRequest(
+    String requestId, {
+    String? note,
+  }) async {
+    await _dio.post(
+      '/membresias/solicitudes/$requestId/aprobar',
+      data: {
+        'operation_id': const Uuid().v4(),
+        if (note?.trim().isNotEmpty == true) 'motivo': note!.trim(),
+      },
+    );
+  }
+
+  Future<void> rejectMembershipRequest({
+    required String requestId,
+    required String reason,
+  }) async {
+    await _dio.post(
+      '/membresias/solicitudes/$requestId/rechazar',
+      data: {'operation_id': const Uuid().v4(), 'motivo': reason.trim()},
+    );
+  }
+
   Future<ClientModel> createClient(ClientModel client) async {
     try {
       // API expects 'ci' as ID.
       // Ensure the model is converted properly.
-      final data = client.toJson();
-      data.remove('peso');
+      final data = clientWritePayload(client);
       final response = await _dio.post('/clientes', data: data);
       return ClientModel.fromJson(response.data);
     } catch (e) {
@@ -52,8 +145,7 @@ class ClientRepository {
       throw Exception('Client ID cannot be empty');
     }
     try {
-      final data = client.toJson();
-      data.remove('peso');
+      final data = clientWritePayload(client);
       await _dio.put('/clientes/${client.id}', data: data);
       return getClient(client.id);
     } catch (e) {
@@ -100,4 +192,13 @@ class ClientRepository {
       rethrow;
     }
   }
+}
+
+Map<String, dynamic> clientWritePayload(ClientModel client) {
+  final data = client.toJson();
+  data.remove('peso');
+  // Proyecciones devueltas por la API. No son campos editables de Cliente.
+  data.remove('membresia_id');
+  data.remove('membresia_estado');
+  return data;
 }

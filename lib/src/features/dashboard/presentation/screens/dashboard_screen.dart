@@ -23,6 +23,8 @@ import '../../../trainers/presentation/screens/trainers_pulso_view.dart';
 import '../../../payments/presentation/screens/payments_pulso_view.dart';
 import '../../../accounting/presentation/screens/accounting_view.dart';
 import '../../../settings/presentation/screens/appearance_pulso_view.dart';
+import '../../../retention/presentation/screens/retention_pulso_view.dart';
+import '../../../retention/presentation/screens/retention_settings_pulso_view.dart';
 
 import '../../../auth/presentation/state/auth_notifier.dart';
 
@@ -107,6 +109,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       // 22: Parte del turno (dashboard recepción) — accesible para previsualizar
       // desde el dashboard admin aunque se entre como administrador.
       const PulsoReceptionDashboardView(),
+      // 23: Control y Calidad — cola operativa y métricas explicables de
+      // renovación, gracia, salida y recuperación.
+      const RetentionPulsoView(),
+      // 24: Configuración administrativa de la política de retención.
+      const RetentionSettingsPulsoView(),
     ];
     return _cachedViews!;
   }
@@ -251,6 +258,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 19: // Attendance History
       case 20: // Accounting
       case 21: // Monedas PULSO (piloto)
+      case 23: // Control y Calidad
+      case 24: // Configuración de retención
         return '';
       default:
         return '';

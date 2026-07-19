@@ -3,6 +3,7 @@ import '../../../configuration/data/models/payment_type_model.dart';
 import '../../../financials/data/models/account_model.dart';
 import '../../../financials/data/models/exchange_rate_model.dart';
 import '../../data/models/payment_model.dart';
+import '../../data/models/payment_reversal_model.dart';
 import '../../data/repositories/payment_repository.dart';
 
 // --- Configuration Providers ---
@@ -52,12 +53,18 @@ class PaymentNotifier extends AsyncNotifier<List<PaymentModel>> {
     state = await AsyncValue.guard(() => _fetchPayments());
   }
 
-  Future<void> voidPayment(String paymentId) async {
+  Future<PaymentReversalResult> voidPayment(
+    String paymentId, {
+    required String reason,
+  }) async {
     final previous = state;
     state = const AsyncValue.loading();
     try {
-      await ref.read(paymentRepositoryProvider).voidPayment(paymentId);
+      final result = await ref
+          .read(paymentRepositoryProvider)
+          .voidPayment(paymentId, reason: reason);
       state = AsyncValue.data(await _fetchPayments());
+      return result;
     } catch (error, stackTrace) {
       state = previous;
       Error.throwWithStackTrace(error, stackTrace);

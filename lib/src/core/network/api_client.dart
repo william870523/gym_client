@@ -50,8 +50,10 @@ Dio apiClient(Ref ref) {
       },
       onError: (DioException e, handler) {
         if (kDebugMode) {
+          final serverDetail = _serverErrorDetail(e.response?.data);
           _apiLogger.w(
-            '[API] ${e.response?.statusCode ?? 'ERR'} ${e.requestOptions.path}: ${e.message}',
+            '[API] ${e.response?.statusCode ?? 'ERR'} ${e.requestOptions.path}: '
+            '${serverDetail ?? e.message}',
           );
         }
         return handler.next(e);
@@ -60,4 +62,15 @@ Dio apiClient(Ref ref) {
   );
 
   return dio;
+}
+
+String? _serverErrorDetail(dynamic data) {
+  if (data is Map) {
+    final detail = data['error'] ?? data['message'] ?? data['detail'];
+    if (detail != null && detail.toString().trim().isNotEmpty) {
+      return detail.toString().trim();
+    }
+  }
+  if (data is String && data.trim().isNotEmpty) return data.trim();
+  return null;
 }
