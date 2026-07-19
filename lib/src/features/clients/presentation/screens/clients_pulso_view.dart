@@ -24,6 +24,7 @@ import '../state/weight_history_notifier.dart';
 import '../widgets/add_weight_pulso_dialog.dart';
 import '../widgets/client_form.dart';
 import '../widgets/client_record_dialog.dart';
+import '../widgets/admin_notices_dialog.dart';
 import '../widgets/membership_requests_dialog.dart';
 
 enum _ClientFilter { all, active, attention, inactive }
@@ -200,6 +201,11 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   Future<void> _showMembershipRequests() => showDialog<void>(
     context: context,
     builder: (_) => const MembershipRequestsDialog(),
+  );
+
+  Future<void> _showAdminNotices() => showDialog<void>(
+    context: context,
+    builder: (_) => const AdminNoticesDialog(),
   );
 
   Future<bool?> _runPaymentFlow(ClientModel client, String planId) {
@@ -452,6 +458,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
             _ClientHeader(
               onCreate: () => _openForm(),
               onRequests: _showMembershipRequests,
+              onNotices: _showAdminNotices,
             ),
             const SizedBox(height: 14),
             PulsoMetricStrip(
@@ -515,7 +522,13 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
 }
 
 class _ClientHeader extends StatelessWidget {
-  const _ClientHeader({required this.onCreate, required this.onRequests});
+  const _ClientHeader({
+    required this.onCreate,
+    required this.onRequests,
+    required this.onNotices,
+  });
+
+  final VoidCallback onNotices;
   final VoidCallback onCreate;
   final VoidCallback onRequests;
 
@@ -557,6 +570,12 @@ class _ClientHeader extends StatelessWidget {
               label: 'Solicitudes',
               icon: Icons.rule_folder_outlined,
               onPressed: onRequests,
+            ),
+            PulsoIconButton(
+              key: const ValueKey('admin-notices-action'),
+              icon: Icons.notifications_none_outlined,
+              tooltip: 'Avisos a administración',
+              onPressed: onNotices,
             ),
             PulsoPrimaryButton(
               label: 'Nuevo socio',

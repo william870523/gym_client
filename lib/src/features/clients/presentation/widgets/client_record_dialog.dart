@@ -13,6 +13,7 @@ import '../../../payments/presentation/widgets/process_payment_dialog.dart';
 import '../../../products/data/models/membresia_cuota_models.dart';
 import '../../../products/data/repositories/payment_plan_repository.dart';
 import '../../../products/presentation/widgets/membresia_cuotas_panel.dart';
+import '../../../trainers/presentation/providers/trainer_notifier.dart';
 import '../../data/models/client_model.dart';
 import '../../data/models/client_record_model.dart';
 import '../../data/repositories/client_repository.dart';
@@ -909,6 +910,46 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
     builder: (_) => const MembershipRequestsDialog(),
   );
 
+  /// R5.4 — cambio de entrenador a petición del cliente: recepción lo ejecuta
+  /// sin aprobación previa y administración recibe un aviso automático.
+  Future<void> _changeTrainer() async {
+    final choice = await showDialog<_TrainerChangeChoice>(
+      context: context,
+      builder: (_) => _ChangeTrainerDialog(membership: membership),
+    );
+    if (choice == null || !mounted) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await ref
+          .read(clientRepositoryProvider)
+          .changeMembershipTrainer(
+            membershipId: membership.id,
+            newTrainerId: choice.trainerId,
+            reason: choice.reason,
+          );
+      await ref.read(clientNotifierProvider.notifier).refresh();
+      ref.invalidate(clientRecordProvider(client.id));
+      final destino = result['entrenador_nuevo'] ?? 'sin entrenador';
+      final transferidas = result['cuotas_transferidas'] ?? 0;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Entrenador cambiado a $destino. '
+            '$transferidas tramo(s) de comisión transferidos; '
+            'administración fue avisada.',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo cambiar el entrenador: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _run(Future<void> Function() operation, String message) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -1067,6 +1108,16 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                           : () => _request('REANUDAR'),
                     ),
                   ),
+                  const SizedBox(height: 7),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: PulsoSecondaryButton(
+                      key: ValueKey('membership-change-trainer-${membership.id}'),
+                      label: 'Cambiar entrenador',
+                      icon: Icons.swap_horiz_outlined,
+                      onPressed: _busy ? null : _changeTrainer,
+                    ),
+                  ),
                   if (pendingRequest != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 7),
@@ -1152,6 +1203,141 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TrainerChangeChoice {
+  const _TrainerChangeChoice({required this.trainerId, this.reason});
+
+  /// Nulo = el cliente continúa sin entrenador.
+  final String? trainerId;
+  final String? reason;
+}
+
+/// R5.4 — selector del nuevo entrenador (u opción «sin entrenador») con
+/// motivo opcional. El aviso a administración lo emite el servidor.
+class _ChangeTrainerDialog extends ConsumerStatefulWidget {
+  const _ChangeTrainerDialog({required this.membership});
+
+  final ClientMembershipRecord membership;
+
+  @override
+  ConsumerState<_ChangeTrainerDialog> createState() =>
+      _ChangeTrainerDialogState();
+}
+
+class _ChangeTrainerDialogState extends ConsumerState<_ChangeTrainerDialog> {
+  final _reasonController = TextEditingController();
+  String? _trainerId;
+  bool _sinEntrenador = false;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final trainersAsync = ref.watch(trainerProvider);
+    final currentTrainerId = widget.membership.trainers
+        .where((item) => item.endDate == null)
+        .map((item) => item.trainerId)
+        .firstOrNull;
+    return AlertDialog(
+      title: const Text('CAMBIAR ENTRENADOR'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Recepción ejecuta el cambio sin aprobación previa; '
+              'administración recibe un aviso automático. Lo ya ganado queda '
+              'con el entrenador saliente.',
+              style: TextStyle(color: tokens.muted, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            trainersAsync.when(
+              loading: () => const LinearProgressIndicator(minHeight: 2),
+              error: (error, _) => Text(
+                'No se pudo cargar el catálogo de entrenadores: $error',
+                style: TextStyle(color: tokens.danger, fontSize: 12),
+              ),
+              data: (trainers) => DropdownButtonFormField<String>(
+                key: const ValueKey('change-trainer-target'),
+                initialValue: _trainerId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nuevo entrenador',
+                  isDense: true,
+                ),
+                items: [
+                  for (final trainer in trainers)
+                    if (trainer.activo && trainer.id != currentTrainerId)
+                      DropdownMenuItem(
+                        value: trainer.id,
+                        child: Text(
+                          '${trainer.nombres ?? ''} ${trainer.apellidos ?? ''}'
+                              .trim(),
+                        ),
+                      ),
+                ],
+                onChanged: _sinEntrenador
+                    ? null
+                    : (value) => setState(() => _trainerId = value),
+              ),
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              key: const ValueKey('change-trainer-none'),
+              value: _sinEntrenador,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('El cliente continúa sin entrenador'),
+              subtitle: Text(
+                'Los tramos futuros de comisión se anulan.',
+                style: TextStyle(color: tokens.muted, fontSize: 11),
+              ),
+              onChanged: (value) => setState(() {
+                _sinEntrenador = value ?? false;
+                if (_sinEntrenador) _trainerId = null;
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('change-trainer-reason'),
+              controller: _reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional, llega a administración)',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const ValueKey('change-trainer-confirm'),
+          onPressed: _sinEntrenador || _trainerId != null
+              ? () => Navigator.of(context).pop(
+                  _TrainerChangeChoice(
+                    trainerId: _sinEntrenador ? null : _trainerId,
+                    reason: _reasonController.text,
+                  ),
+                )
+              : null,
+          child: const Text('Confirmar cambio'),
+        ),
+      ],
     );
   }
 }

@@ -58,6 +58,48 @@ class ClientRepository {
     );
   }
 
+  /// R5.4 — bandeja de avisos informativos para administración.
+  Future<List<Map<String, dynamic>>> getAdminNotices({
+    bool incluirLeidos = true,
+  }) async {
+    final response = await _dio.get(
+      '/avisos-administracion',
+      queryParameters: {if (incluirLeidos) 'leidos': 'todos'},
+    );
+    return (response.data as List)
+        .whereType<Map>()
+        .map(Map<String, dynamic>.from)
+        .toList(growable: false);
+  }
+
+  /// R5.4 — cambio de entrenador a petición del cliente (sin aprobación
+  /// previa). `newTrainerId` nulo deja la membresía sin entrenador.
+  Future<Map<String, dynamic>> changeMembershipTrainer({
+    required String membershipId,
+    String? newTrainerId,
+    String? reason,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/membresias/$membershipId/cambiar-entrenador',
+        data: {
+          'nuevo_entrenador_id': newTrainerId,
+          'motivo': reason?.trim().isNotEmpty == true ? reason!.trim() : null,
+        },
+      );
+      return Map<String, dynamic>.from(response.data as Map);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map
+          ? (e.response!.data as Map)['error']?.toString()
+          : null;
+      throw Exception(
+        detail?.trim().isNotEmpty == true
+            ? detail!.trim()
+            : 'No se pudo cambiar el entrenador (${e.response?.statusCode ?? 'sin respuesta'}).',
+      );
+    }
+  }
+
   Future<void> resumeMembership({
     required String clientId,
     required String membershipId,
