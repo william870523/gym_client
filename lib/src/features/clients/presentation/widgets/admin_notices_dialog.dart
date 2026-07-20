@@ -25,6 +25,26 @@ class _AdminNoticesDialogState extends ConsumerState<AdminNoticesDialog> {
     _notices = ref.read(clientRepositoryProvider).getAdminNotices();
   }
 
+  Future<void> _markAllRead() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final marked = await ref
+          .read(clientRepositoryProvider)
+          .markAdminNoticesRead();
+      if (!mounted) return;
+      setState(() {
+        _notices = ref.read(clientRepositoryProvider).getAdminNotices();
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text('$marked aviso(s) marcados como leídos.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudieron marcar los avisos: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PulsoThemeScope(
@@ -71,6 +91,12 @@ class _AdminNoticesDialogState extends ConsumerState<AdminNoticesDialog> {
                               ),
                             ],
                           ),
+                        ),
+                        PulsoIconButton(
+                          key: const ValueKey('admin-notices-mark-read'),
+                          icon: Icons.done_all_outlined,
+                          tooltip: 'Marcar todo como leído',
+                          onPressed: _markAllRead,
                         ),
                         PulsoIconButton(
                           icon: Icons.close,

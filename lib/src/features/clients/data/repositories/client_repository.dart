@@ -72,6 +72,16 @@ class ClientRepository {
         .toList(growable: false);
   }
 
+  /// R5.4 — marca como leídos todos los avisos pendientes (o los indicados).
+  Future<int> markAdminNoticesRead({List<String>? avisoIds}) async {
+    final response = await _dio.post(
+      '/avisos-administracion/leer',
+      data: {'aviso_ids': avisoIds ?? const []},
+    );
+    return (response.data is Map ? response.data['marcados'] : null) as int? ??
+        0;
+  }
+
   /// R5.4 — cambio de entrenador a petición del cliente (sin aprobación
   /// previa). `newTrainerId` nulo deja la membresía sin entrenador.
   Future<Map<String, dynamic>> changeMembershipTrainer({
