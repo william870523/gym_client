@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../models/accounting_models.dart';
+import '../models/exchange_revaluation_models.dart';
 import '../models/management_margin_annual_models.dart';
 import '../models/management_margin_models.dart';
 import '../models/membership_revenue_models.dart';
@@ -330,6 +331,16 @@ class AccountingRepository {
       queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
     );
     return MembershipRevenueModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<ExchangeRevaluationModel> getExchangeRevaluation({String? month}) async {
+    final response = await _dio.get(
+      '/contabilidad/exchange-revaluation',
+      queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
+    );
+    return ExchangeRevaluationModel.fromJson(
       Map<String, dynamic>.from(response.data as Map),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/accounting_models.dart';
+import '../../data/models/exchange_revaluation_models.dart';
 import '../../data/models/management_margin_annual_models.dart';
 import '../../data/models/management_margin_models.dart';
 import '../../data/models/membership_revenue_models.dart';
@@ -93,6 +94,13 @@ final operationalAnnualResultsProvider = FutureProvider.autoDispose
       return ref
           .watch(accountingRepositoryProvider)
           .getOperationalAnnualResults(year: year);
+    });
+
+final exchangeRevaluationProvider = FutureProvider.autoDispose
+    .family<ExchangeRevaluationModel, String?>((ref, month) {
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getExchangeRevaluation(month: month);
     });
 
 final membershipRevenueProvider = FutureProvider.autoDispose

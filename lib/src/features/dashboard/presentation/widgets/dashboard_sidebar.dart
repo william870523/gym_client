@@ -334,6 +334,16 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                     textMuted: textMuted,
                                     accentColor: const Color(0xFF8B5CF6),
                                   ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.currency_exchange_outlined,
+                                      'Revaluación',
+                                      index: 26,
+                                      isActive: widget.selectedIndex == 26,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFF8B5CF6),
+                                    ),
                                   _buildSubNavItem(
                                     Icons.attach_money,
                                     'Monedas',

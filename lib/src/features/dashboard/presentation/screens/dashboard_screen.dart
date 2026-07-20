@@ -26,6 +26,7 @@ import '../../../settings/presentation/screens/appearance_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_settings_pulso_view.dart';
 import '../../../clients/presentation/screens/client_discount_settings_pulso_view.dart';
+import '../../../accounting/presentation/screens/exchange_revaluation_pulso_view.dart';
 
 import '../../../auth/presentation/state/auth_notifier.dart';
 
@@ -117,6 +118,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       const RetentionSettingsPulsoView(),
       // 25: Configuración del descuento global de cliente VIEJO (R5.3).
       const ClientDiscountSettingsPulsoView(),
+      // 26: Informe de revaluación cambiaria (R5.5).
+      const ExchangeRevaluationPulsoView(),
     ];
     return _cachedViews!;
   }
@@ -264,6 +267,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 23: // Control y Calidad
       case 24: // Configuración de retención
       case 25: // Configuración de descuento de cliente
+      case 26: // Revaluación cambiaria
         return '';
       default:
         return '';
