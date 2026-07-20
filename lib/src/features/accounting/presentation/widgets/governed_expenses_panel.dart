@@ -6,9 +6,93 @@ import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../financials/presentation/state/account_notifier.dart';
+import '../../../financials/presentation/state/currency_notifier.dart';
 import '../../data/models/accounting_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 import '../state/accounting_providers.dart';
+
+/// Diálogo de formulario con la gramática PULSO (banda de acento, etiqueta
+/// de sección, título condensado y acciones enmarcadas). Sustituye a los
+/// AlertDialog Material del módulo de gastos.
+class _PulsoFormDialog extends StatelessWidget {
+  const _PulsoFormDialog({
+    required this.title,
+    required this.subtitle,
+    required this.confirmLabel,
+    required this.onConfirm,
+    required this.child,
+    this.danger = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String confirmLabel;
+  final Future<void> Function() onConfirm;
+  final Widget child;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final screen = MediaQuery.sizeOf(context);
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: screen.height - 48,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(height: 4, color: danger ? tokens.danger : tokens.accent),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const PulsoLabel('PULSO · CONTABILIDAD'),
+                  const SizedBox(height: 8),
+                  Text(title, style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: tokens.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: tokens.line),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
+                child: child,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 10, 22, 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  PulsoSecondaryButton(
+                    label: 'Cancelar',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  PulsoPrimaryButton(
+                    label: confirmLabel,
+                    onPressed: () => onConfirm(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 String _errorText(Object error) {
   if (error is DioException) {
@@ -125,14 +209,11 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
                   ],
                 ),
               ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.accent,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Nuevo Gasto'),
-                onPressed: () => _showCreateExpenseDialog(context, categories, suppliers),
+              PulsoPrimaryButton(
+                label: 'Nuevo gasto',
+                icon: Icons.add,
+                onPressed: () =>
+                    _showCreateExpenseDialog(context, categories, suppliers),
               ),
             ],
           ),
@@ -189,16 +270,18 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
                 ),
               ),
               const SizedBox(width: 16),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.category_outlined, size: 18),
-                label: const Text('Categorías'),
-                onPressed: () => _showCategoryManagementDialog(context, categories),
+              PulsoSecondaryButton(
+                label: 'Categorías',
+                icon: Icons.category_outlined,
+                onPressed: () =>
+                    _showCategoryManagementDialog(context, categories),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.business_outlined, size: 18),
-                label: const Text('Proveedores'),
-                onPressed: () => _showSupplierManagementDialog(context, suppliers),
+              PulsoSecondaryButton(
+                label: 'Proveedores',
+                icon: Icons.business_outlined,
+                onPressed: () =>
+                    _showSupplierManagementDialog(context, suppliers),
               ),
             ],
           ),
@@ -470,93 +553,149 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
     final nowStr = DateTime.now().toUtc().toIso8601String().substring(0, 7);
     final mesCtrl = TextEditingController(text: _month ?? nowStr);
     final refCtrl = TextEditingController();
-    String? categoryId = categories.isNotEmpty ? categories.first.categoriaId : null;
+    final currencies = ref.read(currencyProvider).value ?? const [];
+    String? categoryId =
+        categories.isNotEmpty ? categories.first.categoriaId : null;
     String? supplierId;
-    String currencyId = 'USD';
+    String? currencyId = currencies.isNotEmpty ? currencies.first.id : null;
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Registrar Nuevo Gasto Devengado'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: categoryId,
-                decoration: const InputDecoration(labelText: 'Categoría *'),
-                items: categories
-                    .map((c) => DropdownMenuItem(value: c.categoriaId, child: Text(c.nombre)))
-                    .toList(),
-                onChanged: (val) => categoryId = val,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: supplierId,
-                decoration: const InputDecoration(labelText: 'Proveedor (Opcional)'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Sin proveedor')),
-                  ...suppliers.map((s) => DropdownMenuItem(value: s.proveedorId, child: Text(s.nombre))),
-                ],
-                onChanged: (val) => supplierId = val,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descCtrl,
-                decoration: const InputDecoration(labelText: 'Descripción del gasto *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: montoCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Monto *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: mesCtrl,
-                decoration: const InputDecoration(labelText: 'Periodo pertenencia (AAAA-MM) *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: refCtrl,
-                decoration: const InputDecoration(labelText: 'Comprobante / Referencia (Opcional)'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (categoryId == null || descCtrl.text.isEmpty || montoCtrl.text.isEmpty) {
+      builder: (dialogCtx) => PulsoThemeScope(
+        child: StatefulBuilder(
+          builder: (context, setLocal) => _PulsoFormDialog(
+            title: 'NUEVO GASTO',
+            subtitle:
+                'Gasto devengado por su mes de pertenencia; el pago sale luego de tesorería.',
+            confirmLabel: 'Guardar',
+            onConfirm: () async {
+              if (categoryId == null ||
+                  descCtrl.text.isEmpty ||
+                  montoCtrl.text.isEmpty ||
+                  currencyId == null) {
                 return;
               }
               final navigator = Navigator.of(dialogCtx);
               final messenger = ScaffoldMessenger.of(context);
               try {
-                await ref.read(accountingRepositoryProvider).createGovernedExpense({
+                await ref
+                    .read(accountingRepositoryProvider)
+                    .createGovernedExpense({
                   'categoria_id': categoryId,
                   'proveedor_id': supplierId,
                   'moneda_id': currencyId,
                   'descripcion': descCtrl.text,
                   'monto': montoCtrl.text,
                   'periodo_pertenencia_mes': mesCtrl.text,
-                  'comprobante_referencia': refCtrl.text.isNotEmpty ? refCtrl.text : null,
+                  'comprobante_referencia':
+                      refCtrl.text.isNotEmpty ? refCtrl.text : null,
                 });
                 navigator.pop();
                 _refresh();
               } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_errorText(e))),
-                );
+                messenger.showSnackBar(SnackBar(content: Text(_errorText(e))));
               }
             },
-            child: const Text('Guardar'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: categoryId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Categoría *',
+                    isDense: true,
+                  ),
+                  items: categories
+                      .map((c) => DropdownMenuItem(
+                            value: c.categoriaId,
+                            child: Text(c.nombre),
+                          ))
+                      .toList(),
+                  onChanged: (val) => setLocal(() => categoryId = val),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: supplierId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Proveedor (opcional)',
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('Sin proveedor'),
+                    ),
+                    ...suppliers.map((s) => DropdownMenuItem(
+                          value: s.proveedorId,
+                          child: Text(s.nombre),
+                        )),
+                  ],
+                  onChanged: (val) => setLocal(() => supplierId = val),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: montoCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Monto *',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: currencyId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Moneda *',
+                          isDense: true,
+                        ),
+                        items: currencies
+                            .map((c) => DropdownMenuItem(
+                                  value: c.id,
+                                  child: Text(c.code),
+                                ))
+                            .toList(),
+                        onChanged: (val) => setLocal(() => currencyId = val),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción del gasto *',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: mesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Periodo de pertenencia (AAAA-MM) *',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: refCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Comprobante / referencia (opcional)',
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -571,62 +710,71 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('Registrar Pago: ${item.descripcion}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: accountId,
-              decoration: const InputDecoration(labelText: 'Cuenta de Salida *'),
-              items: accounts
-                  .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                  .toList(),
-              onChanged: (val) => accountId = val,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: montoCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Monto a Pagar *'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: refCtrl,
-              decoration: const InputDecoration(labelText: 'Comprobante / Referencia'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
+      builder: (dialogCtx) => PulsoThemeScope(
+        child: StatefulBuilder(
+          builder: (context, setLocal) => _PulsoFormDialog(
+            title: 'REGISTRAR PAGO',
+            subtitle:
+                '${item.descripcion} · genera una salida de tesorería por el importe pagado.',
+            confirmLabel: 'Confirmar pago',
+            onConfirm: () async {
               if (montoCtrl.text.isEmpty) return;
               final navigator = Navigator.of(dialogCtx);
               final messenger = ScaffoldMessenger.of(context);
               try {
-                await ref.read(accountingRepositoryProvider).payGovernedExpense(
-                  item.gastoId,
-                  {
-                    'monto': montoCtrl.text,
-                    'cuenta_id': accountId,
-                    'comprobante_referencia': refCtrl.text.isNotEmpty ? refCtrl.text : null,
-                  },
-                );
+                await ref
+                    .read(accountingRepositoryProvider)
+                    .payGovernedExpense(item.gastoId, {
+                  'monto': montoCtrl.text,
+                  'cuenta_id': accountId,
+                  'comprobante_referencia':
+                      refCtrl.text.isNotEmpty ? refCtrl.text : null,
+                });
                 navigator.pop();
                 _refresh();
               } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_errorText(e))),
-                );
+                messenger.showSnackBar(SnackBar(content: Text(_errorText(e))));
               }
             },
-            child: const Text('Confirmar Pago'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: accountId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Cuenta de salida *',
+                    isDense: true,
+                  ),
+                  items: accounts
+                      .map((a) => DropdownMenuItem(
+                            value: a.id,
+                            child: Text(a.name),
+                          ))
+                      .toList(),
+                  onChanged: (val) => setLocal(() => accountId = val),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: montoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Monto a pagar *',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: refCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Comprobante / referencia',
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -636,46 +784,45 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Reversar Pago de Gasto'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('¿Desea reversar la aplicación de pago por \$${app.montoAplicado}?'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: motivoCtrl,
-              decoration: const InputDecoration(labelText: 'Motivo de Reversión *'),
-            ),
-          ],
+      builder: (dialogCtx) => PulsoThemeScope(
+        child: _PulsoFormDialog(
+          title: 'REVERSAR PAGO',
+          subtitle:
+              'Crea un contramovimiento de tesorería y restablece el pasivo pendiente.',
+          confirmLabel: 'Reversar pago',
+          danger: true,
+          onConfirm: () async {
+            if (motivoCtrl.text.isEmpty) return;
+            final navigator = Navigator.of(dialogCtx);
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await ref
+                  .read(accountingRepositoryProvider)
+                  .reverseGovernedExpensePayment(
+                app.aplicacionId,
+                {'motivo': motivoCtrl.text},
+              );
+              navigator.pop();
+              _refresh();
+            } catch (e) {
+              messenger.showSnackBar(SnackBar(content: Text(_errorText(e))));
+            }
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Se reversará la aplicación de pago por \$${app.montoAplicado}.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo de reversión *',
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              if (motivoCtrl.text.isEmpty) return;
-              final navigator = Navigator.of(dialogCtx);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(accountingRepositoryProvider).reverseGovernedExpensePayment(
-                  app.aplicacionId,
-                  {'motivo': motivoCtrl.text},
-                );
-                navigator.pop();
-                _refresh();
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_errorText(e))),
-                );
-              }
-            },
-            child: const Text('Reversar Pago'),
-          ),
-        ],
       ),
     );
   }
@@ -686,71 +833,83 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Gestión de Categorías de Gastos'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre de la Nueva Categoría'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: nature,
-                decoration: const InputDecoration(labelText: 'Naturaleza Contable'),
-                items: const [
-                  DropdownMenuItem(value: 'OPERATIVO', child: Text('Operativo (OPEX)')),
-                  DropdownMenuItem(value: 'ADMINISTRATIVO', child: Text('Administrativo')),
-                  DropdownMenuItem(value: 'COSTO_VENTAS', child: Text('Costo de Ventas')),
-                ],
-                onChanged: (val) => nature = val ?? 'OPERATIVO',
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              const Text('Categorías Existentes:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 150,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: categories.length,
-                  itemBuilder: (_, i) => ListTile(
-                    dense: true,
-                    title: Text(categories[i].nombre),
-                    subtitle: Text(categories[i].naturaleza),
-                  ),
+      builder: (dialogCtx) => PulsoThemeScope(
+        child: Builder(
+          builder: (context) {
+            final tokens = PulsoTokens.of(context);
+            return StatefulBuilder(
+              builder: (context, setLocal) => _PulsoFormDialog(
+                title: 'CATEGORÍAS DE GASTO',
+                subtitle:
+                    'Clasifican los gastos por su naturaleza contable (OPEX, administrativo, costo de ventas).',
+                confirmLabel: 'Crear categoría',
+                onConfirm: () async {
+                  if (nameCtrl.text.isEmpty) return;
+                  final navigator = Navigator.of(dialogCtx);
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await ref
+                        .read(accountingRepositoryProvider)
+                        .createGovernedExpenseCategory({
+                      'nombre': nameCtrl.text,
+                      'naturaleza': nature,
+                    });
+                    navigator.pop();
+                    _refresh();
+                  } catch (e) {
+                    messenger
+                        .showSnackBar(SnackBar(content: Text(_errorText(e))));
+                  }
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre de la nueva categoría',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: nature,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Naturaleza contable',
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'OPERATIVO',
+                            child: Text('Operativo (OPEX)')),
+                        DropdownMenuItem(
+                            value: 'ADMINISTRATIVO',
+                            child: Text('Administrativo')),
+                        DropdownMenuItem(
+                            value: 'COSTO_VENTAS',
+                            child: Text('Costo de ventas')),
+                      ],
+                      onChanged: (val) =>
+                          setLocal(() => nature = val ?? 'OPERATIVO'),
+                    ),
+                    const SizedBox(height: 16),
+                    const PulsoLabel('CATEGORÍAS EXISTENTES'),
+                    const SizedBox(height: 6),
+                    _ManagementList(
+                      empty: 'Aún no hay categorías.',
+                      rows: [
+                        for (final c in categories)
+                          (title: c.nombre, subtitle: c.naturaleza),
+                      ],
+                      tokens: tokens,
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cerrar')),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameCtrl.text.isEmpty) return;
-              final navigator = Navigator.of(dialogCtx);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(accountingRepositoryProvider).createGovernedExpenseCategory({
-                  'nombre': nameCtrl.text,
-                  'naturaleza': nature,
-                });
-                navigator.pop();
-                _refresh();
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_errorText(e))),
-                );
-              }
-            },
-            child: const Text('Crear Categoría'),
-          ),
-        ],
       ),
     );
   }
@@ -761,65 +920,120 @@ class _GovernedExpensesPanelState extends ConsumerState<GovernedExpensesPanel> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Gestión de Proveedores'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre del Proveedor *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: docCtrl,
-                decoration: const InputDecoration(labelText: 'Documento / RUC / NIT (Opcional)'),
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              const Text('Proveedores Registrados:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 150,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: suppliers.length,
-                  itemBuilder: (_, i) => ListTile(
-                    dense: true,
-                    title: Text(suppliers[i].nombre),
-                    subtitle: Text(suppliers[i].documento ?? 'Sin documento'),
+      builder: (dialogCtx) => PulsoThemeScope(
+        child: Builder(
+          builder: (context) {
+            final tokens = PulsoTokens.of(context);
+            return _PulsoFormDialog(
+              title: 'PROVEEDORES',
+              subtitle:
+                  'Terceros a quienes se paga un gasto gobernado (alquiler, servicios, insumos).',
+              confirmLabel: 'Crear proveedor',
+              onConfirm: () async {
+                if (nameCtrl.text.isEmpty) return;
+                final navigator = Navigator.of(dialogCtx);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref
+                      .read(accountingRepositoryProvider)
+                      .createGovernedExpenseSupplier({
+                    'nombre': nameCtrl.text,
+                    'documento': docCtrl.text.isNotEmpty ? docCtrl.text : null,
+                  });
+                  navigator.pop();
+                  _refresh();
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text(_errorText(e))));
+                }
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del proveedor *',
+                      isDense: true,
+                    ),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: docCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Documento / RUC / NIT (opcional)',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const PulsoLabel('PROVEEDORES REGISTRADOS'),
+                  const SizedBox(height: 6),
+                  _ManagementList(
+                    empty: 'Aún no hay proveedores.',
+                    rows: [
+                      for (final s in suppliers)
+                        (
+                          title: s.nombre,
+                          subtitle: s.documento ?? 'Sin documento',
+                        ),
+                    ],
+                    tokens: tokens,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Lista compacta de catálogo (categorías/proveedores) con encuadre PULSO.
+class _ManagementList extends StatelessWidget {
+  const _ManagementList({
+    required this.rows,
+    required this.empty,
+    required this.tokens,
+  });
+
+  final List<({String title, String subtitle})> rows;
+  final String empty;
+  final PulsoTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return Text(empty, style: TextStyle(color: tokens.muted, fontSize: 12));
+    }
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 170),
+      decoration: BoxDecoration(border: Border.all(color: tokens.line)),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: rows.length,
+        separatorBuilder: (_, _) => Divider(height: 1, color: tokens.line),
+        itemBuilder: (_, i) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  rows[i].title,
+                  style: TextStyle(color: tokens.chalk, fontSize: 12.5),
+                ),
+              ),
+              Text(
+                rows[i].subtitle.toUpperCase(),
+                style: TextStyle(
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 9,
+                  color: tokens.muted,
                 ),
               ),
             ],
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cerrar')),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameCtrl.text.isEmpty) return;
-              final navigator = Navigator.of(dialogCtx);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(accountingRepositoryProvider).createGovernedExpenseSupplier({
-                  'nombre': nameCtrl.text,
-                  'documento': docCtrl.text.isNotEmpty ? docCtrl.text : null,
-                });
-                navigator.pop();
-                _refresh();
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_errorText(e))),
-                );
-              }
-            },
-            child: const Text('Crear Proveedor'),
-          ),
-        ],
       ),
     );
   }
