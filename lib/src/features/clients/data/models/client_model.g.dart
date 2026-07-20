@@ -35,6 +35,7 @@ ClientModel _$ClientModelFromJson(Map<String, dynamic> json) => ClientModel(
   membershipPrice: (json['membresia_precio'] as num?)?.toDouble(),
   membershipPaid: (json['membresia_importe_pagado'] as num?)?.toDouble(),
   membershipBalanceDue: (json['membresia_saldo_pendiente'] as num?)?.toDouble(),
+  categoria: json['categoria'] as String?,
 );
 
 Map<String, dynamic> _$ClientModelToJson(ClientModel instance) =>
@@ -63,4 +64,5 @@ Map<String, dynamic> _$ClientModelToJson(ClientModel instance) =>
       'membresia_precio': instance.membershipPrice,
       'membresia_importe_pagado': instance.membershipPaid,
       'membresia_saldo_pendiente': instance.membershipBalanceDue,
+      'categoria': instance.categoria,
     };

@@ -10,6 +10,8 @@ import '../../data/repositories/payment_repository.dart';
 import '../../../financials/data/models/account_model.dart';
 import '../../../configuration/data/models/payment_type_model.dart';
 import '../../../clients/data/models/client_model.dart';
+import '../../../clients/domain/client_discount.dart';
+import '../../../clients/presentation/state/client_discount_providers.dart';
 import '../../../products/data/repositories/payment_plan_repository.dart';
 import '../../../products/presentation/state/payment_plan_notifier.dart';
 import '../../../products/data/models/payment_plan_model.dart';
@@ -476,16 +478,42 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     );
   }
 
+  /// R5.3 — Desglose de descuento vigente para el plan/cliente actuales.
+  /// Las cuotas individuales NO se descuentan aquí (su importe ya nació del
+  /// esquema del plan); solo se descuenta el precio de lista en cobro completo.
+  ClientDiscountBreakdown _currentDiscount(PaymentPlanModel plan) {
+    final settingsSnapshot = ref.read(clientDiscountSettingsProvider);
+    final pct = settingsSnapshot.maybeWhen(
+      data: (s) => s.clienteViejoPct,
+      orElse: () => '16.67',
+    );
+    final listPrice = (_cuotaFija || _porCuotas)
+        ? (_importeCuotaEnCurso ?? _cuota1Importe ?? plan.importe)
+        : plan.importe;
+    return clientDiscountBreakdown(
+      listPrice: listPrice,
+      category: widget.client.categoria.toClientCategory,
+      discountPct: pct,
+      planFixedOldPrice: _cuotaFija || _porCuotas
+          ? null
+          : plan.precioViejoExcepcion,
+    );
+  }
+
   double _amountDueFor(PaymentPlanModel plan) {
     // Cuota concreta (panel de cuotas o detección automática): importe fijo.
     if (_cuotaFija) return _importeCuotaEnCurso ?? plan.importe;
     // Contratación por cuotas: se cobra la cuota 1; el resto queda programado.
     if (_porCuotas && _cuota1Importe != null) return _cuota1Importe!;
     final balance = widget.client.membershipBalanceDue;
+    // R5.3: aplicar descuento de cliente VIEJO sobre el precio de lista.
+    final discount = _currentDiscount(plan);
     if (widget.client.membershipId != null && balance != null && balance > 0) {
-      return balance;
+      // El saldo pendiente ya refleja cobros previos; el descuento aplica al
+      // precio de lista completo, así que se descuenta del balance.
+      return math.max(0.0, balance - discount.descuento);
     }
-    return plan.importe;
+    return discount.precioFinal;
   }
 
   String get _planLabel {

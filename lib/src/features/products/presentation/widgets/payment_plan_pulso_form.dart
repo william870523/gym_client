@@ -32,6 +32,9 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
   late final TextEditingController _amountController;
   late final TextEditingController _durationController;
   late final TextEditingController _commissionController;
+  // R5.3: código corto (PMV, TCN...) y excepción de precio para cliente VIEJO.
+  late final TextEditingController _codigoController;
+  late final TextEditingController _precioViejoController;
 
   String? _currencyId;
   String _durationUnit = 'months';
@@ -55,6 +58,10 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     );
     _commissionController = TextEditingController(
       text: plan?.comisionEntrenadorValor?.toString() ?? '',
+    );
+    _codigoController = TextEditingController(text: plan?.codigo ?? '');
+    _precioViejoController = TextEditingController(
+      text: plan?.precioViejoExcepcion?.toString() ?? '',
     );
     _currencyId = plan?.monedaId.isNotEmpty == true ? plan!.monedaId : null;
     _active = plan?.activo ?? true;
@@ -131,6 +138,8 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     _amountController.dispose();
     _durationController.dispose();
     _commissionController.dispose();
+    _codigoController.dispose();
+    _precioViejoController.dispose();
     for (final c in _cuotasDraft) {
       c.dispose();
     }
@@ -194,6 +203,8 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
       _error = null;
     });
 
+    final codigo = _codigoController.text.trim();
+    final precioViejoText = _precioViejoController.text.trim();
     final plan = PaymentPlanModel(
       id: widget.plan?.id,
       nombre: _nameController.text.trim(),
@@ -207,6 +218,10 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
           ? double.tryParse(_commissionController.text)
           : null,
       aceptaCuotas: _aceptaCuotas,
+      codigo: codigo.isEmpty ? null : codigo,
+      precioViejoExcepcion: precioViejoText.isEmpty
+          ? null
+          : double.tryParse(precioViejoText.replaceAll(',', '.')),
       gymId: widget.plan?.gymId ?? '123',
     );
     try {
@@ -356,6 +371,20 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
                               ),
                               validator: _required,
                             ),
+                            const SizedBox(height: 12),
+                            // R5.3: código corto de recepción (PMV, TCN...).
+                            TextFormField(
+                              key: const ValueKey('pulso-plan-codigo'),
+                              controller: _codigoController,
+                              textCapitalization: TextCapitalization.characters,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: 'Código corto (opcional)',
+                                hintText: 'Ej. PMV, TCN…',
+                                helperText:
+                                    'Sigla que usa recepción; la cuota añade /1, /2, /3.',
+                              ),
+                            ),
                             const SizedBox(height: 24),
                             const PulsoLabel('Tarifa'),
                             const SizedBox(height: 12),
@@ -457,18 +486,51 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
+        // R5.3: precio fijo opcional para cliente VIEJO. Si está vacío, se
+        // aplica el % global configurado en Configuración del Sistema.
+        final precioViejo = TextFormField(
+          key: const ValueKey('pulso-plan-precio-viejo'),
+          controller: _precioViejoController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+          ],
+          style: const TextStyle(
+            fontFamily: PulsoFonts.mono,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Precio fijo VIEJO (opcional)',
+            hintText: '0.00',
+            helperText:
+                'Anula el % global para este plan. Vacío = usar % global.',
+          ),
+        );
         if (constraints.maxWidth < 480) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [amount, const SizedBox(height: 16), currency],
+            children: [
+              amount,
+              const SizedBox(height: 16),
+              currency,
+              const SizedBox(height: 16),
+              precioViejo,
+            ],
           );
         }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(flex: 2, child: amount),
-            const SizedBox(width: 16),
-            Expanded(flex: 3, child: currency),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 2, child: amount),
+                const SizedBox(width: 16),
+                Expanded(flex: 3, child: currency),
+              ],
+            ),
+            const SizedBox(height: 16),
+            precioViejo,
           ],
         );
       },

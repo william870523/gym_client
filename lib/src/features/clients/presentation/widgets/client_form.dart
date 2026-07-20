@@ -58,6 +58,8 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   late TextEditingController _weightController;
 
   String _sex = 'M';
+  // R5.3: categoría del cliente para el descuento. Sin default: obligatorio.
+  String? _categoria;
   String? _planId;
   String? _nacionalidadId;
   String? _horarioId; // NEW
@@ -109,6 +111,10 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     } else {
       _sex = 'O';
     }
+    // R5.3: cargar categoría; si el cliente heredado no la tiene, queda null
+    // y el dropdown obliga a elegir antes de guardar.
+    final rawCat = c?.categoria?.trim().toUpperCase();
+    _categoria = (rawCat == 'NUEVO' || rawCat == 'VIEJO') ? rawCat : 'NUEVO';
     _planId = c?.planId;
     _nacionalidadId = c?.nacionalidadId;
     _referenciaId = c?.referralId;
@@ -273,6 +279,21 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         return;
       }
 
+      // R5.3: la categoría de cliente es obligatoria (define el descuento).
+      if (_categoria == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Seleccione la categoría del cliente (NUEVO o VIEJO).',
+              ),
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
       final client = ClientModel(
         id: _ciController.text.trim(),
         nombres: _nameController.text.trim(),
@@ -297,6 +318,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         referralId: _referenciaId,
         trainerId: _entrenadorId,
         scheduleId: _horarioId,
+        categoria: _categoria,
       );
 
       final saved = widget.client == null
@@ -549,6 +571,26 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             suffix: 'kg',
                                             placeholder: '70.5',
                                             isNumber: true,
+                                          ),
+                                          _buildDropdown(
+                                            label: 'Categoría *',
+                                            value: _categoria,
+                                            items: const [
+                                              DropdownMenuItem(
+                                                value: 'NUEVO',
+                                                child: Text('Nuevo (precio normal)'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'VIEJO',
+                                                child: Text(
+                                                  'Viejo (con descuento)',
+                                                ),
+                                              ),
+                                            ],
+                                            onChanged: (v) => setState(
+                                              () => _categoria = v as String?,
+                                            ),
+                                            placeholder: 'Seleccionar',
                                           ),
                                           _buildSearchableNationality(
                                             nacionalidadOptions,

@@ -48,6 +48,8 @@ class ClientModel {
   final double? membershipPaid;
   @JsonKey(name: 'membresia_saldo_pendiente')
   final double? membershipBalanceDue;
+  // R5.3: categoría del cliente para el descuento (NUEVO | VIEJO).
+  final String? categoria;
 
   ClientModel({
     required this.id,
@@ -74,6 +76,7 @@ class ClientModel {
     this.membershipPrice,
     this.membershipPaid,
     this.membershipBalanceDue,
+    this.categoria,
   });
 
   factory ClientModel.fromJson(Map<String, dynamic> json) =>
@@ -106,6 +109,7 @@ class ClientModel {
     double? membershipPrice,
     double? membershipPaid,
     double? membershipBalanceDue,
+    String? categoria,
   }) {
     return ClientModel(
       id: id ?? this.id,
@@ -132,6 +136,7 @@ class ClientModel {
       membershipPrice: membershipPrice ?? this.membershipPrice,
       membershipPaid: membershipPaid ?? this.membershipPaid,
       membershipBalanceDue: membershipBalanceDue ?? this.membershipBalanceDue,
+      categoria: categoria ?? this.categoria,
     );
   }
 

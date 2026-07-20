@@ -35,7 +35,7 @@ final class PaymentPlanNotifierProvider
 }
 
 String _$paymentPlanNotifierHash() =>
-    r'8ce8e729442e146e1ad88cacc8a3dc4dd4fdcef1';
+    r'afb6341b9087b3dea625eb4f35fe5947758c9229';
 
 abstract class _$PaymentPlanNotifier
     extends $AsyncNotifier<List<PaymentPlanModel>> {

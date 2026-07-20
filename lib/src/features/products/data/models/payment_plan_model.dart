@@ -9,6 +9,10 @@ class PaymentPlanModel {
   final String comisionEntrenadorTipo; // NONE, PERCENTAGE, FIXED_AMOUNT
   final double? comisionEntrenadorValor;
   final bool aceptaCuotas;
+  // R5.3: código corto para recepción (PMV, TCN...). Campo libre.
+  final String? codigo;
+  // R5.3: precio fijo para cliente VIEJO; null = aplicar % global.
+  final double? precioViejoExcepcion;
   final bool isDeleted;
   final String? gymId;
   final int version;
@@ -24,6 +28,8 @@ class PaymentPlanModel {
     this.comisionEntrenadorTipo = 'NONE',
     this.comisionEntrenadorValor,
     this.aceptaCuotas = false,
+    this.codigo,
+    this.precioViejoExcepcion,
     this.isDeleted = false,
     this.gymId,
     this.version = 1,
@@ -44,6 +50,9 @@ class PaymentPlanModel {
       comisionEntrenadorValor:
           (json['comision_entrenador_valor'] as num?)?.toDouble(),
       aceptaCuotas: json['acepta_cuotas'] == 1 || json['acepta_cuotas'] == true,
+      codigo: json['codigo'] as String?,
+      precioViejoExcepcion:
+          (json['precio_viejo_excepcion'] as num?)?.toDouble(),
       isDeleted: json['is_deleted'] == 1 || json['is_deleted'] == true,
       gymId: json['gym_id'] as String?,
       version: json['version'] as int? ?? 1,
@@ -62,6 +71,9 @@ class PaymentPlanModel {
       'comision_entrenador_tipo': comisionEntrenadorTipo,
       'comision_entrenador_valor': comisionEntrenadorValor,
       'acepta_cuotas': aceptaCuotas,
+      if (codigo != null) 'codigo': codigo,
+      if (precioViejoExcepcion != null)
+        'precio_viejo_excepcion': precioViejoExcepcion,
       'is_deleted': isDeleted,
       'gym_id': gymId,
       'version': version,
@@ -79,6 +91,8 @@ class PaymentPlanModel {
     String? comisionEntrenadorTipo,
     double? comisionEntrenadorValor,
     bool? aceptaCuotas,
+    String? codigo,
+    double? precioViejoExcepcion,
     bool? isDeleted,
     String? gymId,
     int? version,
@@ -96,6 +110,9 @@ class PaymentPlanModel {
       comisionEntrenadorValor:
           comisionEntrenadorValor ?? this.comisionEntrenadorValor,
       aceptaCuotas: aceptaCuotas ?? this.aceptaCuotas,
+      codigo: codigo ?? this.codigo,
+      precioViejoExcepcion:
+          precioViejoExcepcion ?? this.precioViejoExcepcion,
       isDeleted: isDeleted ?? this.isDeleted,
       gymId: gymId ?? this.gymId,
       version: version ?? this.version,
