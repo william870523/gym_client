@@ -25,6 +25,7 @@ import '../../../accounting/presentation/screens/accounting_view.dart';
 import '../../../settings/presentation/screens/appearance_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_settings_pulso_view.dart';
+import '../../../clients/presentation/screens/client_discount_settings_pulso_view.dart';
 
 import '../../../auth/presentation/state/auth_notifier.dart';
 
@@ -114,6 +115,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       const RetentionPulsoView(),
       // 24: Configuración administrativa de la política de retención.
       const RetentionSettingsPulsoView(),
+      // 25: Configuración del descuento global de cliente VIEJO (R5.3).
+      const ClientDiscountSettingsPulsoView(),
     ];
     return _cachedViews!;
   }
@@ -260,6 +263,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 21: // Monedas PULSO (piloto)
       case 23: // Control y Calidad
       case 24: // Configuración de retención
+      case 25: // Configuración de descuento de cliente
         return '';
       default:
         return '';

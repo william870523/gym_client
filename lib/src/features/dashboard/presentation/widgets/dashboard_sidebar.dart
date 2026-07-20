@@ -439,6 +439,16 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),
                                     ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.percent_outlined,
+                                      'Descuento viejo',
+                                      index: 25,
+                                      isActive: widget.selectedIndex == 25,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
                                 ],
                               ),
                             ],

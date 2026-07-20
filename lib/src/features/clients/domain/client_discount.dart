@@ -61,13 +61,16 @@ int _discountMinor({
     if (planFixedOldMinor > listMinor) return 0;
     return listMinor - planFixedOldMinor;
   }
-  if (pct <= 0 || pct > 100) return 0;
-  // rawCents = listMinor * pct / 100, half-up.
-  final rawCents = (listMinor * pct + 50) / 100;
-  final rawCentsInt = rawCents.floor();
-  if (rawCentsInt <= 0) return 0;
-  // Ceil a múltiplo de 100.
-  final integerUnits = (rawCentsInt + 99) ~/ 100;
+  // Mismo patrón entero que el backend (`client-discount-policy.ts`): el % se
+  // maneja en unidades menores (16.67 → 1667) y se hace ceil a nivel de
+  // céntimos ANTES del ceil a entero superior. Usar half-up aquí divergía del
+  // backend justo cuando el redondeo cruzaba un múltiplo de 100 (p. ej. 30.00
+  // al 16.67 %: cliente 25.00 vs backend 24.00).
+  final pctMinor = (pct * 100).round();
+  if (pctMinor <= 0 || pctMinor > 10000) return 0;
+  final rawCents = (listMinor * pctMinor + 9999) ~/ 10000; // ceil
+  if (rawCents <= 0) return 0;
+  final integerUnits = (rawCents + 99) ~/ 100; // ceil a múltiplo de 100
   return integerUnits * 100;
 }
 
