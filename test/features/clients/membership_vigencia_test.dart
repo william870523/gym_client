@@ -9,8 +9,11 @@ void main() {
       resolveMembershipVigencia(status: estado, endDate: fin, today: hoy);
 
   group('vigencia derivada, espejo de la del servidor', () {
-    test('el último día de cobertura todavía cubre', () {
-      expect(vigencia('ACTIVA', hoy), MembershipVigencia.current);
+    test('la fecha de fin es exclusiva: ese día ya no cubre', () {
+      // La fija el servidor como `endExclusive`. Un plan Diario contratado el
+      // 27 guarda fin = 28 y cubre solo el 27.
+      expect(vigencia('ACTIVA', hoy), MembershipVigencia.recentlyExpired);
+      expect(vigencia('ACTIVA', dia(1)), MembershipVigencia.current);
     });
 
     test('una ACTIVA con la cobertura terminada no está vigente', () {

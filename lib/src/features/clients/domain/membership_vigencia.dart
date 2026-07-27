@@ -10,9 +10,10 @@
 /// completo de membresías y ahí solo viene el `estado` guardado. Cuando el
 /// servidor la manda, **manda el servidor**; esta función es para el resto.
 ///
-/// El problema que resuelve: `estado` admite `VENCIDA` pero **nadie lo escribe
-/// nunca**. Se pone `ACTIVA` al activar y ahí se queda, así que una membresía
-/// con la cobertura terminada seguía diciendo que estaba vigente.
+/// El problema que resuelve: `estado` admite `VENCIDA` pero **ningún camino de
+/// la aplicación lo escribe**. Se pone `ACTIVA` al activar y ahí se queda, así
+/// que una membresía con la cobertura terminada seguía diciendo que estaba
+/// vigente.
 library;
 
 /// Vigencia derivada. No se guarda: se calcula al mostrar.
@@ -91,15 +92,19 @@ MembershipVigencia resolveMembershipVigencia({
   if (endDate == null) return MembershipVigencia.current;
 
   final days = daysSinceExpiry(endDate, today);
-  // El último día de cobertura todavía cubre.
-  if (days <= 0) return MembershipVigencia.current;
+  // `fecha_fin` es exclusiva: cubre mientras hoy sea anterior a ella. Con
+  // `days == 0` la cobertura terminó justo hoy.
+  if (days < 0) return MembershipVigencia.current;
   return days <= kMembershipRecentExpiryDays
       ? MembershipVigencia.recentlyExpired
       : MembershipVigencia.expired;
 }
 
-/// Días transcurridos desde que terminó la cobertura. Negativo si aún cubre,
-/// que es lo que necesita un aviso de «por vencer».
+/// Días desde que dejó de cubrir. `0` es «venció hoy»; negativo es cuántos días
+/// de cobertura quedan, que es lo que necesita un aviso de «por vencer».
+///
+/// [endDate] es **exclusiva**: el día que marca ya no cubre. Lo fija el
+/// servidor (`resolveServicePeriod` devuelve `endExclusive`), no esta función.
 int daysSinceExpiry(DateTime endDate, DateTime today) {
   final end = DateTime.utc(endDate.year, endDate.month, endDate.day);
   final day = DateTime.utc(today.year, today.month, today.day);
