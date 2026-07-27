@@ -44,6 +44,26 @@ class ClientModel {
   final String? membershipId;
   @JsonKey(name: 'membresia_estado')
   final String? membershipStatus;
+
+  /// Vigencia **derivada por el servidor** contra la fecha de negocio de la
+  /// sede: `VIGENTE`, `VENCIDA_RECIENTE`, `VENCIDA`, `PAUSADA`,
+  /// `PENDIENTE_PAGO`, `CANCELADA` o `SIN_MEMBRESIA`.
+  ///
+  /// No confundir con [membershipStatus], que es el estado *guardado* y nunca
+  /// dice `VENCIDA`: registra el acto —se activó, se pausó, se canceló—, no la
+  /// cobertura. La fecha la pone el servidor porque el reloj del dispositivo no
+  /// es autoridad (docs/DEMO_MEMBERSHIP_VIGENCIA.md).
+  @JsonKey(name: 'membresia_vigencia')
+  final String? membershipVigencia;
+
+  /// Días desde que terminó la cobertura; negativo si aún quedan.
+  @JsonKey(name: 'membresia_dias_desde_vencimiento')
+  final int? membershipDaysSinceExpiry;
+
+  /// `true` solo si la membresía cubre hoy. Ni pausada ni vencida cubren.
+  @JsonKey(name: 'membresia_cubre_hoy')
+  final bool? membershipCoversToday;
+
   @JsonKey(name: 'membresia_precio')
   final double? membershipPrice;
   @JsonKey(name: 'membresia_importe_pagado')
@@ -76,6 +96,9 @@ class ClientModel {
     this.scheduleId,
     this.membershipId,
     this.membershipStatus,
+    this.membershipVigencia,
+    this.membershipDaysSinceExpiry,
+    this.membershipCoversToday,
     this.membershipPrice,
     this.membershipPaid,
     this.membershipBalanceDue,
@@ -110,6 +133,9 @@ class ClientModel {
     String? scheduleId,
     String? membershipId,
     String? membershipStatus,
+    String? membershipVigencia,
+    int? membershipDaysSinceExpiry,
+    bool? membershipCoversToday,
     double? membershipPrice,
     double? membershipPaid,
     double? membershipBalanceDue,
@@ -138,6 +164,11 @@ class ClientModel {
       scheduleId: scheduleId ?? this.scheduleId,
       membershipId: membershipId ?? this.membershipId,
       membershipStatus: membershipStatus ?? this.membershipStatus,
+      membershipVigencia: membershipVigencia ?? this.membershipVigencia,
+      membershipDaysSinceExpiry:
+          membershipDaysSinceExpiry ?? this.membershipDaysSinceExpiry,
+      membershipCoversToday:
+          membershipCoversToday ?? this.membershipCoversToday,
       membershipPrice: membershipPrice ?? this.membershipPrice,
       membershipPaid: membershipPaid ?? this.membershipPaid,
       membershipBalanceDue: membershipBalanceDue ?? this.membershipBalanceDue,

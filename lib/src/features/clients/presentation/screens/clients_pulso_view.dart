@@ -20,6 +20,7 @@ import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
 import '../../data/models/client_model.dart';
 import '../../data/services/client_list_export_service.dart';
+import '../../domain/membership_vigencia.dart';
 import '../state/client_notifier.dart';
 import '../state/clients_scope_filter_provider.dart';
 import '../state/weight_history_notifier.dart';
@@ -68,6 +69,11 @@ String _name(ClientModel client) {
   return value.isEmpty ? client.id : value;
 }
 
+/// Estado que se enseña en la lista.
+///
+/// La vigencia sale de la regla compartida (`membership_vigencia.dart`), y del
+/// servidor cuando la manda ya derivada: su reloj es el confiable. Aquí solo se
+/// añade lo que es propio de esta vista —«por vencer» a 7 días y «sin plan»—.
 _MembershipState _membership(ClientModel client, DateTime today) {
   if (client.membershipStatus == 'PENDIENTE_PAGO') {
     return _MembershipState.pendingPayment;
@@ -78,16 +84,29 @@ _MembershipState _membership(ClientModel client, DateTime today) {
       client.endDate == null) {
     return _MembershipState.noPlan;
   }
-  final end = DateTime.utc(
-    client.endDate!.year,
-    client.endDate!.month,
-    client.endDate!.day,
-  );
-  final day = DateTime.utc(today.year, today.month, today.day);
-  final remaining = end.difference(day).inDays;
-  if (remaining < 0) return _MembershipState.expired;
-  if (remaining <= 7) return _MembershipState.expiring;
-  return _MembershipState.active;
+  final vigencia =
+      membershipVigenciaFromServer(client.membershipVigencia) ??
+      resolveMembershipVigencia(
+        status: client.membershipStatus,
+        endDate: client.endDate,
+        today: today,
+      );
+  switch (vigencia) {
+    case MembershipVigencia.recentlyExpired:
+    case MembershipVigencia.expired:
+      return _MembershipState.expired;
+    case MembershipVigencia.cancelled:
+    case MembershipVigencia.none:
+      return _MembershipState.inactive;
+    case MembershipVigencia.pendingPayment:
+      return _MembershipState.pendingPayment;
+    case MembershipVigencia.paused:
+    case MembershipVigencia.current:
+      break;
+  }
+  // Quedan días de cobertura: avisar cuando falte una semana o menos.
+  final restantes = -daysSinceExpiry(client.endDate!, today);
+  return restantes <= 7 ? _MembershipState.expiring : _MembershipState.active;
 }
 
 String _membershipLabel(_MembershipState state) => switch (state) {

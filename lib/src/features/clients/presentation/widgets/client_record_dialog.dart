@@ -18,6 +18,7 @@ import '../../data/models/client_model.dart';
 import '../../data/models/client_record_model.dart';
 import '../../data/repositories/client_repository.dart';
 import '../../data/services/client_statement_export_service.dart';
+import '../../domain/membership_vigencia.dart';
 import '../state/client_record_export_provider.dart';
 import '../state/client_notifier.dart';
 import '../state/client_record_provider.dart';
@@ -1011,11 +1012,22 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
     final pendingRequest = membership.requests
         .where((item) => item.isPending)
         .firstOrNull;
-    final statusColor = switch (membership.status) {
-      'ACTIVA' => tokens.success,
-      'PENDIENTE_PAGO' || 'PAUSADA' => tokens.warning,
-      'VENCIDA' || 'CANCELADA' => tokens.danger,
-      _ => tokens.muted,
+    // El expediente enseñaba el `estado` guardado, y ese estado nunca dice
+    // VENCIDA: una membresía con la cobertura terminada seguía apareciendo como
+    // ACTIVA en verde. Lo que se enseña ahora es la vigencia derivada de la
+    // cobertura (docs/DEMO_MEMBERSHIP_VIGENCIA.md).
+    final vigencia = resolveMembershipVigencia(
+      status: membership.status,
+      endDate: membership.endDate,
+      today: todayInZone(appClock.gymTimezone),
+    );
+    final statusColor = switch (vigencia) {
+      MembershipVigencia.current => tokens.success,
+      MembershipVigencia.pendingPayment ||
+      MembershipVigencia.paused ||
+      MembershipVigencia.recentlyExpired => tokens.warning,
+      MembershipVigencia.expired || MembershipVigencia.cancelled => tokens.danger,
+      MembershipVigencia.none => tokens.muted,
     };
     final currency = membership.currencyCode ?? membership.currencyId;
     return PulsoPanel(
@@ -1068,7 +1080,7 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                     ),
                     _Fact(label: 'ORIGEN', value: membership.origin),
                     _StatusFact(
-                      label: membership.status.replaceAll('_', ' '),
+                      label: membershipVigenciaLabel(vigencia).toUpperCase(),
                       color: statusColor,
                     ),
                   ],

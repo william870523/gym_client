@@ -1,4 +1,5 @@
 import '../data/models/client_model.dart';
+import 'membership_vigencia.dart';
 
 /// Quién cuenta como **asociado** de un plan o de un entrenador
 /// (docs/PLAN_ASOCIADOS.md §5).
@@ -10,39 +11,39 @@ import '../data/models/client_model.dart';
 /// contador dice 11 y la lista enseña 8, el operador deja de creerse los dos.
 
 /// Días naturales que una membresía vencida sigue contando como asociada.
-/// Moverlo cambia contador y lista a la vez, que es justo lo que se quiere.
-const int kPlanAssociateRecentExpiryDays = 30;
-
-/// Estados con membresía viva. `CANCELADA` no aparece: quien se dio de baja
-/// dejó de ser asociado. Una membresía vencida por fecha conserva su estado
-/// `ACTIVA` —el vencimiento se calcula por cobertura, no por estado—, así que
-/// la ventana de gracia se mide con `fecha_fin`.
-const Set<String> _liveMembershipStates = {
-  'ACTIVA',
-  'PENDIENTE_PAGO',
-  'PAUSADA',
-};
-
-/// Días transcurridos desde que venció la cobertura. Negativo si aún cubre.
-int _daysSinceExpiry(DateTime endDate, DateTime today) {
-  final end = DateTime.utc(endDate.year, endDate.month, endDate.day);
-  final day = DateTime.utc(today.year, today.month, today.day);
-  return day.difference(end).inDays;
-}
+///
+/// Es el mismo número que la vigencia derivada, y no una copia: si fueran dos
+/// constantes, moverlas por separado haría que el contador de un plan y la
+/// ficha del socio se contradijeran.
+const int kPlanAssociateRecentExpiryDays = kMembershipRecentExpiryDays;
 
 /// El socio tiene una membresía que cuenta hoy, sea de quien sea.
 ///
+/// Se apoya en la vigencia derivada (`membership_vigencia.dart`), que es la
+/// misma regla que aplica el servidor. Cuentan como asociados quien está
+/// vigente, quien venció hace poco, quien está en pausa y quien contrató y aún
+/// no pagó. `CANCELADA` no: quien se dio de baja dejó de ser asociado.
+///
 /// [today] es la **fecha de negocio del gimnasio**, no la del dispositivo.
 bool hasAssociableMembership(ClientModel client, {required DateTime today}) {
-  final status = client.membershipStatus;
-  if (status == null || !_liveMembershipStates.contains(status)) return false;
-
-  // Contrató y todavía no pagó: es asociado aunque no tenga cobertura.
-  if (status == 'PENDIENTE_PAGO') return true;
-
-  final end = client.endDate;
-  if (end == null) return true;
-  return _daysSinceExpiry(end, today) <= kPlanAssociateRecentExpiryDays;
+  // Cuando el servidor manda la vigencia ya derivada, manda el servidor: su
+  // reloj es el confiable y su fecha de negocio la de la sede.
+  final vigencia =
+      membershipVigenciaFromServer(client.membershipVigencia) ??
+      resolveMembershipVigencia(
+        status: client.membershipStatus,
+        endDate: client.endDate,
+        today: today,
+      );
+  return switch (vigencia) {
+    MembershipVigencia.current ||
+    MembershipVigencia.recentlyExpired ||
+    MembershipVigencia.paused ||
+    MembershipVigencia.pendingPayment => true,
+    MembershipVigencia.expired ||
+    MembershipVigencia.cancelled ||
+    MembershipVigencia.none => false,
+  };
 }
 
 /// `true` si [client] cuenta como asociado del plan [planId].
