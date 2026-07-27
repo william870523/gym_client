@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../auth/presentation/state/sede_session_provider.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
@@ -162,6 +163,7 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
   }
 
   void _showDetail(Gym gym) {
+    final puedeDarDeBaja = ref.read(esDuenoDeCadenaProvider);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => PulsoThemeScope(
@@ -179,10 +181,13 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
                 Navigator.of(dialogContext).pop();
                 _openForm(gym);
               },
-              onDelete: () {
-                Navigator.of(dialogContext).pop();
-                _confirmDelete(gym);
-              },
+              onDelete: !puedeDarDeBaja
+                  ? null
+                  : () {
+                      Navigator.of(dialogContext).pop();
+                      _confirmDelete(gym);
+                    },
+              puedeDarDeBaja: puedeDarDeBaja,
             ),
           ),
         ),
@@ -212,6 +217,10 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
 
   Widget _buildPage(BuildContext context) {
     final state = ref.watch(gymsListProvider);
+    // Alta y baja de sede son del Dueño de la cadena, en escritorio y en web
+    // (docs/MULTI_SEDE.md §3). Esconderlos es cortesía: quien manda es el
+    // servidor, que responde 403 si la petición llega igualmente.
+    final puedeGestionarSedes = ref.watch(esDuenoDeCadenaProvider);
     final all = state.value ?? const <Gym>[];
     final visible = _visible(all);
     final active = all.where((gym) => gym.active).length;
@@ -276,13 +285,16 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
                   },
                   onEdit: _openForm,
                   onDelete: _confirmDelete,
+                  puedeDarDeBaja: puedeGestionarSedes,
                 ),
         );
         final page = Column(
           mainAxisSize: scrollPage ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _GymHeader(onCreate: () => _openForm()),
+            _GymHeader(
+              onCreate: puedeGestionarSedes ? () => _openForm() : null,
+            ),
             const SizedBox(height: 14),
             PulsoMetricStrip(
               metrics: [
@@ -347,7 +359,10 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
 
 class _GymHeader extends StatelessWidget {
   const _GymHeader({required this.onCreate});
-  final VoidCallback onCreate;
+
+  /// Nulo cuando esta cuenta no es Dueño de la cadena: dar de alta una sede es
+  /// suyo, y el servidor lo vuelve a comprobar (docs/MULTI_SEDE.md §3).
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +393,8 @@ class _GymHeader extends StatelessWidget {
             ),
           ],
         );
+        final onCreate = this.onCreate;
+        if (onCreate == null) return copy;
         final action = PulsoPrimaryButton(
           label: 'Nueva sede',
           icon: Icons.add_business_outlined,
@@ -526,6 +543,7 @@ class _GymWorkspace extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.puedeDarDeBaja,
   });
 
   final List<Gym> items;
@@ -536,6 +554,7 @@ class _GymWorkspace extends StatelessWidget {
   final ValueChanged<Gym> onSelect;
   final ValueChanged<Gym> onEdit;
   final ValueChanged<Gym> onDelete;
+  final bool puedeDarDeBaja;
 
   @override
   Widget build(BuildContext context) {
@@ -550,6 +569,7 @@ class _GymWorkspace extends StatelessWidget {
           onSelect: onSelect,
           onEdit: onEdit,
           onDelete: onDelete,
+          puedeDarDeBaja: puedeDarDeBaja,
         );
         if (constraints.maxWidth < 1040) return list;
         return Row(
@@ -562,7 +582,10 @@ class _GymWorkspace extends StatelessWidget {
               child: _GymDetail(
                 gym: selected,
                 onEdit: selected == null ? null : () => onEdit(selected!),
-                onDelete: selected == null ? null : () => onDelete(selected!),
+                onDelete: selected == null || !puedeDarDeBaja
+                    ? null
+                    : () => onDelete(selected!),
+                puedeDarDeBaja: puedeDarDeBaja,
               ),
             ),
           ],
@@ -582,6 +605,7 @@ class _GymList extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.puedeDarDeBaja,
   });
 
   final List<Gym> items;
@@ -592,6 +616,7 @@ class _GymList extends StatelessWidget {
   final ValueChanged<Gym> onSelect;
   final ValueChanged<Gym> onEdit;
   final ValueChanged<Gym> onDelete;
+  final bool puedeDarDeBaja;
 
   @override
   Widget build(BuildContext context) {
@@ -666,7 +691,7 @@ class _GymList extends StatelessWidget {
                       selected: selectedId == gym.id,
                       onSelect: () => onSelect(gym),
                       onEdit: () => onEdit(gym),
-                      onDelete: () => onDelete(gym),
+                      onDelete: puedeDarDeBaja ? () => onDelete(gym) : null,
                     );
                   },
                 ),
@@ -751,7 +776,8 @@ class _GymRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onSelect;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  /// Nulo cuando esta cuenta no es Dueño de la cadena: el mando no se enseña.
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -853,13 +879,15 @@ class _GymRow extends StatelessWidget {
                             tooltip: 'Editar ${gym.name}',
                             onPressed: onEdit,
                           ),
-                          const SizedBox(width: 6),
-                          PulsoIconButton(
-                            icon: Icons.delete_outline,
-                            tooltip: 'Eliminar ${gym.name}',
-                            danger: true,
-                            onPressed: onDelete,
-                          ),
+                          if (onDelete != null) ...[
+                            const SizedBox(width: 6),
+                            PulsoIconButton(
+                              icon: Icons.delete_outline,
+                              tooltip: 'Eliminar ${gym.name}',
+                              danger: true,
+                              onPressed: onDelete,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -898,11 +926,17 @@ class _Status extends StatelessWidget {
 }
 
 class _GymDetail extends StatelessWidget {
-  const _GymDetail({this.gym, this.onEdit, this.onDelete});
+  const _GymDetail({
+    this.gym,
+    this.onEdit,
+    this.onDelete,
+    this.puedeDarDeBaja = true,
+  });
 
   final Gym? gym;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final bool puedeDarDeBaja;
 
   @override
   Widget build(BuildContext context) {
@@ -980,13 +1014,15 @@ class _GymDetail extends StatelessWidget {
               icon: Icons.edit_outlined,
               onPressed: onEdit,
             ),
-            const SizedBox(height: 8),
-            PulsoSecondaryButton(
-              label: 'Eliminar sede',
-              danger: true,
-              icon: Icons.delete_outline,
-              onPressed: onDelete,
-            ),
+            if (puedeDarDeBaja) ...[
+              const SizedBox(height: 8),
+              PulsoSecondaryButton(
+                label: 'Eliminar sede',
+                danger: true,
+                icon: Icons.delete_outline,
+                onPressed: onDelete,
+              ),
+            ],
           ],
         ),
       ),

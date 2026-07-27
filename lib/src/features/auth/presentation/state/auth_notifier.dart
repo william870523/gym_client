@@ -4,6 +4,7 @@ import '../../infrastructure/repositories/auth_repository_impl.dart';
 import '../../../../core/config/env.dart';
 import '../../../../core/theme/pulso/appearance_provider.dart';
 import '../../../../core/time/app_clock.dart';
+import 'sede_session_provider.dart';
 
 part 'auth_notifier.g.dart';
 
@@ -19,8 +20,16 @@ class AuthNotifier extends _$AuthNotifier {
     try {
       final repository = ref.read(authRepositoryProvider);
       final user = await repository.login(email, password);
+      // La sede activa y el nivel los resuelve el servidor, no el login: el
+      // nivel de Dueño de la cadena llega y se revoca por sincronización
+      // (docs/MULTI_SEDE.md §3).
+      final session = await repository.fetchSession();
+      ref.read(sedeSessionProvider.notifier).set(session);
       try {
-        await appClock.synchronize(Env.baseUrl, gymId: user.gymId);
+        await appClock.synchronize(
+          Env.baseUrl,
+          gymId: session?.gymId ?? user.gymId,
+        );
       } catch (_) {
         // El login local no depende de tener conexión con la autoridad horaria.
       }
@@ -35,6 +44,7 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> logout() async {
     final repository = ref.read(authRepositoryProvider);
     await repository.logout();
+    ref.read(sedeSessionProvider.notifier).clear();
     ref.read(appearanceUserProvider.notifier).set(null);
     state = const AsyncValue.data(null);
   }

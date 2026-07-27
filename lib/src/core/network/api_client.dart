@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/auth/presentation/state/auth_notifier.dart';
+import '../../features/auth/presentation/state/sede_session_provider.dart';
 import '../config/env.dart';
 
 part 'api_client.g.dart';
@@ -36,6 +37,15 @@ Dio apiClient(Ref ref) {
         final token = authState.value?.token;
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
+        }
+
+        // Sede activa (docs/MULTI_SEDE.md §3.3). El `gym_id` nunca viaja en el
+        // cuerpo: el servidor comprueba que esta cuenta pueda trabajar en la
+        // sede pedida y deriva de ahí el ámbito. Sin cabecera se usa la sede
+        // por defecto, así que solo se manda cuando se conoce.
+        final gymId = ref.read(sedeSessionProvider)?.gymId;
+        if (gymId != null && gymId.isNotEmpty) {
+          options.headers['X-Gym-Id'] = gymId;
         }
 
         return handler.next(options);

@@ -9,6 +9,7 @@ import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
 import 'package:gym_client/src/features/attendance/data/models/attendance_model.dart';
 import 'package:gym_client/src/features/attendance/presentation/state/attendance_notifier.dart';
+import 'package:gym_client/src/features/auth/domain/models/sede_session.dart';
 import 'package:gym_client/src/features/auth/domain/models/user.dart';
 import 'package:gym_client/src/features/auth/domain/repositories/auth_repository.dart';
 import 'package:gym_client/src/features/auth/infrastructure/repositories/auth_repository_impl.dart';
@@ -155,6 +156,9 @@ class _BlockingAuthRepository implements AuthRepository {
 
   @override
   Future<User?> getCurrentUser() async => null;
+
+  @override
+  Future<SedeSession?> fetchSession() async => null;
 }
 
 class _MemoryAppearanceStore implements AppearanceStore {

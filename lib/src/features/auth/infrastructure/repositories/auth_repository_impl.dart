@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 // ignore: invalid_use_of_internal_member
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../../core/network/api_client.dart';
+import '../../domain/models/sede_session.dart';
 import '../../domain/models/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -93,5 +94,22 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<User?> getCurrentUser() async {
     // TODO: Implementar /auth/me cuando esté disponible
     return null;
+  }
+
+  @override
+  Future<SedeSession?> fetchSession() async {
+    try {
+      final response = await _client.get<Map<String, dynamic>>(
+        '/auth/session',
+      );
+      final data = response.data;
+      if (data == null) return null;
+      return SedeSession.fromJson(data);
+    } on DioException {
+      // Una instalación sin la ruta —o sin red en ese instante— no debe
+      // impedir entrar: se trabaja sin sede declarada y el servidor sigue
+      // decidiendo el ámbito por su cuenta.
+      return null;
+    }
   }
 }

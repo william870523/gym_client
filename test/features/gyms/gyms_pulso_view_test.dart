@@ -7,6 +7,8 @@ import 'package:gym_client/src/core/sync/sync_status_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
+import 'package:gym_client/src/features/auth/domain/models/sede_session.dart';
+import 'package:gym_client/src/features/auth/presentation/state/sede_session_provider.dart';
 import 'package:gym_client/src/features/gyms/domain/models/gym.dart';
 import 'package:gym_client/src/features/gyms/presentation/gyms_provider.dart';
 import 'package:gym_client/src/features/gyms/presentation/screens/gyms_pulso_view.dart';
@@ -110,6 +112,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('esconde alta y baja de sede a quien no es Dueño de la cadena', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    expect(find.text('NUEVA SEDE'), findsNothing);
+    expect(find.byTooltip('Eliminar Central'), findsNothing);
+    // Editar sí: administrar la propia sede no es autoridad de cadena.
+    expect(find.byTooltip('Editar Central'), findsOneWidget);
+
+    await tester.tap(find.text('Central'));
+    await tester.pump();
+    expect(find.text('ELIMINAR SEDE'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('muestra alta y baja de sede al Dueño de la cadena', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness(dueno: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('NUEVA SEDE'), findsOneWidget);
+    expect(find.byTooltip('Eliminar Central'), findsOneWidget);
+
+    await tester.tap(find.text('Central'));
+    await tester.pump();
+    expect(find.text('ELIMINAR SEDE'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra las sedes inactivas', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -155,9 +199,10 @@ List<Gym> _gyms() => [
   ),
 ];
 
-Widget _harness({_GymsController? controller}) {
+Widget _harness({_GymsController? controller, bool dueno = false}) {
   return ProviderScope(
     overrides: [
+      sedeSessionProvider.overrideWith(() => _SedeSession(dueno: dueno)),
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
         (ref) => Stream.value(
@@ -192,6 +237,20 @@ class _GymsController extends GymsController {
   Future<void> createGym(Gym gym) async {
     creates.add(gym);
   }
+}
+
+class _SedeSession extends SedeSessionNotifier {
+  _SedeSession({required this.dueno});
+
+  final bool dueno;
+
+  @override
+  SedeSession? build() => SedeSession(
+    userId: 'u-1',
+    gymId: 'gym-central',
+    role: dueno ? 'admin' : 'recepcion',
+    esPlataforma: dueno,
+  );
 }
 
 class _MemoryAppearanceStore implements AppearanceStore {
