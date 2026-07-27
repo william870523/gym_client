@@ -55,9 +55,84 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'si el esquema del plan no se puede leer, lo dice en vez de callar',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _harness(repository: _FakePlanRepository.conEsquemaCaido()),
+      );
+      await tester.pumpAndSettle();
+
+      // Antes desaparecía la elección sin explicación y el operador cobraba
+      // el plan completo creyendo que ese plan no tenía cuotas.
+      expect(find.byKey(const ValueKey('cuota-aviso')), findsOneWidget);
+      expect(
+        find.textContaining('No se pudo leer el esquema de cuotas del plan'),
+        findsOneWidget,
+      );
+      // Y el mensaje del servidor llega al operador, no un genérico.
+      expect(find.textContaining('El plan no existe en este gimnasio'), findsOneWidget);
+      expect(find.text('PRIMERA CUOTA'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'si no se pueden leer las cuotas de la membresía, también lo dice',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _harness(
+          repository: _FakePlanRepository.conCuotasCaidas(),
+          membershipId: 'mem-1',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('No se pudieron leer las cuotas de la membresía'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'con saldo pendiente explica por qué no se puede elegir cuotas',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_harness(balanceDue: 12.5));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('tiene saldo pendiente'),
+        findsOneWidget,
+      );
+      expect(find.text('PRIMERA CUOTA'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
-Widget _harness() {
+Widget _harness({
+  PaymentPlanRepository? repository,
+  String? membershipId,
+  double? balanceDue,
+}) {
   return ProviderScope(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
@@ -91,7 +166,7 @@ Widget _harness() {
         ]),
       ),
       paymentPlanRepositoryProvider.overrideWith(
-        (ref) => _FakePlanRepository(),
+        (ref) => repository ?? _FakePlanRepository(),
       ),
     ],
     child: MaterialApp(
@@ -101,7 +176,12 @@ Widget _harness() {
       ),
       home: Scaffold(
         body: ProcessPaymentDialog(
-          client: ClientModel(id: 'CI-1', nombres: 'Abel'),
+          client: ClientModel(
+            id: 'CI-1',
+            nombres: 'Abel',
+            membershipId: membershipId,
+            membershipBalanceDue: balanceDue,
+          ),
           planId: 'plan-cuotas',
         ),
       ),
@@ -110,19 +190,42 @@ Widget _harness() {
 }
 
 class _FakePlanRepository extends PaymentPlanRepository {
-  _FakePlanRepository() : super(Dio());
+  _FakePlanRepository({this.esquemaError, this.cuotasError}) : super(Dio());
+
+  factory _FakePlanRepository.conEsquemaCaido() => _FakePlanRepository(
+    esquemaError: DioException(
+      requestOptions: RequestOptions(path: '/planes-pago/x/cuotas'),
+      response: Response(
+        requestOptions: RequestOptions(path: '/planes-pago/x/cuotas'),
+        statusCode: 404,
+        data: {'error': 'El plan no existe en este gimnasio.'},
+      ),
+    ),
+  );
+
+  factory _FakePlanRepository.conCuotasCaidas() => _FakePlanRepository(
+    cuotasError: Exception('Error al cargar las cuotas de la membresía'),
+  );
+
+  final Object? esquemaError;
+  final Object? cuotasError;
 
   @override
-  Future<List<Map<String, dynamic>>> getPlanCuotasScheme(String planId) async =>
-      [
-        {'numeroCuota': 1, 'importe': '15', 'diasCobertura': 30},
-        {'numeroCuota': 2, 'importe': '15', 'diasCobertura': 60},
-      ];
+  Future<List<Map<String, dynamic>>> getPlanCuotasScheme(String planId) async {
+    if (esquemaError != null) throw esquemaError!;
+    return [
+      {'numeroCuota': 1, 'importe': '15', 'diasCobertura': 30},
+      {'numeroCuota': 2, 'importe': '15', 'diasCobertura': 60},
+    ];
+  }
 
   @override
   Future<List<MembresiaCuotaModel>> getMembresiaCuotas(
     String membershipId,
-  ) async => [];
+  ) async {
+    if (cuotasError != null) throw cuotasError!;
+    return [];
+  }
 }
 
 class _PlanNotifier extends PaymentPlanNotifier {

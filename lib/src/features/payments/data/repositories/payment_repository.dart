@@ -6,6 +6,7 @@ import 'package:gym_client/src/features/financials/data/models/account_model.dar
 import 'package:gym_client/src/features/financials/data/models/exchange_rate_model.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_reversal_model.dart';
+import 'package:gym_client/src/features/payments/data/models/recargo_mora_quote.dart';
 import 'package:uuid/uuid.dart';
 
 final paymentRepositoryProvider = Provider<PaymentRepository>((ref) {
@@ -76,6 +77,43 @@ class PaymentRepository {
       );
     } catch (e) {
       throw Exception('Error creating payment: $e');
+    }
+  }
+
+  /// Cotización autoritativa del recargo por mora (docs/RECARGO_MORA.md).
+  ///
+  /// El importe SIEMPRE lo calcula el servidor: la vista solo presenta lo que
+  /// aquí se devuelve. Un fallo no debe impedir cobrar, así que se propaga
+  /// como excepción y la ventana decide mostrar el aviso.
+  Future<RecargoMoraQuote> getRecargoMoraQuote({
+    required String ci,
+    required String planId,
+    String? membresiaId,
+    int? numeroCuota,
+    bool aplicar = true,
+  }) async {
+    try {
+      final response = await _client.get(
+        '/pagos/recargo-mora/quote',
+        queryParameters: {
+          'ci': ci,
+          'plan_id': planId,
+          if (membresiaId != null) 'membresia_id': membresiaId,
+          if (numeroCuota != null) 'numero_cuota': numeroCuota,
+          'aplicar': aplicar.toString(),
+        },
+      );
+      return RecargoMoraQuote.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? data['error']?.toString() : null;
+      throw Exception(
+        message?.trim().isNotEmpty == true
+            ? message
+            : 'No se pudo calcular el recargo por mora.',
+      );
     }
   }
 

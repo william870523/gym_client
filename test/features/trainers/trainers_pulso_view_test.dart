@@ -8,6 +8,8 @@ import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
+import 'package:gym_client/src/features/clients/presentation/state/clients_scope_filter_provider.dart';
+import 'package:gym_client/src/features/dashboard/presentation/state/dashboard_nav_provider.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_model.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_offboarding_case.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_offboarding_impact.dart';
@@ -70,10 +72,56 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Solo socios ACTIVOS cuentan: 2 con Ana, ninguno con Luis.
+    // Criterio del dueño (docs/PLAN_ASOCIADOS.md §5): vigente y pendiente de
+    // pago sí; vencido hace 90 días y dado de baja, no.
     expect(find.text('2 socios'), findsOneWidget);
     expect(find.text('sin socios'), findsOneWidget);
     expect(find.text('Mayor carga'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el contador lleva a Clientes con ese entrenador filtrado', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    // El contador es el enlace: pulsarlo deja el filtro puesto y salta a
+    // Clientes (índice 1 del panel principal).
+    await tester.tap(find.text('2 socios'));
+    await tester.pumpAndSettle();
+
+    final filter = container.read(clientsScopeFilterProvider);
+    expect(filter?.kind, ClientsFilterKind.trainer);
+    expect(filter?.id, 'tr-ana');
+    expect(filter?.label, 'Ana Pérez');
+    expect(container.read(dashboardNavProvider), 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un entrenador sin socios no promete una lista vacía', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('sin socios'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(clientsScopeFilterProvider), isNull);
+    expect(container.read(dashboardNavProvider), 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -107,8 +155,78 @@ void main() {
     expect(id, 'tr-ana');
     expect(payload['nombres_entrenador'], 'Ana María');
     expect(payload['ci_entrenador'], '111');
+    expect(payload['tipo_documento'], 'DESCONOCIDO');
     expect(payload['activo_entrenador'], true);
     expect(find.text('EDITAR ENTRENADOR'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CI válido autodetecta sexo sin reemplazar un cambio manual', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO ENTRENADOR'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-trainer-ci')),
+      '91021020015',
+    );
+    await tester.pump();
+
+    var sex = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const ValueKey('pulso-trainer-sexo')),
+    );
+    expect(sex.initialValue, 'F');
+    expect(find.text('Sexo · desde CI'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('pulso-trainer-sexo')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Masculino').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-trainer-ci')),
+      '85020290015',
+    );
+    await tester.pump();
+
+    sex = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const ValueKey('pulso-trainer-sexo')),
+    );
+    expect(sex.initialValue, 'M');
+    expect(find.text('Sexo · desde CI'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CI heredado del entrenador no bloquea guardar una edición', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notifier = _TrainerNotifier(_trainers());
+    await tester.pumpWidget(_harness(trainerNotifier: notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Editar Ana Pérez'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Documento heredado sin clasificar'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('GUARDAR CAMBIOS'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.updates, hasLength(1));
+    expect(notifier.updates.single.$2['ci_entrenador'], '111');
     expect(tester.takeException(), isNull);
   });
 
@@ -262,39 +380,38 @@ void main() {
     },
   );
 
-  testWidgets(
-    'la liquidación final separa monedas y desplaza solo sus filas',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('la liquidación final separa monedas y desplaza solo sus filas', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      final repository = _TrainerRepository(openCase: _readyCase());
-      await tester.pumpWidget(_harness(repository: repository));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Preparar baja de Ana Pérez'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('ABRIR EXPEDIENTE'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('APLICAR REASIGNACIONES'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('APLICAR AHORA'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('LIQUIDACIÓN FINAL'));
-      await tester.pumpAndSettle();
+    final repository = _TrainerRepository(openCase: _readyCase());
+    await tester.pumpWidget(_harness(repository: repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Preparar baja de Ana Pérez'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABRIR EXPEDIENTE'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('APLICAR REASIGNACIONES'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('APLICAR AHORA'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('LIQUIDACIÓN FINAL'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Liquidación extraordinaria final'), findsOneWidget);
-      expect(
-        find.byKey(const Key('final-settlement-currency-scrollbar')),
-        findsOneWidget,
-      );
-      expect(find.text('CUP'), findsOneWidget);
-      expect(find.text('USD'), findsOneWidget);
-      expect(find.text('Cuenta de salida'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.text('Liquidación extraordinaria final'), findsOneWidget);
+    expect(
+      find.byKey(const Key('final-settlement-currency-scrollbar')),
+      findsOneWidget,
+    );
+    expect(find.text('CUP'), findsOneWidget);
+    expect(find.text('USD'), findsOneWidget);
+    expect(find.text('Cuenta de salida'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 List<TrainerModel> _trainers() => [
@@ -318,11 +435,57 @@ List<TrainerModel> _trainers() => [
   ),
 ];
 
+/// Socios de la fixture, uno por caso del criterio de asociado
+/// (docs/PLAN_ASOCIADOS.md §5). El contador ya no cuenta la bandera `activo`
+/// del cliente: cuenta socios con membresía que hoy cuenta.
+List<ClientModel> _clients() {
+  final today = DateTime.now().toUtc();
+  return [
+    ClientModel(
+      id: '100',
+      nombres: 'Rosa',
+      trainerId: 'tr-ana',
+      membershipStatus: 'ACTIVA',
+      endDate: today.add(const Duration(days: 12)),
+    ),
+    ClientModel(
+      id: '200',
+      nombres: 'Iván',
+      trainerId: 'tr-ana',
+      membershipStatus: 'PENDIENTE_PAGO',
+    ),
+    // Venció hace 90 días: ya no es carga de trabajo de nadie.
+    ClientModel(
+      id: '250',
+      nombres: 'Tomás',
+      trainerId: 'tr-ana',
+      membershipStatus: 'ACTIVA',
+      endDate: today.subtract(const Duration(days: 90)),
+    ),
+    // Sin membresía viva (baja).
+    ClientModel(id: '300', nombres: 'Eva', trainerId: 'tr-ana', activo: false),
+    ClientModel(id: '400', nombres: 'Juan'),
+  ];
+}
+
 Widget _harness({
   _TrainerNotifier? trainerNotifier,
   _TrainerRepository? repository,
+  ProviderContainer? container,
 }) {
-  return ProviderScope(
+  return UncontrolledProviderScope(
+    container:
+        container ??
+        _container(trainerNotifier: trainerNotifier, repository: repository),
+    child: const MaterialApp(home: Scaffold(body: TrainersPulsoView())),
+  );
+}
+
+ProviderContainer _container({
+  _TrainerNotifier? trainerNotifier,
+  _TrainerRepository? repository,
+}) {
+  final container = ProviderContainer(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
@@ -339,22 +502,11 @@ Widget _harness({
       trainerRepositoryProvider.overrideWithValue(
         repository ?? _TrainerRepository(),
       ),
-      clientNotifierProvider.overrideWith(
-        () => _ClientNotifier([
-          ClientModel(id: '100', nombres: 'Rosa', trainerId: 'tr-ana'),
-          ClientModel(id: '200', nombres: 'Iván', trainerId: 'tr-ana'),
-          ClientModel(
-            id: '300',
-            nombres: 'Eva',
-            trainerId: 'tr-ana',
-            activo: false,
-          ),
-          ClientModel(id: '400', nombres: 'Juan'),
-        ]),
-      ),
+      clientNotifierProvider.overrideWith(() => _ClientNotifier(_clients())),
     ],
-    child: const MaterialApp(home: Scaffold(body: TrainersPulsoView())),
   );
+  addTearDown(container.dispose);
+  return container;
 }
 
 class _TrainerNotifier extends TrainerNotifier {

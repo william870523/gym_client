@@ -5,8 +5,13 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
+import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../clients/domain/plan_associates.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
+import '../../../clients/presentation/state/clients_scope_filter_provider.dart';
+import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
 import '../../../financials/data/models/currency_model.dart';
 import '../../../financials/presentation/state/currency_notifier.dart';
 import '../../data/models/payment_plan_model.dart';
@@ -18,6 +23,9 @@ enum _PlanFilter { all, active, inactive }
 enum _PlanSort { name, price, duration, clients }
 
 final _moneyFmt = NumberFormat('#,##0.00');
+
+/// Índice de la vista de Clientes en el conmutador del panel principal.
+const int _clientsViewIndex = 1;
 
 /// Socios activos por plan, derivado del catálogo de clientes.
 class _PlanStats {
@@ -69,6 +77,9 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
       final currency = currencyMap[plan.monedaId];
       final haystack = [
         plan.nombre,
+        // El código es lo que el operador teclea para encontrar un plan
+        // concreto; sin él, buscar «PCU-3» no devolvía nada.
+        plan.codigo,
         plan.formattedDuration,
         plan.importe.toString(),
         currency?.code,
@@ -190,14 +201,30 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
     if (clients == null) {
       return const _PlanStats(ready: false, counts: {});
     }
-    final ids = {for (final plan in all) plan.id};
-    final counts = <String, int>{};
-    for (final client in clients) {
-      final planId = client.planId;
-      if (!client.activo || planId == null || !ids.contains(planId)) continue;
-      counts[planId] = (counts[planId] ?? 0) + 1;
-    }
-    return _PlanStats(ready: true, counts: counts);
+    // El criterio de «asociado» es el mismo que usa la lista de Clientes a la
+    // que lleva el contador (docs/PLAN_ASOCIADOS.md §5). Contar aquí por otro
+    // camino sería la forma segura de enseñar 15 y encontrar 12.
+    return _PlanStats(
+      ready: true,
+      counts: countAssociatesByPlan(
+        clients,
+        planIds: {
+          for (final plan in all)
+            if (plan.id != null) plan.id!,
+        },
+        today: todayInZone(appClock.gymTimezone),
+      ),
+    );
+  }
+
+  /// Lleva a Clientes con este plan ya filtrado (opción A del diseño).
+  void _showAssociates(PaymentPlanModel plan) {
+    final planId = plan.id;
+    if (planId == null || planId.isEmpty) return;
+    ref
+        .read(clientsScopeFilterProvider.notifier)
+        .showPlan(planId: planId, planName: plan.nombre);
+    ref.read(dashboardNavProvider.notifier).setIndex(_clientsViewIndex);
   }
 
   void _showDetail(
@@ -228,6 +255,10 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
               onDelete: () {
                 Navigator.of(dialogContext).pop();
                 _confirmDelete(plan, stats);
+              },
+              onAssociates: () {
+                Navigator.of(dialogContext).pop();
+                _showAssociates(plan);
               },
             ),
           ),
@@ -327,6 +358,7 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
                   },
                   onEdit: _openForm,
                   onDelete: (plan) => _confirmDelete(plan, stats),
+                  onAssociates: _showAssociates,
                 ),
         );
         final page = Column(
@@ -574,6 +606,7 @@ class _PlanWorkspace extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onAssociates,
   });
   final List<PaymentPlanModel> items;
   final Map<String, CurrencyModel> currencyMap;
@@ -585,6 +618,7 @@ class _PlanWorkspace extends StatelessWidget {
   final ValueChanged<PaymentPlanModel> onSelect;
   final ValueChanged<PaymentPlanModel> onEdit;
   final ValueChanged<PaymentPlanModel> onDelete;
+  final ValueChanged<PaymentPlanModel> onAssociates;
 
   @override
   Widget build(BuildContext context) {
@@ -601,6 +635,7 @@ class _PlanWorkspace extends StatelessWidget {
           onSelect: onSelect,
           onEdit: onEdit,
           onDelete: onDelete,
+          onAssociates: onAssociates,
         );
         if (constraints.maxWidth < 1040) return list;
         return Row(
@@ -618,6 +653,9 @@ class _PlanWorkspace extends StatelessWidget {
                 stats: stats,
                 onEdit: selected == null ? null : () => onEdit(selected!),
                 onDelete: selected == null ? null : () => onDelete(selected!),
+                onAssociates: selected == null
+                    ? null
+                    : () => onAssociates(selected!),
               ),
             ),
           ],
@@ -639,6 +677,7 @@ class _PlanList extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onAssociates,
   });
   final List<PaymentPlanModel> items;
   final Map<String, CurrencyModel> currencyMap;
@@ -650,6 +689,7 @@ class _PlanList extends StatelessWidget {
   final ValueChanged<PaymentPlanModel> onSelect;
   final ValueChanged<PaymentPlanModel> onEdit;
   final ValueChanged<PaymentPlanModel> onDelete;
+  final ValueChanged<PaymentPlanModel> onAssociates;
 
   @override
   Widget build(BuildContext context) {
@@ -729,6 +769,7 @@ class _PlanList extends StatelessWidget {
                       onSelect: () => onSelect(plan),
                       onEdit: () => onEdit(plan),
                       onDelete: () => onDelete(plan),
+                      onAssociates: () => onAssociates(plan),
                     );
                   },
                 ),
@@ -742,7 +783,7 @@ class _PlanList extends StatelessWidget {
                   border: Border(top: BorderSide(color: tokens.line)),
                 ),
                 child: Text(
-                  '${items.length} resultados · socios activos por plan',
+                  '${items.length} resultados · asociados por plan',
                   style: TextStyle(
                     fontFamily: PulsoFonts.mono,
                     fontSize: 9,
@@ -810,6 +851,7 @@ class _PlanRow extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onAssociates,
   });
   final PaymentPlanModel plan;
   final CurrencyModel? currency;
@@ -819,6 +861,7 @@ class _PlanRow extends StatelessWidget {
   final VoidCallback onSelect;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onAssociates;
 
   @override
   Widget build(BuildContext context) {
@@ -924,15 +967,13 @@ class _PlanRow extends StatelessWidget {
                 ),
                 Expanded(
                   flex: 2,
-                  child: Text(
-                    membersLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: PulsoFonts.mono,
-                      fontWeight: FontWeight.w600,
-                      color: membersColor,
-                    ),
+                  child: _AssociatesCell(
+                    label: membersLabel,
+                    color: membersColor,
+                    planName: plan.nombre,
+                    // Sin asociados no hay a quién ir a ver: el contador se
+                    // queda como texto y no promete una lista vacía.
+                    onTap: stats.ready && count > 0 ? onAssociates : null,
                   ),
                 ),
                 SizedBox(
@@ -960,14 +1001,66 @@ class _PlanRow extends StatelessWidget {
                   onSelected: (value) {
                     if (value == 'edit') onEdit();
                     if (value == 'delete') onDelete();
+                    if (value == 'associates') onAssociates();
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                  itemBuilder: (context) => [
+                    if (stats.ready && count > 0)
+                      const PopupMenuItem(
+                        value: 'associates',
+                        child: Text('Ver asociados'),
+                      ),
+                    const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Eliminar'),
+                    ),
                   ],
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Contador de asociados de la fila. Cuando hay a quién enseñar, lleva a
+/// Clientes con el plan filtrado; cuando no, es texto y ya.
+class _AssociatesCell extends StatelessWidget {
+  const _AssociatesCell({
+    required this.label,
+    required this.color,
+    required this.planName,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final String planName;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontWeight: FontWeight.w600,
+        color: color,
+        decoration: onTap == null ? null : TextDecoration.underline,
+        decorationColor: color,
+      ),
+    );
+    if (onTap == null) return text;
+    return Tooltip(
+      message: 'Ver los asociados de $planName en Clientes',
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: text,
         ),
       ),
     );
@@ -981,12 +1074,14 @@ class _PlanDetail extends StatelessWidget {
     required this.stats,
     required this.onEdit,
     required this.onDelete,
+    required this.onAssociates,
   });
   final PaymentPlanModel? plan;
   final CurrencyModel? currency;
   final _PlanStats stats;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onAssociates;
 
   @override
   Widget build(BuildContext context) {
@@ -1005,7 +1100,7 @@ class _PlanDetail extends StatelessWidget {
     final perDay = selected.duracion <= 0
         ? '—'
         : '$symbol ${_moneyFmt.format(selected.importe / selected.duracion)}';
-    // Estimación de lectura: socios activos × importe normalizado a 30 días.
+    // Estimación de lectura: asociados × importe normalizado a 30 días.
     final monthly = !stats.ready || selected.duracion <= 0
         ? '—'
         : '$symbol ${_moneyFmt.format(count * selected.importe * 30 / selected.duracion)}';
@@ -1054,9 +1149,14 @@ class _PlanDetail extends StatelessWidget {
             value: '${selected.formattedDuration} · ${selected.duracion} d',
           ),
           _DetailLine(label: 'Por día', value: perDay),
+          // El número es el enlace: lleva a Clientes con este plan filtrado.
+          // Se prefiere aquí, y no un botón aparte, para no crecer el panel.
           _DetailLine(
-            label: 'Socios activos',
+            key: const ValueKey('plan-detail-associates'),
+            label: 'Asociados',
             value: stats.ready ? '$count' : '—',
+            onTap: stats.ready && count > 0 ? onAssociates : null,
+            tooltip: 'Ver los asociados de ${selected.nombre} en Clientes',
           ),
           _DetailLine(label: 'Ingreso/mes est.', value: monthly),
           _DetailLine(label: 'Comisión entrenador', value: trainer),
@@ -1091,12 +1191,32 @@ class _PlanDetail extends StatelessWidget {
 }
 
 class _DetailLine extends StatelessWidget {
-  const _DetailLine({required this.label, required this.value});
+  const _DetailLine({
+    super.key,
+    required this.label,
+    required this.value,
+    this.onTap,
+    this.tooltip,
+  });
   final String label;
   final String value;
+  final VoidCallback? onTap;
+  final String? tooltip;
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
+    final text = Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontWeight: FontWeight.w600,
+        color: onTap == null ? tokens.chalkDim : tokens.accent,
+        decoration: onTap == null ? null : TextDecoration.underline,
+        decorationColor: onTap == null ? null : tokens.accent,
+      ),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
@@ -1106,16 +1226,12 @@ class _DetailLine extends StatelessWidget {
         children: [
           Expanded(child: PulsoLabel(label)),
           Flexible(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: PulsoFonts.mono,
-                fontWeight: FontWeight.w600,
-                color: tokens.chalkDim,
-              ),
-            ),
+            child: onTap == null
+                ? text
+                : Tooltip(
+                    message: tooltip ?? '',
+                    child: InkWell(onTap: onTap, child: text),
+                  ),
           ),
         ],
       ),

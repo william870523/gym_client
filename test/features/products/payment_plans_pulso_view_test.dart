@@ -9,6 +9,8 @@ import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
+import 'package:gym_client/src/features/clients/presentation/state/clients_scope_filter_provider.dart';
+import 'package:gym_client/src/features/dashboard/presentation/state/dashboard_nav_provider.dart';
 import 'package:gym_client/src/features/financials/data/models/currency_model.dart';
 import 'package:gym_client/src/features/financials/presentation/state/currency_notifier.dart';
 import 'package:gym_client/src/features/products/data/models/payment_plan_model.dart';
@@ -61,9 +63,7 @@ void main() {
     });
   }
 
-  testWidgets('cuenta socios activos y estima el ingreso mensual', (
-    tester,
-  ) async {
+  testWidgets('cuenta asociados y estima el ingreso mensual', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -72,8 +72,9 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Solo los socios ACTIVOS cuentan: 2 en Mensual, ninguno en Semanal.
-    expect(find.text('2 socios'), findsOneWidget);
+    // Criterio del dueño (docs/PLAN_ASOCIADOS.md §5): vigente, pendiente de
+    // pago y vencida reciente. Quedan fuera la vencida hace 90 días y la baja.
+    expect(find.text('3 socios'), findsOneWidget);
     expect(find.text('sin socios'), findsOneWidget);
     expect(find.text('Plan líder'), findsOneWidget);
 
@@ -84,8 +85,53 @@ void main() {
       ),
     );
     await tester.pump();
-    // 2 socios × Bs 250 × 30/30 días.
-    expect(find.text('Bs 500.00'), findsOneWidget);
+    // 3 asociados × Bs 250 × 30/30 días.
+    expect(find.text('Bs 750.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el contador lleva a Clientes con el plan filtrado', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    // El contador es el enlace: pulsarlo deja el filtro puesto y salta a
+    // Clientes (índice 1 del panel principal).
+    await tester.tap(find.text('3 socios'));
+    await tester.pumpAndSettle();
+
+    final filter = container.read(clientsScopeFilterProvider);
+    expect(filter?.kind, ClientsFilterKind.plan);
+    expect(filter?.id, 'plan-mensual');
+    expect(filter?.label, 'Mensual');
+    expect(container.read(dashboardNavProvider), 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un plan sin asociados no promete una lista vacía', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('sin socios'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(clientsScopeFilterProvider), isNull);
+    expect(container.read(dashboardNavProvider), 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -179,12 +225,84 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('busca un plan por su código, no solo por el nombre', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // El operador teclea el código que ve en la tabla. Antes no devolvía nada
+    // porque la búsqueda solo miraba nombre, duración, importe y moneda.
+    await tester.enterText(find.byType(TextField).first, 'PCU-3');
+    await tester.pumpAndSettle();
+
+    final list = find.byKey(const PageStorageKey('pulso-plans-list'));
+    expect(
+      find.descendant(of: list, matching: find.text('Mensual')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Semanal')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// Socios de la fixture, uno por caso del criterio de asociado
+/// (docs/PLAN_ASOCIADOS.md §5). El contador ya no cuenta la bandera `activo`
+/// del cliente: cuenta membresías del plan.
+List<ClientModel> _clients() {
+  final today = DateTime.now().toUtc();
+  return [
+    // Vigente.
+    ClientModel(
+      id: '100',
+      nombres: 'Ana',
+      planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
+      endDate: today.add(const Duration(days: 12)),
+    ),
+    // Contrató y aún no paga: también es asociado.
+    ClientModel(
+      id: '200',
+      nombres: 'Luis',
+      planId: 'plan-mensual',
+      membershipStatus: 'PENDIENTE_PAGO',
+    ),
+    // Venció hace poco: dentro de la ventana de 30 días.
+    ClientModel(
+      id: '250',
+      nombres: 'Rosa',
+      planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
+      endDate: today.subtract(const Duration(days: 10)),
+    ),
+    // Venció hace mucho: ya no es asociado.
+    ClientModel(
+      id: '260',
+      nombres: 'Tomás',
+      planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
+      endDate: today.subtract(const Duration(days: 90)),
+    ),
+    // Sin membresía viva (baja): no cuenta.
+    ClientModel(
+      id: '300',
+      nombres: 'Eva',
+      planId: 'plan-mensual',
+      activo: false,
+    ),
+    ClientModel(id: '400', nombres: 'Juan'),
+  ];
 }
 
 List<PaymentPlanModel> _plans() => [
   PaymentPlanModel(
     id: 'plan-mensual',
     nombre: 'Mensual',
+    codigo: 'PCU-3',
     importe: 250,
     duracion: 30,
     monedaId: 'cur-bob',
@@ -199,8 +317,15 @@ List<PaymentPlanModel> _plans() => [
   ),
 ];
 
-Widget _harness({_PlanNotifier? planNotifier}) {
-  return ProviderScope(
+Widget _harness({_PlanNotifier? planNotifier, ProviderContainer? container}) {
+  return UncontrolledProviderScope(
+    container: container ?? _container(planNotifier: planNotifier),
+    child: const MaterialApp(home: Scaffold(body: PaymentPlansPulsoView())),
+  );
+}
+
+ProviderContainer _container({_PlanNotifier? planNotifier}) {
+  final container = ProviderContainer(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
@@ -221,19 +346,7 @@ Widget _harness({_PlanNotifier? planNotifier}) {
           ),
         ]),
       ),
-      clientNotifierProvider.overrideWith(
-        () => _ClientNotifier([
-          ClientModel(id: '100', nombres: 'Ana', planId: 'plan-mensual'),
-          ClientModel(id: '200', nombres: 'Luis', planId: 'plan-mensual'),
-          ClientModel(
-            id: '300',
-            nombres: 'Eva',
-            planId: 'plan-mensual',
-            activo: false,
-          ),
-          ClientModel(id: '400', nombres: 'Juan'),
-        ]),
-      ),
+      clientNotifierProvider.overrideWith(() => _ClientNotifier(_clients())),
       paymentPlanProvider.overrideWith(
         () => planNotifier ?? _PlanNotifier(_plans()),
       ),
@@ -241,8 +354,9 @@ Widget _harness({_PlanNotifier? planNotifier}) {
         (ref) => _FakePlanRepository(),
       ),
     ],
-    child: const MaterialApp(home: Scaffold(body: PaymentPlansPulsoView())),
   );
+  addTearDown(container.dispose);
+  return container;
 }
 
 class _FakePlanRepository extends PaymentPlanRepository {

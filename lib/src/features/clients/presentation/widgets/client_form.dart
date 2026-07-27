@@ -10,10 +10,14 @@ import 'package:gym_client/src/features/schedules/presentation/state/horario_not
 import 'package:gym_client/src/features/schedules/data/models/horario_model.dart'; // IMPORTED
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/identity/document_type.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/cuba_ci.dart';
 import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/app_flag.dart';
+import '../../../../core/widgets/cuba_ci_field.dart';
+import '../../../../core/widgets/document_type_selector.dart';
 import '../../../../features/configuration/data/models/nacionalidad_model.dart';
 import '../../../../features/configuration/presentation/state/nacionalidad_notifier.dart';
 
@@ -58,6 +62,10 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   late TextEditingController _weightController;
 
   String _sex = 'M';
+  DocumentType _documentType = DocumentType.cubanCi;
+  bool _documentTypeManuallySelected = false;
+  bool _sexManuallySelected = false;
+  bool _sexDerivedFromCi = false;
   // R5.3: categoría del cliente para el descuento. Sin default: obligatorio.
   String? _categoria;
   String? _planId;
@@ -74,12 +82,14 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   ).add(const Duration(days: 30));
   bool _isActive = true;
   bool _isLoading = false;
+  late final DateTime _ciReferenceDate;
 
   @override
   void initState() {
     super.initState();
 
     final c = widget.client;
+    _ciReferenceDate = todayInZone(appClock.gymTimezone);
     _nameController = TextEditingController(text: c?.nombres ?? '');
     _surnameController = TextEditingController(text: c?.apellidos ?? '');
 
@@ -92,6 +102,10 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
     _entrenadorId = c?.trainerId;
     _ciController = TextEditingController(text: c?.id ?? '');
+    _documentType = c == null
+        ? DocumentType.cubanCi
+        : DocumentType.fromCode(c.documentType);
+    _documentTypeManuallySelected = c != null && _documentType.isClassified;
     _emailController = TextEditingController(text: c?.correo ?? '');
     _phoneController = TextEditingController(
       text: c?.telefono?.toString() ?? '',
@@ -111,6 +125,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     } else {
       _sex = 'O';
     }
+    _sexManuallySelected = c != null;
     // R5.3: cargar categoría; si el cliente heredado no la tiene, queda null
     // y el dropdown obliga a elegir antes de guardar.
     final rawCat = c?.categoria?.trim().toUpperCase();
@@ -128,6 +143,62 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
     // Attempt to parse horarioId if present (Note: ClientModel might not support it yet, but UI should)
     // If ClientModel doesn't have horarioId, we just leave it null.
+  }
+
+  void _handleCiAnalysis(CubaCiAnalisis analysis) {
+    if (analysis.esValido &&
+        !_documentTypeManuallySelected &&
+        _documentType != DocumentType.cubanCi &&
+        mounted) {
+      setState(() => _documentType = DocumentType.cubanCi);
+    }
+    if (!_documentType.validatesCubanCi ||
+        widget.client != null ||
+        _sexManuallySelected) {
+      return;
+    }
+    if (!analysis.esValido || analysis.sexoCodificado == null) {
+      if (_sexDerivedFromCi && mounted) {
+        setState(() => _sexDerivedFromCi = false);
+      }
+      return;
+    }
+    final next = analysis.sexoCodificado == CubaCiSexo.masculino ? 'M' : 'F';
+    if (next == _sex && _sexDerivedFromCi) return;
+    setState(() {
+      _sex = next;
+      _sexDerivedFromCi = true;
+    });
+  }
+
+  void _selectDocumentType(DocumentType value) {
+    final restricted = restrictDocumentText(_ciController.text, value);
+    if (restricted != _ciController.text) {
+      _ciController.value = TextEditingValue(
+        text: restricted,
+        selection: TextSelection.collapsed(offset: restricted.length),
+      );
+    }
+    setState(() {
+      _documentType = value;
+      _documentTypeManuallySelected = true;
+      if (!value.validatesCubanCi) {
+        _sexDerivedFromCi = false;
+      }
+    });
+    if (value.validatesCubanCi) {
+      _handleCiAnalysis(
+        analizarCubaCi(_ciController.text, fechaReferencia: _ciReferenceDate),
+      );
+    }
+  }
+
+  void _selectSexManually(Object? value) {
+    setState(() {
+      _sex = value as String;
+      _sexManuallySelected = true;
+      _sexDerivedFromCi = false;
+    });
   }
 
   @override
@@ -296,6 +367,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
       final client = ClientModel(
         id: _ciController.text.trim(),
+        documentType: _documentType.code,
         nombres: _nameController.text.trim(),
         apellidos: _surnameController.text.trim(),
         sexo: _sex == 'M' ? 'Masculino' : (_sex == 'F' ? 'Femenino' : 'Otro'),
@@ -518,14 +590,14 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                         columnGap: 16,
                                         rowGap: 16,
                                         children: [
-                                          _buildTextField(
-                                            label: 'Cédula de Identidad (CI)',
-                                            controller: _ciController,
-                                            isRequired: true,
-                                            placeholder: 'Ej: 1234567',
-                                          ),
+                                          _buildCubaCiField(),
                                           _buildDropdown(
-                                            label: 'Sexo',
+                                            label: _sexDerivedFromCi
+                                                ? 'Sexo · desde CI'
+                                                : 'Sexo',
+                                            fieldKey: const ValueKey(
+                                              'pulso-client-sex',
+                                            ),
                                             value: _sex,
                                             items: const [
                                               DropdownMenuItem(
@@ -541,9 +613,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                                 child: Text('Otro'),
                                               ),
                                             ],
-                                            onChanged: (v) => setState(
-                                              () => _sex = v as String,
-                                            ),
+                                            onChanged: _selectSexManually,
                                             placeholder: 'Seleccionar',
                                           ),
                                           _buildTextField(
@@ -578,7 +648,9 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             items: const [
                                               DropdownMenuItem(
                                                 value: 'NUEVO',
-                                                child: Text('Nuevo (precio normal)'),
+                                                child: Text(
+                                                  'Nuevo (precio normal)',
+                                                ),
                                               ),
                                               DropdownMenuItem(
                                                 value: 'VIEJO',
@@ -1202,6 +1274,76 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   }
 
   // ... [TextField and Dropdown remain generic] ...
+  Widget _buildCubaCiField() {
+    final palette = _ClientFormPalette.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DocumentTypeSelector(
+          value: _documentType,
+          onChanged: _selectDocumentType,
+          enabled: !_isLoading,
+          showUnknown:
+              widget.client != null && _documentType == DocumentType.unknown,
+        ),
+        const SizedBox(height: 10),
+        RichText(
+          text: TextSpan(
+            text: _documentType == DocumentType.cubanCi
+                ? 'Carné de identidad (CI)'
+                : 'Número de documento',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: palette.textSecondary,
+            ),
+            children: [
+              TextSpan(
+                text: ' *',
+                style: TextStyle(color: palette.danger),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        CubaCiField(
+          fieldKey: const ValueKey('pulso-client-ci'),
+          controller: _ciController,
+          referenceDate: _ciReferenceDate,
+          documentType: _documentType,
+          onAnalysisChanged: _handleCiAnalysis,
+          style: TextStyle(fontSize: 14, color: palette.textPrimary),
+          decoration: InputDecoration(
+            hintText: _documentType == DocumentType.cubanCi
+                ? 'Ej: 91021020015'
+                : _documentType == DocumentType.passport
+                ? 'Ej: AB1234567'
+                : 'Número o código del documento',
+            hintStyle: TextStyle(fontSize: 13, color: palette.textSecondary),
+            filled: true,
+            fillColor: palette.surfaceAlt,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 14,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: palette.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: palette.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: palette.primary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTextField({
     required String label,
     required TextEditingController controller,
@@ -1317,6 +1459,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     required dynamic value,
     required List<DropdownMenuItem<Object>> items,
     required Function(Object?) onChanged,
+    Key? fieldKey,
     String? placeholder,
   }) {
     final palette = _ClientFormPalette.of(context);
@@ -1333,6 +1476,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         ),
         const SizedBox(height: 6),
         DropdownButtonFormField(
+          key: fieldKey,
           initialValue: value,
           items: items,
           onChanged: onChanged,
@@ -1393,12 +1537,13 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           optionsBuilder: (textEditingValue) {
             final query = textEditingValue.text.trim().toLowerCase();
             if (query.isEmpty) return options;
-            if (currentValue != null && currentValue.name.toLowerCase() == query) {
+            if (currentValue != null &&
+                currentValue.name.toLowerCase() == query) {
               return options;
             }
-            final matches = options.where(
-              (o) => o.name.toLowerCase().contains(query),
-            ).toList();
+            final matches = options
+                .where((o) => o.name.toLowerCase().contains(query))
+                .toList();
             if (matches.isEmpty) return options;
             final nonMatches = options.where(
               (o) => !o.name.toLowerCase().contains(query),
@@ -1560,15 +1705,23 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             final query = textEditingValue.text.trim().toLowerCase();
             if (query.isEmpty) return options.cast<Object>();
             if (currentValue != null &&
-                (currentValue as dynamic).nombre.toString().toLowerCase() == query) {
+                (currentValue as dynamic).nombre.toString().toLowerCase() ==
+                    query) {
               return options.cast<Object>();
             }
-            final matches = options.where(
-              (r) => (r as dynamic).nombre.toString().toLowerCase().contains(query),
-            ).toList();
+            final matches = options
+                .where(
+                  (r) => (r as dynamic).nombre
+                      .toString()
+                      .toLowerCase()
+                      .contains(query),
+                )
+                .toList();
             if (matches.isEmpty) return options.cast<Object>();
             final nonMatches = options.where(
-              (r) => !(r as dynamic).nombre.toString().toLowerCase().contains(query),
+              (r) => !(r as dynamic).nombre.toString().toLowerCase().contains(
+                query,
+              ),
             );
             return [...matches, ...nonMatches].cast<Object>();
           },
@@ -1684,15 +1837,23 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             final query = textEditingValue.text.trim().toLowerCase();
             if (query.isEmpty) return plans.cast<Object>();
             if (selectedPlan != null &&
-                (selectedPlan as dynamic).nombre.toString().toLowerCase() == query) {
+                (selectedPlan as dynamic).nombre.toString().toLowerCase() ==
+                    query) {
               return plans.cast<Object>();
             }
-            final matches = plans.where(
-              (p) => (p as dynamic).nombre.toString().toLowerCase().contains(query),
-            ).toList();
+            final matches = plans
+                .where(
+                  (p) => (p as dynamic).nombre
+                      .toString()
+                      .toLowerCase()
+                      .contains(query),
+                )
+                .toList();
             if (matches.isEmpty) return plans.cast<Object>();
             final nonMatches = plans.where(
-              (p) => !(p as dynamic).nombre.toString().toLowerCase().contains(query),
+              (p) => !(p as dynamic).nombre.toString().toLowerCase().contains(
+                query,
+              ),
             );
             return [...matches, ...nonMatches].cast<Object>();
           },
@@ -1900,15 +2061,22 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             final query = textEditingValue.text.trim().toLowerCase();
             if (query.isEmpty) return trainers.cast<Object>();
             if (selectedTrainer != null &&
-                '${(selectedTrainer as dynamic).nombres} ${(selectedTrainer as dynamic).apellidos}'.toLowerCase() == query) {
+                '${(selectedTrainer as dynamic).nombres} ${(selectedTrainer as dynamic).apellidos}'
+                        .toLowerCase() ==
+                    query) {
               return trainers.cast<Object>();
             }
-            final matches = trainers.where(
-              (t) => '${t.nombres} ${t.apellidos}'.toLowerCase().contains(query),
-            ).toList();
+            final matches = trainers
+                .where(
+                  (t) => '${t.nombres} ${t.apellidos}'.toLowerCase().contains(
+                    query,
+                  ),
+                )
+                .toList();
             if (matches.isEmpty) return trainers.cast<Object>();
             final nonMatches = trainers.where(
-              (t) => !'${t.nombres} ${t.apellidos}'.toLowerCase().contains(query),
+              (t) =>
+                  !'${t.nombres} ${t.apellidos}'.toLowerCase().contains(query),
             );
             return [...matches, ...nonMatches].cast<Object>();
           },
@@ -1921,13 +2089,16 @@ class _ClientFormState extends ConsumerState<ClientForm> {
               controller: controller,
               focusNode: focusNode,
               validator: (val) {
-                if (requiresTrainer && (_entrenadorId == null || _entrenadorId!.isEmpty)) {
+                if (requiresTrainer &&
+                    (_entrenadorId == null || _entrenadorId!.isEmpty)) {
                   return 'Debe seleccionar un entrenador personal.';
                 }
                 return null;
               },
               decoration: InputDecoration(
-                hintText: requiresTrainer ? 'Seleccionar Entrenador...' : 'Sin Entrenador Personal',
+                hintText: requiresTrainer
+                    ? 'Seleccionar Entrenador...'
+                    : 'Sin Entrenador Personal',
                 filled: true,
                 fillColor: palette.surfaceAlt,
                 contentPadding: const EdgeInsets.symmetric(

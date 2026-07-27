@@ -419,6 +419,143 @@ class TreasuryDailyCloseReportService {
                 ),
             ],
           ),
+          // Recargos condonados del DÍA (docs/RECARGO_MORA.md §6-bis). Es
+          // control, no caja: por eso va fuera del arqueo y se rotula así. No
+          // pertenece a esta cuenta ni a su moneda, sino a la jornada.
+          if (!ledger.waivedLateFees.isEmpty) ...[
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'RECARGOS POR MORA CONDONADOS EN LA JORNADA',
+              style: const pw.TextStyle(
+                color: muted,
+                fontSize: 8,
+                letterSpacing: 1.1,
+              ),
+            ),
+            pw.SizedBox(height: 7),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(border: pw.Border.all(color: ink)),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Informativo: no entró ni salió dinero; no afecta el arqueo.',
+                        style: const pw.TextStyle(color: muted, fontSize: 7.5),
+                      ),
+                      pw.Text(
+                        // Una cifra por moneda; nunca un total mezclado.
+                        ledger.waivedLateFees.byCurrency
+                            .map(
+                              (currency) =>
+                                  '${currency.currencyCode} ${money.format(currency.amount)}',
+                            )
+                            .join('  ·  '),
+                        style: pw.TextStyle(
+                          color: accent,
+                          fontSize: 10,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 6),
+                  for (final waived in ledger.waivedLateFees.details)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.only(top: 4),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Expanded(
+                            child: pw.Text(
+                              '${waived.memberName} · ${waived.reason} · autorizó ${waived.authorizedBy}',
+                              style: const pw.TextStyle(color: ink, fontSize: 8),
+                            ),
+                          ),
+                          pw.SizedBox(width: 8),
+                          pw.Text(
+                            '${waived.currencyCode} ${money.format(waived.amount)}',
+                            style: const pw.TextStyle(color: ink, fontSize: 8),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          // R5.6 — quién recibió el dinero (docs/PAYMENT_COLLECTOR_ATTRIBUTION
+          // §6). Va aparte del arqueo y no sustituye a «Cerró», que identifica
+          // a quien contó la caja, no a quien cobró.
+          if (ledger.collectorRows.isNotEmpty) ...[
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'COBROS POR RECEPCIONISTA',
+              style: const pw.TextStyle(
+                color: muted,
+                fontSize: 8,
+                letterSpacing: 1.1,
+              ),
+            ),
+            pw.SizedBox(height: 7),
+            pw.TableHelper.fromTextArray(
+              headers: const [
+                'Cobrado por',
+                'Cuenta',
+                'Moneda',
+                'Pagos',
+                'Socios',
+                'Bruto',
+                'Cambio',
+                'Anulado',
+                'Neto',
+              ],
+              data: [
+                for (final row in ledger.collectorRows)
+                  [
+                    row.unattributed
+                        ? 'Sin atribuir · histórico'
+                        : '${row.name}${(row.role ?? '').isEmpty ? '' : ' (${row.role})'}',
+                    row.accountName,
+                    // Cada fila vive en su moneda: no hay fila de total.
+                    row.currencyCode,
+                    '${row.payments}',
+                    '${row.clients}',
+                    money.format(row.gross),
+                    money.format(row.change),
+                    money.format(row.annulled),
+                    money.format(row.net),
+                  ],
+              ],
+              headerStyle: pw.TextStyle(
+                fontSize: 7.5,
+                fontWeight: pw.FontWeight.bold,
+                color: ink,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 7.5, color: ink),
+              cellAlignments: {
+                3: pw.Alignment.centerRight,
+                4: pw.Alignment.centerRight,
+                5: pw.Alignment.centerRight,
+                6: pw.Alignment.centerRight,
+                7: pw.Alignment.centerRight,
+                8: pw.Alignment.centerRight,
+              },
+              cellPadding: const pw.EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 3,
+              ),
+            ),
+            pw.SizedBox(height: 5),
+            pw.Text(
+              'Un pago mixto cuenta como un solo cobro. Los importes no se suman '
+              'entre monedas. «Cobrado por» no es «Cerrado por» ni «Anulado por».',
+              style: const pw.TextStyle(color: muted, fontSize: 7),
+            ),
+          ],
           pw.SizedBox(height: 18),
           pw.Text(
             'Documento auditable. El cierre conserva una fotografía inmutable de los movimientos incluidos; los movimientos posteriores se concilian por separado.',

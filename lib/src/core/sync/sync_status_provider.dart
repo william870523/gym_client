@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/auth/presentation/state/auth_notifier.dart';
 import '../network/api_client.dart';
 import '../time/app_clock.dart';
 import '../utils/datetime_zone.dart';
@@ -77,41 +78,85 @@ class SyncStatusSnapshot {
 
 final syncStatusProvider = StreamProvider<SyncStatusSnapshot>((ref) async* {
   final client = ref.watch(apiClientProvider);
+  final authenticated =
+      ref.watch(authProvider).value?.token?.isNotEmpty == true;
+  var disposed = false;
+  Timer? pollTimer;
+  Completer<void>? pollDelay;
+  ref.onDispose(() {
+    disposed = true;
+    pollTimer?.cancel();
+    final delay = pollDelay;
+    if (delay != null && !delay.isCompleted) {
+      delay.complete();
+    }
+  });
 
   yield SyncStatusSnapshot.checking();
 
-  while (true) {
-    yield await _loadSyncStatus(client);
-    await Future<void>.delayed(const Duration(seconds: 15));
+  while (!disposed) {
+    yield await _loadSyncStatus(client, authenticated: authenticated);
+    pollDelay = Completer<void>();
+    pollTimer = Timer(const Duration(seconds: 15), pollDelay.complete);
+    await pollDelay.future;
   }
 });
 
-Future<SyncStatusSnapshot> _loadSyncStatus(Dio client) async {
+Future<SyncStatusSnapshot> _loadSyncStatus(
+  Dio client, {
+  required bool authenticated,
+}) async {
   if (kIsWeb) {
-    return _loadRemoteApiStatus(client);
+    return _loadApiAvailability(
+      client,
+      source: 'api-remota',
+      availableDetail: 'Servicio remoto disponible',
+      unavailableDetail: 'Sin conexión con la API remota',
+    );
   }
 
   if (isDesktopPlatform) {
+    // El chip también existe en la pantalla de acceso. /sync/status está
+    // protegido deliberadamente, por lo que antes del login solo comprobamos
+    // la ruta pública /health y evitamos llenar el registro con 401 esperados.
+    if (!authenticated) {
+      return _loadApiAvailability(
+        client,
+        source: 'api-local',
+        availableDetail: 'API local disponible · inicia sesión',
+        unavailableDetail: 'API local no responde',
+      );
+    }
     return _loadLocalSyncStatus(client);
   }
 
-  return _loadRemoteApiStatus(client);
+  return _loadApiAvailability(
+    client,
+    source: 'api-remota',
+    availableDetail: 'Servicio remoto disponible',
+    unavailableDetail: 'Sin conexión con la API remota',
+  );
 }
 
-Future<SyncStatusSnapshot> _loadRemoteApiStatus(Dio client) async {
+Future<SyncStatusSnapshot> _loadApiAvailability(
+  Dio client, {
+  required String source,
+  required String availableDetail,
+  required String unavailableDetail,
+}) async {
   try {
     await client.get<dynamic>('/health').timeout(const Duration(seconds: 5));
     return SyncStatusSnapshot(
       level: SyncStatusLevel.synced,
       label: 'API conectada',
-      detail: 'Servicio remoto disponible',
+      detail: availableDetail,
       checkedAt: appClock.nowUtc(),
-      source: 'api-remota',
+      source: source,
     );
   } catch (error) {
     return SyncStatusSnapshot.offline(
-      detail: 'Sin conexión con la API remota',
-      source: 'api-remota',
+      detail: unavailableDetail,
+      source: source,
       errorMessage: error.toString(),
     );
   }

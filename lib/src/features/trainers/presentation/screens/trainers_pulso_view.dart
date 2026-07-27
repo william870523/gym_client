@@ -8,7 +8,12 @@ import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/base64_image.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
+import '../../../clients/domain/plan_associates.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
+import '../../../clients/presentation/state/clients_scope_filter_provider.dart';
+import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
 import '../../../payments/presentation/state/payment_notifier.dart';
 import '../../data/models/trainer_model.dart';
 import '../../data/models/trainer_offboarding_impact.dart';
@@ -23,6 +28,9 @@ enum _TrainerFilter { all, active, inactive }
 enum _TrainerSort { name, clients }
 
 final _dateFmt = DateFormat('yyyy-MM-dd');
+
+/// Índice de la vista de Clientes en el conmutador del panel principal.
+const int _clientsViewIndex = 1;
 
 String _fullName(TrainerModel trainer) {
   final first = (trainer.nombres ?? '').trim();
@@ -55,7 +63,8 @@ String _contactLine(TrainerModel trainer) {
 String _startDate(TrainerModel trainer) =>
     _dateFmt.format(trainer.fechaInicio.toUtc());
 
-/// Socios activos asignados por entrenador, derivado del catálogo de clientes.
+/// Socios por entrenador, con el criterio de asociado de
+/// docs/PLAN_ASOCIADOS.md §5 (el mismo que usa la lista de Clientes).
 class _TrainerStats {
   const _TrainerStats({required this.ready, required this.counts});
 
@@ -455,16 +464,26 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
     if (clients == null) {
       return const _TrainerStats(ready: false, counts: {});
     }
-    final ids = {for (final trainer in all) trainer.id};
-    final counts = <String, int>{};
-    for (final client in clients) {
-      final trainerId = client.trainerId;
-      if (!client.activo || trainerId == null || !ids.contains(trainerId)) {
-        continue;
-      }
-      counts[trainerId] = (counts[trainerId] ?? 0) + 1;
-    }
-    return _TrainerStats(ready: true, counts: counts);
+    // Mismo criterio de socio que usa la lista de Clientes a la que lleva el
+    // contador (docs/PLAN_ASOCIADOS.md §5): enseñar 11 y encontrar 8 al pulsar
+    // sería peor que no enseñar nada.
+    return _TrainerStats(
+      ready: true,
+      counts: countAssociatesByTrainer(
+        clients,
+        trainerIds: {for (final trainer in all) trainer.id},
+        today: todayInZone(appClock.gymTimezone),
+      ),
+    );
+  }
+
+  /// Lleva a Clientes con los socios de este entrenador ya filtrados.
+  void _showTrainerClients(TrainerModel trainer) {
+    if (trainer.id.isEmpty) return;
+    ref
+        .read(clientsScopeFilterProvider.notifier)
+        .showTrainer(trainerId: trainer.id, trainerName: _fullName(trainer));
+    ref.read(dashboardNavProvider.notifier).setIndex(_clientsViewIndex);
   }
 
   void _showDetail(
@@ -493,6 +512,10 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
               onDelete: () {
                 Navigator.of(dialogContext).pop();
                 _confirmDelete(trainer, stats);
+              },
+              onClients: () {
+                Navigator.of(dialogContext).pop();
+                _showTrainerClients(trainer);
               },
             ),
           ),
@@ -588,6 +611,7 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
                   },
                   onEdit: _openForm,
                   onDelete: (trainer) => _confirmDelete(trainer, stats),
+                  onClients: _showTrainerClients,
                 ),
         );
         final page = Column(
@@ -876,6 +900,7 @@ class _TrainerWorkspace extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onClients,
   });
   final List<TrainerModel> items;
   final _TrainerStats stats;
@@ -886,6 +911,7 @@ class _TrainerWorkspace extends StatelessWidget {
   final ValueChanged<TrainerModel> onSelect;
   final ValueChanged<TrainerModel> onEdit;
   final ValueChanged<TrainerModel> onDelete;
+  final ValueChanged<TrainerModel> onClients;
 
   @override
   Widget build(BuildContext context) {
@@ -901,6 +927,7 @@ class _TrainerWorkspace extends StatelessWidget {
           onSelect: onSelect,
           onEdit: onEdit,
           onDelete: onDelete,
+          onClients: onClients,
         );
         if (constraints.maxWidth < 1040) return list;
         return Row(
@@ -915,6 +942,9 @@ class _TrainerWorkspace extends StatelessWidget {
                 stats: stats,
                 onEdit: selected == null ? null : () => onEdit(selected!),
                 onDelete: selected == null ? null : () => onDelete(selected!),
+                onClients: selected == null
+                    ? null
+                    : () => onClients(selected!),
               ),
             ),
           ],
@@ -935,6 +965,7 @@ class _TrainerList extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onClients,
   });
   final List<TrainerModel> items;
   final _TrainerStats stats;
@@ -945,6 +976,7 @@ class _TrainerList extends StatelessWidget {
   final ValueChanged<TrainerModel> onSelect;
   final ValueChanged<TrainerModel> onEdit;
   final ValueChanged<TrainerModel> onDelete;
+  final ValueChanged<TrainerModel> onClients;
 
   @override
   Widget build(BuildContext context) {
@@ -1019,6 +1051,7 @@ class _TrainerList extends StatelessWidget {
                       onSelect: () => onSelect(trainer),
                       onEdit: () => onEdit(trainer),
                       onDelete: () => onDelete(trainer),
+                      onClients: () => onClients(trainer),
                     );
                   },
                 ),
@@ -1032,7 +1065,7 @@ class _TrainerList extends StatelessWidget {
                   border: Border(top: BorderSide(color: tokens.line)),
                 ),
                 child: Text(
-                  '${items.length} resultados · socios activos por entrenador',
+                  '${items.length} resultados · socios por entrenador',
                   style: TextStyle(
                     fontFamily: PulsoFonts.mono,
                     fontSize: 9,
@@ -1491,6 +1524,7 @@ class _TrainerRow extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    required this.onClients,
   });
   final TrainerModel trainer;
   final _TrainerStats stats;
@@ -1499,6 +1533,7 @@ class _TrainerRow extends StatelessWidget {
   final VoidCallback onSelect;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onClients;
 
   @override
   Widget build(BuildContext context) {
@@ -1583,15 +1618,13 @@ class _TrainerRow extends StatelessWidget {
                 ),
                 Expanded(
                   flex: 2,
-                  child: Text(
-                    membersLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: PulsoFonts.mono,
-                      fontWeight: FontWeight.w600,
-                      color: membersColor,
-                    ),
+                  child: _TrainerClientsCell(
+                    label: membersLabel,
+                    color: membersColor,
+                    trainerName: name,
+                    // Sin socios no hay a quién ir a ver: el contador se queda
+                    // como texto y no promete una lista vacía.
+                    onTap: stats.ready && count > 0 ? onClients : null,
                   ),
                 ),
                 Expanded(
@@ -1623,10 +1656,16 @@ class _TrainerRow extends StatelessWidget {
                   onSelected: (value) {
                     if (value == 'edit') onEdit();
                     if (value == 'delete') onDelete();
+                    if (value == 'clients') onClients();
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(
+                  itemBuilder: (context) => [
+                    if (stats.ready && count > 0)
+                      const PopupMenuItem(
+                        value: 'clients',
+                        child: Text('Ver sus socios'),
+                      ),
+                    const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                    const PopupMenuItem(
                       value: 'delete',
                       child: Text('Preparar baja'),
                     ),
@@ -1634,6 +1673,87 @@ class _TrainerRow extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// El número grande del detalle, pulsable cuando hay socios que enseñar.
+class _DetailClientsLink extends StatelessWidget {
+  const _DetailClientsLink({
+    super.key,
+    required this.value,
+    required this.trainerName,
+    required this.onTap,
+  });
+
+  final String value;
+  final String trainerName;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final text = Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: PulsoFonts.display,
+        fontSize: 48,
+        height: 0.9,
+        fontWeight: FontWeight.w800,
+        color: tokens.accent,
+        decoration: onTap == null ? null : TextDecoration.underline,
+        decorationColor: tokens.accent,
+      ),
+    );
+    if (onTap == null) return text;
+    return Tooltip(
+      message: 'Ver los socios de $trainerName en Clientes',
+      child: InkWell(onTap: onTap, child: text),
+    );
+  }
+}
+
+/// Contador de socios de la fila. Cuando hay a quién enseñar, lleva a Clientes
+/// con ese entrenador filtrado; cuando no, es texto y ya.
+class _TrainerClientsCell extends StatelessWidget {
+  const _TrainerClientsCell({
+    required this.label,
+    required this.color,
+    required this.trainerName,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final String trainerName;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontWeight: FontWeight.w600,
+        color: color,
+        decoration: onTap == null ? null : TextDecoration.underline,
+        decorationColor: color,
+      ),
+    );
+    if (onTap == null) return text;
+    return Tooltip(
+      message: 'Ver los socios de $trainerName en Clientes',
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: text,
         ),
       ),
     );
@@ -1675,11 +1795,13 @@ class _TrainerDetail extends StatelessWidget {
     required this.stats,
     required this.onEdit,
     required this.onDelete,
+    required this.onClients,
   });
   final TrainerModel? trainer;
   final _TrainerStats stats;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onClients;
 
   @override
   Widget build(BuildContext context) {
@@ -1704,24 +1826,24 @@ class _TrainerDetail extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                stats.ready ? '$count' : '—',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: PulsoFonts.display,
-                  fontSize: 48,
-                  height: 0.9,
-                  fontWeight: FontWeight.w800,
-                  color: tokens.accent,
-                ),
+              // El número grande es el enlace a la lista de esos socios: es lo
+              // primero que se mira al preguntarse «¿quiénes son?».
+              _DetailClientsLink(
+                key: const ValueKey('trainer-detail-clients'),
+                value: stats.ready ? '$count' : '—',
+                trainerName: _fullName(selected),
+                onTap: stats.ready && count > 0 ? onClients : null,
               ),
               const Spacer(),
               _TrainerAvatar(trainer: selected, size: 48),
             ],
           ),
           const SizedBox(height: 4),
-          const PulsoLabel('Socios asignados'),
+          PulsoLabel(
+            stats.ready && count > 0
+                ? 'Socios asignados · ver lista'
+                : 'Socios asignados',
+          ),
           const SizedBox(height: 9),
           Text(
             _fullName(selected),

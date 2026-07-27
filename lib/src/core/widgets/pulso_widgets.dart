@@ -769,14 +769,24 @@ class _PulsoMetric extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
       child: Row(
         children: [
-          Text(
-            data.value,
-            style: TextStyle(
-              fontFamily: PulsoFonts.display,
-              fontSize: 28,
-              height: 1,
-              fontWeight: FontWeight.w800,
-              color: valueColor,
+          // La cifra manda, pero no puede empujar fuera del marco: si el valor
+          // es largo (importe con miles + código de moneda) se reduce en vez de
+          // desbordar la celda.
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                data.value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: PulsoFonts.display,
+                  fontSize: 28,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: valueColor,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),

@@ -1,3 +1,15 @@
+/// Lee un importe venga como número o como texto.
+///
+/// `importe` es `Decimal` en las dos bases y Prisma lo serializa **como
+/// cadena** (`"10"`), no como número. Un `as num?` directo reventaba con
+/// `type 'String' is not a subtype of type 'num'` y tumbaba la carga de cuotas
+/// entera, tanto en web como en escritorio.
+double _money(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0.0;
+}
+
 class PlanCuotaEsquemaModel {
   final String? esquemaId;
   final String planId;
@@ -20,7 +32,7 @@ class PlanCuotaEsquemaModel {
       esquemaId: json['esquema_id'] as String?,
       planId: json['plan_id'] as String? ?? '',
       numeroCuota: json['numero_cuota'] as int? ?? 1,
-      importe: (json['importe'] as num?)?.toDouble() ?? 0.0,
+      importe: _money(json['importe']),
       diasCobertura: json['dias_cobertura'] as int? ?? 30,
       orden: json['orden'] as int? ?? 1,
     );
@@ -70,7 +82,7 @@ class MembresiaCuotaModel {
       cuotaInstanciaId: json['cuota_instancia_id'] as String? ?? '',
       membresiaId: json['membresia_id'] as String? ?? '',
       numeroCuota: json['numero_cuota'] as int? ?? 1,
-      importe: (json['importe'] as num?)?.toDouble() ?? 0.0,
+      importe: _money(json['importe']),
       diasCobertura: json['dias_cobertura'] as int? ?? 30,
       fechaExigible: DateTime.tryParse(json['fecha_exigible'] as String? ?? '') ?? DateTime.now(),
       fechaCoberturaInicio: DateTime.tryParse(json['fecha_cobertura_inicio'] as String? ?? '') ?? DateTime.now(),

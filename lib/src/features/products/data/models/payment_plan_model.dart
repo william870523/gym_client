@@ -13,6 +13,12 @@ class PaymentPlanModel {
   final String? codigo;
   // R5.3: precio fijo para cliente VIEJO; null = aplicar % global.
   final double? precioViejoExcepcion;
+  // Recargo por mora (docs/RECARGO_MORA.md). El administrador elige un modo por
+  // plan. Importes como string decimal; null/activo=false = sin recargo.
+  final String? recargoMoraModo; // PORCENTAJE | MONTO_FIJO | POR_DIA
+  final String? recargoMoraValor;
+  final String? recargoMoraTope; // solo POR_DIA
+  final bool recargoMoraActivo;
   final bool isDeleted;
   final String? gymId;
   final int version;
@@ -30,6 +36,10 @@ class PaymentPlanModel {
     this.aceptaCuotas = false,
     this.codigo,
     this.precioViejoExcepcion,
+    this.recargoMoraModo,
+    this.recargoMoraValor,
+    this.recargoMoraTope,
+    this.recargoMoraActivo = false,
     this.isDeleted = false,
     this.gymId,
     this.version = 1,
@@ -53,6 +63,12 @@ class PaymentPlanModel {
       codigo: json['codigo'] as String?,
       precioViejoExcepcion:
           (json['precio_viejo_excepcion'] as num?)?.toDouble(),
+      recargoMoraModo: json['recargo_mora_modo'] as String?,
+      recargoMoraValor: json['recargo_mora_valor']?.toString(),
+      recargoMoraTope: json['recargo_mora_tope']?.toString(),
+      recargoMoraActivo:
+          json['recargo_mora_activo'] == 1 ||
+          json['recargo_mora_activo'] == true,
       isDeleted: json['is_deleted'] == 1 || json['is_deleted'] == true,
       gymId: json['gym_id'] as String?,
       version: json['version'] as int? ?? 1,
@@ -74,6 +90,12 @@ class PaymentPlanModel {
       if (codigo != null) 'codigo': codigo,
       if (precioViejoExcepcion != null)
         'precio_viejo_excepcion': precioViejoExcepcion,
+      // Recargo por mora: se envían siempre para permitir limpiar el modo
+      // (null) o cambiar el estado activo desde el formulario.
+      'recargo_mora_modo': recargoMoraModo,
+      'recargo_mora_valor': recargoMoraValor,
+      'recargo_mora_tope': recargoMoraTope,
+      'recargo_mora_activo': recargoMoraActivo,
       'is_deleted': isDeleted,
       'gym_id': gymId,
       'version': version,
@@ -93,6 +115,10 @@ class PaymentPlanModel {
     bool? aceptaCuotas,
     String? codigo,
     double? precioViejoExcepcion,
+    String? recargoMoraModo,
+    String? recargoMoraValor,
+    String? recargoMoraTope,
+    bool? recargoMoraActivo,
     bool? isDeleted,
     String? gymId,
     int? version,
@@ -113,6 +139,10 @@ class PaymentPlanModel {
       codigo: codigo ?? this.codigo,
       precioViejoExcepcion:
           precioViejoExcepcion ?? this.precioViejoExcepcion,
+      recargoMoraModo: recargoMoraModo ?? this.recargoMoraModo,
+      recargoMoraValor: recargoMoraValor ?? this.recargoMoraValor,
+      recargoMoraTope: recargoMoraTope ?? this.recargoMoraTope,
+      recargoMoraActivo: recargoMoraActivo ?? this.recargoMoraActivo,
       isDeleted: isDeleted ?? this.isDeleted,
       gymId: gymId ?? this.gymId,
       version: version ?? this.version,

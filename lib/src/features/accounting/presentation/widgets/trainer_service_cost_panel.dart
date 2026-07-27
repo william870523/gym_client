@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
+import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/trainer_service_cost_models.dart';
 import '../state/accounting_providers.dart';
@@ -187,8 +189,11 @@ class _TrainerServiceCostPanelState
 
   void _moveMonth(String current, int delta) {
     final parts = current.split('-');
-    final year = int.tryParse(parts.first) ?? DateTime.now().year;
-    final month = parts.length > 1 ? int.tryParse(parts[1]) ?? 1 : 1;
+    final gymNow = toGymWallClock(appClock.nowUtc(), appClock.gymTimezone);
+    final year = int.tryParse(parts.first) ?? gymNow.year;
+    final month = parts.length > 1
+        ? int.tryParse(parts[1]) ?? gymNow.month
+        : gymNow.month;
     final moved = DateTime.utc(year, month + delta);
     _setMonth('${moved.year}-${moved.month.toString().padLeft(2, '0')}');
   }

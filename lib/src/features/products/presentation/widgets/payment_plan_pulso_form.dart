@@ -35,6 +35,9 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
   // R5.3: código corto (PMV, TCN...) y excepción de precio para cliente VIEJO.
   late final TextEditingController _codigoController;
   late final TextEditingController _precioViejoController;
+  // Recargo por mora (docs/RECARGO_MORA.md): valor y tope del modo elegido.
+  late final TextEditingController _recargoValorController;
+  late final TextEditingController _recargoTopeController;
 
   String? _currencyId;
   String _durationUnit = 'months';
@@ -42,6 +45,9 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
   bool _includesTrainer = false;
   bool _aceptaCuotas = false;
   String _commissionType = 'NONE';
+  // Recargo por mora: modo elegido (null = sin recargo) y estado activo.
+  String? _recargoModo;
+  bool _recargoActivo = false;
   bool _busy = false;
   String? _error;
   List<_CuotaDraft> _cuotasDraft = [];
@@ -63,6 +69,14 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     _precioViejoController = TextEditingController(
       text: plan?.precioViejoExcepcion?.toString() ?? '',
     );
+    _recargoValorController = TextEditingController(
+      text: plan?.recargoMoraValor ?? '',
+    );
+    _recargoTopeController = TextEditingController(
+      text: plan?.recargoMoraTope ?? '',
+    );
+    _recargoModo = plan?.recargoMoraModo;
+    _recargoActivo = plan?.recargoMoraActivo ?? false;
     _currencyId = plan?.monedaId.isNotEmpty == true ? plan!.monedaId : null;
     _active = plan?.activo ?? true;
     _includesTrainer = plan?.incluyeEntrenador ?? false;
@@ -140,6 +154,8 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
     _commissionController.dispose();
     _codigoController.dispose();
     _precioViejoController.dispose();
+    _recargoValorController.dispose();
+    _recargoTopeController.dispose();
     for (final c in _cuotasDraft) {
       c.dispose();
     }
@@ -205,6 +221,11 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
 
     final codigo = _codigoController.text.trim();
     final precioViejoText = _precioViejoController.text.trim();
+    // Recargo por mora: sin modo se limpia toda la config; el servidor la
+    // revalida (importes como string decimal con punto).
+    final recargoValor = _recargoValorController.text.trim().replaceAll(',', '.');
+    final recargoTope = _recargoTopeController.text.trim().replaceAll(',', '.');
+    final hasRecargo = _recargoModo != null;
     final plan = PaymentPlanModel(
       id: widget.plan?.id,
       nombre: _nameController.text.trim(),
@@ -222,6 +243,12 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
       precioViejoExcepcion: precioViejoText.isEmpty
           ? null
           : double.tryParse(precioViejoText.replaceAll(',', '.')),
+      recargoMoraModo: hasRecargo ? _recargoModo : null,
+      recargoMoraValor: hasRecargo && recargoValor.isNotEmpty ? recargoValor : null,
+      recargoMoraTope: hasRecargo && _recargoModo == 'POR_DIA' && recargoTope.isNotEmpty
+          ? recargoTope
+          : null,
+      recargoMoraActivo: hasRecargo && _recargoActivo,
       gymId: widget.plan?.gymId ?? '123',
     );
     try {
@@ -403,6 +430,10 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
                             const PulsoLabel('Pago por cuotas'),
                             const SizedBox(height: 12),
                             _buildInstallmentsField(context),
+                            const SizedBox(height: 24),
+                            const PulsoLabel('Recargo por mora'),
+                            const SizedBox(height: 12),
+                            _buildRecargoMoraField(context),
                             const SizedBox(height: 24),
                             const PulsoLabel('Disponibilidad operativa'),
                             const SizedBox(height: 12),
@@ -682,6 +713,172 @@ class _PaymentPlanPulsoFormState extends ConsumerState<PaymentPlanPulsoForm> {
         Expanded(flex: 3, child: type),
         const SizedBox(width: 16),
         Expanded(flex: 2, child: value),
+      ],
+    );
+  }
+
+  // Recargo por mora (docs/RECARGO_MORA.md): el administrador elige un modo,
+  // configura su valor (y tope en POR_DIA) y decide si ya se aplica. El importe
+  // exacto lo calcula el servidor al cobrar; aquí solo se define la política.
+  Widget _buildRecargoMoraField(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final hasRecargo = _recargoModo != null;
+    final esPorDia = _recargoModo == 'POR_DIA';
+
+    final modo = DropdownButtonFormField<String>(
+      key: const ValueKey('pulso-plan-recargo-modo'),
+      initialValue: _recargoModo,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Modo de recargo'),
+      items: const [
+        DropdownMenuItem(value: null, child: Text('Sin recargo')),
+        DropdownMenuItem(value: 'PORCENTAJE', child: Text('Porcentaje (%)')),
+        DropdownMenuItem(value: 'MONTO_FIJO', child: Text('Monto fijo')),
+        DropdownMenuItem(value: 'POR_DIA', child: Text('Monto por día de atraso')),
+      ],
+      onChanged: _busy
+          ? null
+          : (value) => setState(() {
+                _recargoModo = value;
+                if (value == null) _recargoActivo = false;
+              }),
+    );
+
+    if (!hasRecargo) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          modo,
+          const SizedBox(height: 8),
+          Text(
+            'Este plan no cobra recargo al pagar con atraso.',
+            style: TextStyle(
+              fontFamily: PulsoFonts.mono,
+              fontSize: 10.5,
+              color: tokens.muted,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final valor = TextFormField(
+      key: const ValueKey('pulso-plan-recargo-valor'),
+      controller: _recargoValorController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      style: const TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: _recargoModo == 'PORCENTAJE' ? 'Porcentaje' : 'Monto',
+        hintText: _recargoModo == 'PORCENTAJE'
+            ? 'Ej. 10'
+            : esPorDia
+                ? 'Por día. Ej. 1.50'
+                : 'Ej. 5.00',
+      ),
+      validator: (value) {
+        final parsed = double.tryParse((value ?? '').replaceAll(',', '.'));
+        if (parsed == null || parsed <= 0) return 'Ingresa el valor del recargo.';
+        if (_recargoModo == 'PORCENTAJE' && parsed > 100) {
+          return 'El porcentaje va de 0 a 100.';
+        }
+        return null;
+      },
+    );
+
+    final tope = TextFormField(
+      key: const ValueKey('pulso-plan-recargo-tope'),
+      controller: _recargoTopeController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      style: const TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: const InputDecoration(
+        labelText: 'Tope máximo (opcional)',
+        hintText: 'Sin tope si se deja vacío',
+      ),
+      validator: (value) {
+        final text = (value ?? '').trim();
+        if (text.isEmpty) return null;
+        final parsed = double.tryParse(text.replaceAll(',', '.'));
+        if (parsed == null || parsed <= 0) return 'El tope debe ser mayor que cero.';
+        return null;
+      },
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        modo,
+        const SizedBox(height: 12),
+        if (esPorDia)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: valor),
+              const SizedBox(width: 16),
+              Expanded(flex: 3, child: tope),
+            ],
+          )
+        else
+          valor,
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            border: Border.all(
+              color: _recargoActivo ? tokens.success : tokens.line,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Aplicar recargo a partir de ahora',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: tokens.chalk,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _recargoActivo
+                          ? 'Recepción podrá cobrarlo en pagos atrasados.'
+                          : 'Configurado pero inactivo: recepción no lo cobra aún.',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.mono,
+                        fontSize: 10.5,
+                        color: tokens.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                key: const ValueKey('pulso-plan-recargo-activo'),
+                value: _recargoActivo,
+                activeThumbColor: tokens.accent,
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _recargoActivo = value),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

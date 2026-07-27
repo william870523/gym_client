@@ -44,6 +44,16 @@ class _TreasuryMonthlyPanelState extends ConsumerState<TreasuryMonthlyPanel> {
     widget.onChanged();
   }
 
+  /// Filas de cobradores del mes en la moneda seleccionada. El servidor ya las
+  /// separa por moneda; aquí solo se elige la que el operador está mirando,
+  /// para no mezclar CUP con USD en una misma tabla.
+  List<TreasuryCollectorRowModel> _collectorsFor(
+    TreasuryMonthlySummaryModel summary,
+    TreasuryMonthlyCurrencyModel currency,
+  ) => summary.collectorRows
+      .where((row) => row.currencyId == currency.currencyId)
+      .toList(growable: false);
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(treasuryMonthlySummaryProvider(_selectedMonth));
@@ -149,6 +159,12 @@ class _TreasuryMonthlyPanelState extends ConsumerState<TreasuryMonthlyPanel> {
           const SizedBox(height: 8),
           _BalanceEquation(currency: currency),
           const SizedBox(height: 8),
+          // R5.6 — cobros del mes por persona, dentro de la moneda elegida.
+          // Solo se dibuja si hubo cobros: si no, no se ensucia el resumen.
+          if (_collectorsFor(summary, currency).isNotEmpty) ...[
+            _MonthlyCollectors(rows: _collectorsFor(summary, currency)),
+            const SizedBox(height: 8),
+          ],
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1672,6 +1688,100 @@ class _MonthlyMetric extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cobros del mes por recepcionista, dentro de una sola moneda
+/// (docs/PAYMENT_COLLECTOR_ATTRIBUTION.md §6).
+///
+/// A diferencia del cierre diario, aquí las cuentas se funden: en un mes la
+/// misma persona puede haber cobrado en varias cajas y lo que se lee es su
+/// total. Las monedas no se funden nunca.
+class _MonthlyCollectors extends StatelessWidget {
+  const _MonthlyCollectors({required this.rows});
+
+  final List<TreasuryCollectorRowModel> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return PulsoPanel(
+      key: const ValueKey('treasury-monthly-collectors'),
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.badge_outlined, size: 16, color: tokens.accent),
+              const SizedBox(width: 8),
+              const Expanded(child: PulsoLabel('Cobros del mes por recepcionista')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          row.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: row.unattributed
+                                ? tokens.warning
+                                : tokens.chalk,
+                          ),
+                        ),
+                        Text(
+                          '${row.accountName} · ${row.payments} pago(s) · '
+                          '${row.clients} cliente(s)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: tokens.muted, fontSize: 9.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${row.currencyCode} '
+                        '${_monthlyMoney.format(row.net)} neto',
+                        style: TextStyle(
+                          fontFamily: PulsoFonts.mono,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: tokens.accent,
+                        ),
+                      ),
+                      Text(
+                        'Bruto ${_monthlyMoney.format(row.gross)}'
+                        ' · anulado ${_monthlyMoney.format(row.annulled)}',
+                        style: TextStyle(
+                          color: tokens.muted2,
+                          fontFamily: PulsoFonts.mono,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

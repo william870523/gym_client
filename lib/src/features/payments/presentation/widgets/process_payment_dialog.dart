@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/models/payment_model.dart';
+import '../../data/models/recargo_mora_quote.dart';
 import '../../data/repositories/payment_repository.dart';
 
 import '../../../financials/data/models/account_model.dart';
@@ -57,6 +59,15 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
 
   /// R5.2 — contratación por cuotas: elección de recepción y esquema del plan.
   bool _porCuotas = false;
+  // Recargo por mora (docs/RECARGO_MORA.md): cotización del servidor y casilla.
+  RecargoMoraQuote? _recargoQuote;
+  bool _recargoQuoteLoading = false;
+  String? _recargoQuoteError;
+  // Condonación del recargo (docs/RECARGO_MORA.md §6-bis): el recargo se cobra
+  // por política; perdonarlo es la excepción y exige motivo.
+  bool _condonarRecargoMora = false;
+  final TextEditingController _motivoCondonacionController =
+      TextEditingController();
   List<Map<String, dynamic>> _scheme = const [];
 
   /// Siguiente cuota pendiente detectada en la membresía del cliente: el
@@ -64,11 +75,35 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
   int? _autoCuotaNumero;
   double? _autoCuotaImporte;
 
+  /// Por qué no se pudo preparar el cobro por cuotas. Se muestra: si esto se
+  /// calla, el operador cobra el plan completo creyendo que no hay cuotas.
+  String? _cuotaContextError;
+
   int? get _numeroCuotaEnCurso => widget.cuotaNumero ?? _autoCuotaNumero;
 
   double? get _importeCuotaEnCurso => widget.cuotaImporte ?? _autoCuotaImporte;
 
   bool get _cuotaFija => _numeroCuotaEnCurso != null;
+
+  /// ¿Este cobro va contra la membresía que ya tiene el cliente?
+  ///
+  /// El servidor solo admite cobrar contra una membresía que **siga esperando
+  /// pago**; si se le señala una ya activada responde «la membresía seleccionada
+  /// ya fue activada o no admite cobros», y hace bien: cobrarla otra vez
+  /// duplicaría el ingreso de un plan ya saldado.
+  ///
+  /// Antes se mandaba **siempre** la membresía del cliente, así que un socio con
+  /// su plan al día —o vencido pero pagado— no se podía cobrar de ninguna
+  /// manera. Cuando no queda nada por cobrar de la membresía actual, lo que
+  /// corresponde es una **renovación**, y el servidor la abre solo con que no le
+  /// mandemos ninguna membresía.
+  ///
+  /// El cobro por cuotas es la excepción: ahí sí se cobra sobre una membresía
+  /// activa, y su ruta no pasa por la activación.
+  bool get _debeSenalarMembresia =>
+      _cuotaFija ||
+      (widget.client.membershipStatus ?? '').trim().toUpperCase() ==
+          'PENDIENTE_PAGO';
 
   double? get _cuota1Importe => _scheme.isEmpty
       ? null
@@ -82,11 +117,19 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
             0;
 
   @override
+  void dispose() {
+    _motivoCondonacionController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     if (widget.cuotaNumero == null) {
       _loadInstallmentContext();
     }
+    // El recargo se cotiza al abrir: si hay atraso, la casilla llega marcada.
+    _loadRecargoMoraQuote();
   }
 
   Future<void> _loadInstallmentContext() async {
@@ -104,8 +147,16 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
           });
           return;
         }
-      } catch (_) {
-        // Sin cuotas legibles se continúa con el flujo normal.
+      } catch (error) {
+        // Antes se ignoraba: el cobro seguía como plan completo sin avisar de
+        // que quizá había una cuota pendiente que no se pudo leer.
+        if (mounted) {
+          setState(() {
+            _cuotaContextError =
+                'No se pudieron leer las cuotas de la membresía. '
+                '${_shortError(error)}';
+          });
+        }
       }
     }
     // 2) Contratación nueva: cargar el esquema para ofrecer la elección.
@@ -115,10 +166,32 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
         if (mounted && scheme.isNotEmpty) {
           setState(() => _scheme = scheme);
         }
-      } catch (_) {
-        // Sin esquema legible no se ofrece la opción; el pago total sigue.
+      } catch (error) {
+        // Un esquema ilegible no es lo mismo que un plan sin cuotas: sin este
+        // aviso, la opción «primera cuota» desaparecía en silencio.
+        if (mounted) {
+          setState(() {
+            _cuotaContextError =
+                'No se pudo leer el esquema de cuotas del plan. '
+                '${_shortError(error)}';
+          });
+        }
       }
     }
+  }
+
+  /// Mensaje del servidor si lo hay; si no, algo corto y legible.
+  String _shortError(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      final message = data is Map ? data['error'] : null;
+      if (message != null && '$message'.trim().isNotEmpty) return '$message';
+      final code = error.response?.statusCode;
+      return code == null
+          ? 'No hubo respuesta del servidor.'
+          : 'El servidor respondió $code.';
+    }
+    return error.toString().replaceFirst('Exception: ', '');
   }
 
   Future<void> _processPayment() async {
@@ -182,7 +255,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
         trainerId: widget.client.trainerId,
         planId: widget.planId,
         currencyId: plan.monedaId,
-        membershipId: widget.client.membershipId,
+        membershipId: _debeSenalarMembresia ? widget.client.membershipId : null,
         isDeleted: false,
       );
 
@@ -204,11 +277,20 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       await ref.read(paymentRepositoryProvider).createPayment(
         payment,
         details,
-        extra: _cuotaFija
-            ? {'modo_cuotas': true, 'numero_cuota': _numeroCuotaEnCurso}
-            : _porCuotas
-            ? {'modo_cuotas': true}
-            : null,
+        extra: {
+          if (_cuotaFija) ...{
+            'modo_cuotas': true,
+            'numero_cuota': _numeroCuotaEnCurso,
+          } else if (_porCuotas)
+            'modo_cuotas': true,
+          // El servidor recalcula el importe; aquí solo viaja la decisión de
+          // condonar y su motivo (docs/RECARGO_MORA.md §6-bis).
+          if (_condonarRecargoMora) ...{
+            'condonar_recargo_mora': true,
+            'motivo_condonacion_recargo':
+                _motivoCondonacionController.text.trim(),
+          },
+        },
       );
       await ref
           .read(paymentRefreshCoordinatorProvider)
@@ -258,6 +340,215 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     }
     return total;
   }
+
+  /// Casilla «aplicar recargo por mora» (docs/RECARGO_MORA.md).
+  ///
+  /// Solo aparece cuando el plan tiene el recargo configurado y activo. El
+  /// importe lo calcula el servidor; recepción únicamente confirma o desmarca.
+  Widget _buildRecargoMoraBanner(PulsoTokens t, String planSymbol) {
+    if (_recargoQuoteLoading) {
+      return Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: t.surface,
+          border: Border.all(color: t.line),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: t.muted),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Comprobando recargo por mora…',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 11,
+                color: t.muted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_recargoQuoteError != null) {
+      return Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: t.danger.withValues(alpha: 0.08),
+          border: Border.all(color: t.danger.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_outlined, size: 16, color: t.danger),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'No se pudo calcular el recargo por mora: $_recargoQuoteError',
+                style: TextStyle(fontSize: 11.5, color: t.chalk),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final quote = _recargoQuote;
+    // Sin recargo configurado o inactivo: no se muestra nada a recepción.
+    if (quote == null || !quote.planTieneRecargo || !quote.planRecargoActivo) {
+      return const SizedBox.shrink();
+    }
+    // Configurado y activo pero sin atraso: aviso discreto, sin casilla.
+    if (!quote.aplicado && quote.motivo == 'SIN_ATRASO') {
+      return Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: t.surface,
+          border: Border.all(color: t.line),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, size: 16, color: t.success),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Pago al día: no corresponde recargo por mora.',
+                style: TextStyle(fontSize: 11.5, color: t.muted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final modoLabel = switch (quote.modo) {
+      'PORCENTAJE' => 'porcentaje',
+      'MONTO_FIJO' => 'monto fijo',
+      'POR_DIA' => 'por día de atraso',
+      _ => 'recargo',
+    };
+    final unidad = quote.diasAtraso == 1 ? 'día' : 'días';
+
+    return Container(
+      key: const ValueKey('pulso-cobro-recargo-mora'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _condonarRecargoMora
+            ? t.danger.withValues(alpha: 0.06)
+            : t.accent.withValues(alpha: 0.08),
+        border: Border.all(
+          color: _condonarRecargoMora
+              ? t.danger.withValues(alpha: 0.3)
+              : t.accent.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                _condonarRecargoMora
+                    ? Icons.money_off_outlined
+                    : Icons.gavel_outlined,
+                size: 16,
+                color: _condonarRecargoMora ? t.danger : t.accent,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _condonarRecargoMora
+                          ? 'Recargo por mora CONDONADO  ·  se deja de cobrar $planSymbol${quote.recargo}'
+                          : 'Recargo por mora  ·  +$planSymbol${quote.recargo}',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.body,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: t.chalk,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${quote.diasAtraso} $unidad de atraso · $modoLabel · '
+                      'base $planSymbol${quote.base}',
+                      style: TextStyle(
+                        fontFamily: PulsoFonts.mono,
+                        fontSize: 10.5,
+                        color: t.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Condonar es la excepción: exige motivo y queda registrada en el
+          // cierre con quién la hizo (docs/RECARGO_MORA.md §6-bis).
+          Row(
+            children: [
+              Checkbox(
+                key: const ValueKey('pulso-cobro-condonar-recargo'),
+                value: _condonarRecargoMora,
+                activeColor: t.danger,
+                onChanged: _isLoading
+                    ? null
+                    : (value) => setState(
+                          () => _condonarRecargoMora = value ?? false,
+                        ),
+              ),
+              Expanded(
+                child: Text(
+                  'No cobrar este recargo (queda registrado)',
+                  style: TextStyle(fontSize: 11.5, color: t.chalk),
+                ),
+              ),
+            ],
+          ),
+          if (_condonarRecargoMora) ...[
+            const SizedBox(height: 4),
+            TextFormField(
+              key: const ValueKey('pulso-cobro-condonar-motivo'),
+              controller: _motivoCondonacionController,
+              enabled: !_isLoading,
+              maxLength: 500,
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                labelText: 'Motivo de la condonación (obligatorio)',
+                hintText: 'Ej. socio hospitalizado, autorizado por dirección',
+                counterText: '',
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (!_motivoCondonacionValido)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Indique al menos 5 caracteres para poder condonar.',
+                  style: TextStyle(fontSize: 10.5, color: t.danger),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// El servidor exige el mismo mínimo; aquí solo se evita el viaje en balde.
+  bool get _motivoCondonacionValido =>
+      _motivoCondonacionController.text.trim().length >= 5;
 
   Widget _buildSurchargeBanner(PulsoTokens t, String planSymbol) {
     final surcharge = _totalSurcharge;
@@ -345,6 +636,38 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     return text;
   }
 
+  /// Aviso corto sobre el cobro por cuotas. Ocupa el sitio de la elección
+  /// cuando esta no se puede ofrecer, para que nunca desaparezca sin motivo.
+  Widget _cuotaAviso(PulsoTokens t, String mensaje, {bool warning = false}) {
+    final color = warning ? t.warning : t.muted;
+    return Container(
+      key: const ValueKey('cuota-aviso'),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: warning ? t.warningSoft : t.raised,
+        border: Border.all(color: warning ? t.warning : t.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            warning ? Icons.warning_amber_outlined : Icons.info_outline,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              mensaje,
+              style: TextStyle(fontSize: 11, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// R5.2 — elección de recepción cuando el plan admite cuotas: cobrar el
   /// plan completo o solo la primera cuota (el resto queda programado).
   Widget _buildCuotaChoice(
@@ -382,7 +705,19 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     }
     // Solo en contrataciones nuevas de un plan con esquema de cuotas.
     final balance = widget.client.membershipBalanceDue;
-    if (_scheme.isEmpty || (balance != null && balance > 0)) {
+    if (_cuotaContextError != null) {
+      return _cuotaAviso(t, _cuotaContextError!, warning: true);
+    }
+    if (balance != null && balance > 0) {
+      // Se explica en vez de desaparecer: el operador debe saber por qué no
+      // puede elegir cuotas en este cobro.
+      return _cuotaAviso(
+        t,
+        'La membresía actual tiene saldo pendiente; primero se salda y '
+        'después se puede contratar por cuotas.',
+      );
+    }
+    if (_scheme.isEmpty) {
       return const SizedBox.shrink();
     }
     Widget option({
@@ -501,6 +836,13 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
   }
 
   double _amountDueFor(PaymentPlanModel plan) {
+    // El recargo por mora se suma al final: es ingreso aparte, no parte del
+    // precio del plan (docs/RECARGO_MORA.md). El importe viene del servidor.
+    return _baseAmountDueFor(plan) + _recargoMoraAplicado;
+  }
+
+  /// Importe del plan/cuota sin recargo por mora.
+  double _baseAmountDueFor(PaymentPlanModel plan) {
     // Cuota concreta (panel de cuotas o detección automática): importe fijo.
     if (_cuotaFija) return _importeCuotaEnCurso ?? plan.importe;
     // Contratación por cuotas: se cobra la cuota 1; el resto queda programado.
@@ -514,6 +856,46 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       return math.max(0.0, balance - discount.descuento);
     }
     return discount.precioFinal;
+  }
+
+  /// Recargo que se está cobrando ahora mismo. Se cobra siempre que
+  /// corresponda; solo baja a 0 si el recepcionista lo condona.
+  double get _recargoMoraAplicado =>
+      !_condonarRecargoMora && (_recargoQuote?.aplicado ?? false)
+          ? _recargoQuote!.recargoValor
+          : 0.0;
+
+  /// Pide al servidor la cotización del recargo por mora. Si falla, se guarda
+  /// el aviso y el cobro sigue disponible sin recargo.
+  Future<void> _loadRecargoMoraQuote() async {
+    if (widget.planId.isEmpty) return;
+    setState(() => _recargoQuoteLoading = true);
+    try {
+      final quote = await ref
+          .read(paymentRepositoryProvider)
+          .getRecargoMoraQuote(
+            ci: widget.client.id,
+            planId: widget.planId,
+            membresiaId: _cuotaFija ? widget.client.membershipId : null,
+            numeroCuota: _cuotaFija ? _numeroCuotaEnCurso : null,
+          );
+      if (!mounted) return;
+      setState(() {
+        _recargoQuote = quote;
+        _recargoQuoteError = null;
+        _recargoQuoteLoading = false;
+        // El recargo entra por política; recepción no tiene que activarlo.
+        _condonarRecargoMora = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _recargoQuote = null;
+        _recargoQuoteError = e.toString().replaceFirst('Exception: ', '');
+        _recargoQuoteLoading = false;
+        _condonarRecargoMora = false;
+      });
+    }
   }
 
   String get _planLabel {
@@ -926,6 +1308,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                       ),
                     ],
                   ),
+                  _buildRecargoMoraBanner(t, planSymbol),
                   _buildSurchargeBanner(t, planSymbol),
                 ],
               );
@@ -1324,7 +1707,12 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
           );
           final rawRemaining = _amountDueFor(plan) - _totalPaid;
           final remaining = math.max(0.0, rawRemaining);
-          final isComplete = rawRemaining <= 0.001 && _paymentRows.isNotEmpty;
+          // Condonar sin motivo no puede confirmarse (docs/RECARGO_MORA.md §6-bis).
+          final condonacionValida =
+              !_condonarRecargoMora || _motivoCondonacionValido;
+          final isComplete = rawRemaining <= 0.001 &&
+              _paymentRows.isNotEmpty &&
+              condonacionValida;
           final status = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

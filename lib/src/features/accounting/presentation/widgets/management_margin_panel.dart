@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
+import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/management_margin_models.dart';
 import '../state/accounting_providers.dart';
+import 'accrual_operating_result_panel.dart';
 import 'management_margin_annual_panel.dart';
 
 enum _MarginSection { plans, trainers, clients }
@@ -36,6 +39,7 @@ class _ManagementMarginPanelState extends ConsumerState<ManagementMarginPanel> {
   String _query = '';
   _MarginSection _section = _MarginSection.plans;
   bool _annualView = false;
+  bool _accrualResultView = false;
 
   @override
   void dispose() {
@@ -49,6 +53,12 @@ class _ManagementMarginPanelState extends ConsumerState<ManagementMarginPanel> {
     if (_annualView) {
       return ManagementMarginAnnualPanel(
         onBack: () => setState(() => _annualView = false),
+      );
+    }
+    if (_accrualResultView) {
+      return AccrualOperatingResultPanel(
+        initialMonth: _month,
+        onBack: () => setState(() => _accrualResultView = false),
       );
     }
     return ref
@@ -84,6 +94,7 @@ class _ManagementMarginPanelState extends ConsumerState<ManagementMarginPanel> {
             onNext: () => _moveMonth(result.month, 1),
             onCurrent: () => _setMonth(null),
             onAnnual: () => setState(() => _annualView = true),
+            onAccrualResult: () => setState(() => _accrualResultView = true),
             onRefresh: _refresh,
           ),
           const SizedBox(height: 10),
@@ -123,6 +134,7 @@ class _ManagementMarginPanelState extends ConsumerState<ManagementMarginPanel> {
               onNext: () => _moveMonth(result.month, 1),
               onCurrent: () => _setMonth(null),
               onAnnual: () => setState(() => _annualView = true),
+              onAccrualResult: () => setState(() => _accrualResultView = true),
               onRefresh: _refresh,
             ),
             const SizedBox(height: 8),
@@ -230,8 +242,11 @@ class _ManagementMarginPanelState extends ConsumerState<ManagementMarginPanel> {
 
   void _moveMonth(String current, int delta) {
     final parts = current.split('-');
-    final year = int.tryParse(parts.first) ?? DateTime.now().year;
-    final month = parts.length > 1 ? int.tryParse(parts[1]) ?? 1 : 1;
+    final gymNow = toGymWallClock(appClock.nowUtc(), appClock.gymTimezone);
+    final year = int.tryParse(parts.first) ?? gymNow.year;
+    final month = parts.length > 1
+        ? int.tryParse(parts[1]) ?? gymNow.month
+        : gymNow.month;
     final moved = DateTime.utc(year, month + delta);
     _setMonth('${moved.year}-${moved.month.toString().padLeft(2, '0')}');
   }
@@ -268,6 +283,7 @@ class _MarginToolbar extends StatelessWidget {
     required this.onNext,
     required this.onCurrent,
     required this.onAnnual,
+    required this.onAccrualResult,
     required this.onRefresh,
   });
 
@@ -277,6 +293,7 @@ class _MarginToolbar extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onCurrent;
   final VoidCallback onAnnual;
+  final VoidCallback onAccrualResult;
   final VoidCallback onRefresh;
 
   @override
@@ -322,6 +339,14 @@ class _MarginToolbar extends StatelessWidget {
                   icon: Icons.insights_outlined,
                   tooltip: 'Ver año certificado',
                   onPressed: onAnnual,
+                ),
+                PulsoIconButton(
+                  key: const Key(
+                    'management-margin-accrual-result-action-compact',
+                  ),
+                  icon: Icons.receipt_long_outlined,
+                  tooltip: 'Restar el gasto del mes (resultado devengado)',
+                  onPressed: onAccrualResult,
                 ),
                 PulsoIconButton(
                   icon: Icons.refresh,
@@ -374,6 +399,12 @@ class _MarginToolbar extends StatelessWidget {
                 onPressed: onAnnual,
                 icon: const Icon(Icons.insights_outlined, size: 16),
                 label: const Text('VER AÑO'),
+              ),
+              TextButton.icon(
+                key: const Key('management-margin-accrual-result-action'),
+                onPressed: onAccrualResult,
+                icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                label: const Text('RESTAR GASTOS'),
               ),
               PulsoIconButton(
                 icon: Icons.refresh,

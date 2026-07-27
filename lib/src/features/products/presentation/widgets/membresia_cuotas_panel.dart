@@ -4,7 +4,13 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/membresia_cuota_models.dart';
 
-class MembresiaCuotasPanel extends StatelessWidget {
+/// A partir de estas filas la tabla deja de crecer y se desplaza por dentro.
+/// Un plan de 12 cuotas empujaba el resto del expediente fuera de la pantalla y
+/// obligaba a subir hasta arriba para volver a los filtros.
+const int _filasSinScroll = 6;
+const double _altoFila = 48;
+
+class MembresiaCuotasPanel extends StatefulWidget {
   final List<MembresiaCuotaModel> cuotas;
   final String symbol;
   final Function(MembresiaCuotaModel cuota)? onPayCuota;
@@ -15,6 +21,23 @@ class MembresiaCuotasPanel extends StatelessWidget {
     this.symbol = '\$',
     this.onPayCuota,
   });
+
+  @override
+  State<MembresiaCuotasPanel> createState() => _MembresiaCuotasPanelState();
+}
+
+class _MembresiaCuotasPanelState extends State<MembresiaCuotasPanel> {
+  final _vertical = ScrollController();
+
+  @override
+  void dispose() {
+    _vertical.dispose();
+    super.dispose();
+  }
+
+  List<MembresiaCuotaModel> get cuotas => widget.cuotas;
+  String get symbol => widget.symbol;
+  Function(MembresiaCuotaModel cuota)? get onPayCuota => widget.onPayCuota;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +94,10 @@ class MembresiaCuotasPanel extends StatelessWidget {
               ),
             )
           else
-            SingleChildScrollView(
+            _acotada(
+              t,
+              sorted.length,
+              SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowHeight: 36,
@@ -165,7 +191,28 @@ class MembresiaCuotasPanel extends StatelessWidget {
                 }).toList(),
               ),
             ),
+            ),
         ],
+      ),
+    );
+  }
+
+  /// Deja que la tabla crezca hasta `_filasSinScroll`; a partir de ahí la acota
+  /// y le da scroll propio, para que no desplace la vista que la contiene.
+  Widget _acotada(PulsoTokens t, int filas, Widget tabla) {
+    if (filas <= _filasSinScroll) return tabla;
+    return SizedBox(
+      // + 1 por la fila de cabecera de la propia tabla.
+      height: (_filasSinScroll + 1) * _altoFila,
+      child: Scrollbar(
+        key: const Key('cuotas-tabla-scroll'),
+        controller: _vertical,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _vertical,
+          primary: false,
+          child: tabla,
+        ),
       ),
     );
   }

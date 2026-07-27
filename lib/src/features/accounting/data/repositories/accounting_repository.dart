@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../models/accounting_models.dart';
+import '../models/accrual_operating_result_models.dart';
 import '../models/exchange_revaluation_models.dart';
 import '../models/management_margin_annual_models.dart';
 import '../models/management_margin_models.dart';
 import '../models/membership_revenue_models.dart';
 import '../models/operational_annual_results_models.dart';
 import '../models/operational_results_models.dart';
+import '../models/recurring_expense_models.dart';
 import '../models/trainer_service_cost_models.dart';
 
 final accountingRepositoryProvider = Provider<AccountingRepository>((ref) {
@@ -335,7 +337,9 @@ class AccountingRepository {
     );
   }
 
-  Future<ExchangeRevaluationModel> getExchangeRevaluation({String? month}) async {
+  Future<ExchangeRevaluationModel> getExchangeRevaluation({
+    String? month,
+  }) async {
     final response = await _dio.get(
       '/contabilidad/exchange-revaluation',
       queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
@@ -361,6 +365,78 @@ class AccountingRepository {
       queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
     );
     return ManagementMarginModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<List<RecurringExpenseModel>> getRecurringExpenses() async {
+    final response = await _dio.get('/contabilidad/recurring-expenses');
+    return (response.data as List)
+        .map(
+          (row) => RecurringExpenseModel.fromJson(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<RecurringExpenseModel> createRecurringExpense(
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/recurring-expenses',
+      data: body,
+    );
+    return RecurringExpenseModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<RecurringExpenseModel> updateRecurringExpense({
+    required String templateId,
+    required Map<String, dynamic> body,
+  }) async {
+    final response = await _dio.put(
+      '/contabilidad/recurring-expenses/$templateId',
+      data: body,
+    );
+    return RecurringExpenseModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<RecurringExpensePlanModel> previewRecurringExpenses({
+    String? month,
+  }) async {
+    final response = await _dio.get(
+      '/contabilidad/recurring-expenses/preview',
+      queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
+    );
+    return RecurringExpensePlanModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<RecurringExpensePlanModel> generateRecurringExpenses({
+    String? month,
+  }) async {
+    final response = await _dio.post(
+      '/contabilidad/recurring-expenses/generate',
+      data: {if (month != null && month.isNotEmpty) 'mes': month},
+    );
+    return RecurringExpensePlanModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<AccrualOperatingResultModel> getAccrualOperatingResult({
+    String? month,
+  }) async {
+    final response = await _dio.get(
+      '/contabilidad/accrual-operating-result',
+      queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
+    );
+    return AccrualOperatingResultModel.fromJson(
       Map<String, dynamic>.from(response.data as Map),
     );
   }
@@ -531,12 +607,12 @@ class AccountingRepository {
     );
   }
 
-  Future<GovernedExpensesReportModel> getGovernedExpenses({String? month}) async {
+  Future<GovernedExpensesReportModel> getGovernedExpenses({
+    String? month,
+  }) async {
     final response = await _dio.get(
       '/contabilidad/governed-expenses',
-      queryParameters: {
-        if (month != null && month.isNotEmpty) 'mes': month,
-      },
+      queryParameters: {if (month != null && month.isNotEmpty) 'mes': month},
     );
     return GovernedExpensesReportModel.fromJson(
       Map<String, dynamic>.from(response.data as Map),
@@ -544,41 +620,82 @@ class AccountingRepository {
   }
 
   Future<List<GastoCategoriaModel>> getGovernedExpenseCategories() async {
-    final response = await _dio.get('/contabilidad/governed-expense-categories');
+    final response = await _dio.get(
+      '/contabilidad/governed-expense-categories',
+    );
     return (response.data as List)
-        .map((e) => GastoCategoriaModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              GastoCategoriaModel.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
-  Future<GastoCategoriaModel> createGovernedExpenseCategory(Map<String, dynamic> data) async {
-    final response = await _dio.post('/contabilidad/governed-expense-categories', data: data);
-    return GastoCategoriaModel.fromJson(Map<String, dynamic>.from(response.data as Map));
+  Future<GastoCategoriaModel> createGovernedExpenseCategory(
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/governed-expense-categories',
+      data: data,
+    );
+    return GastoCategoriaModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
   }
 
   Future<List<GastoProveedorModel>> getGovernedExpenseSuppliers() async {
     final response = await _dio.get('/contabilidad/governed-expense-suppliers');
     return (response.data as List)
-        .map((e) => GastoProveedorModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              GastoProveedorModel.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
-  Future<GastoProveedorModel> createGovernedExpenseSupplier(Map<String, dynamic> data) async {
-    final response = await _dio.post('/contabilidad/governed-expense-suppliers', data: data);
-    return GastoProveedorModel.fromJson(Map<String, dynamic>.from(response.data as Map));
+  Future<GastoProveedorModel> createGovernedExpenseSupplier(
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/governed-expense-suppliers',
+      data: data,
+    );
+    return GastoProveedorModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
   }
 
-  Future<GastoGobernadoModel> createGovernedExpense(Map<String, dynamic> data) async {
-    final response = await _dio.post('/contabilidad/governed-expenses', data: data);
-    return GastoGobernadoModel.fromJson(Map<String, dynamic>.from(response.data as Map));
+  Future<GastoGobernadoModel> createGovernedExpense(
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/governed-expenses',
+      data: data,
+    );
+    return GastoGobernadoModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
   }
 
-  Future<Map<String, dynamic>> payGovernedExpense(String gastoId, Map<String, dynamic> data) async {
-    final response = await _dio.post('/contabilidad/governed-expenses/$gastoId/payments', data: data);
+  Future<Map<String, dynamic>> payGovernedExpense(
+    String gastoId,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/governed-expenses/$gastoId/payments',
+      data: data,
+    );
     return Map<String, dynamic>.from(response.data as Map);
   }
 
-  Future<Map<String, dynamic>> reverseGovernedExpensePayment(String aplicacionId, Map<String, dynamic> data) async {
-    final response = await _dio.post('/contabilidad/governed-expense-payments/$aplicacionId/reversals', data: data);
+  Future<Map<String, dynamic>> reverseGovernedExpensePayment(
+    String aplicacionId,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post(
+      '/contabilidad/governed-expense-payments/$aplicacionId/reversals',
+      data: data,
+    );
     return Map<String, dynamic>.from(response.data as Map);
   }
 }

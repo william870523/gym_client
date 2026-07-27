@@ -13,6 +13,7 @@ import 'package:gym_client/src/core/utils/datetime_zone.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/screens/clients_pulso_view.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
+import 'package:gym_client/src/features/clients/presentation/state/clients_scope_filter_provider.dart';
 import 'package:gym_client/src/features/clients/presentation/state/weight_history_notifier.dart';
 import 'package:gym_client/src/features/configuration/data/models/nacionalidad_model.dart';
 import 'package:gym_client/src/features/configuration/data/models/referencia_model.dart';
@@ -150,6 +151,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('CI válido autodetecta sexo y respeta la selección manual', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-ci')),
+      '91021020015',
+    );
+    await tester.pump();
+
+    var sex = tester.widget<DropdownButtonFormField>(
+      find.byKey(const ValueKey('pulso-client-sex')),
+    );
+    expect(sex.initialValue, 'F');
+    expect(find.text('Sexo · desde CI'), findsOneWidget);
+    expect(find.textContaining('CI cubano válido'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('pulso-client-sex')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Masculino').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-ci')),
+      '85020290015',
+    );
+    await tester.pump();
+
+    sex = tester.widget<DropdownButtonFormField>(
+      find.byKey(const ValueKey('pulso-client-sex')),
+    );
+    expect(sex.initialValue, 'M');
+    expect(find.text('Sexo · desde CI'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('documento heredado se puede editar sin bloqueo de CI cubano', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notifier = _ClientNotifier(_clients());
+    await tester.pumpWidget(_harness(notifier: notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Editar Ana Pérez'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Documento heredado sin clasificar'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Guardar cambios'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.updates, hasLength(1));
+    expect(notifier.updates.single.id, '100');
+    expect(notifier.updates.single.documentType, 'DESCONOCIDO');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra socios que requieren atención', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -165,6 +237,160 @@ void main() {
       find.descendant(of: list, matching: find.text('Ana Pérez')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('acota la lista a los asociados del plan y deja quitarlo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    // Llega el filtro desde la vista de Planes.
+    container
+        .read(clientsScopeFilterProvider.notifier)
+        .showPlan(planId: 'plan-mensual', planName: 'Mensual');
+    await tester.pumpAndSettle();
+
+    final list = find.byKey(const PageStorageKey('pulso-clients-list'));
+    // Vigente y vencida reciente sí; vencida hace 90 días y quien no tiene
+    // plan, no. El aviso dice el mismo número que la lista enseña.
+    expect(
+      find.descendant(of: list, matching: find.text('Ana Pérez')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Luis Gómez')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Tomás Vega')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Eva Ríos')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('clients-scope-filter-notice')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('2 socios'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('clients-scope-filter-clear')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(clientsScopeFilterProvider), isNull);
+    expect(
+      find.byKey(const ValueKey('clients-scope-filter-notice')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Tomás Vega')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('también acota por entrenador, con su propio rótulo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    // Llega el filtro desde la vista de Entrenadores.
+    container
+        .read(clientsScopeFilterProvider.notifier)
+        .showTrainer(trainerId: 'trainer-ana', trainerName: 'Ana Coach');
+    await tester.pumpAndSettle();
+
+    final list = find.byKey(const PageStorageKey('pulso-clients-list'));
+    expect(
+      find.descendant(of: list, matching: find.text('Ana Pérez')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Luis Gómez')),
+      findsNothing,
+    );
+    // Un entrenador «acompaña» socios; no los tiene «asociados» como un plan.
+    expect(find.textContaining('Socios de'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('clients-scope-filter-notice')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el filtro de plan limpia búsqueda y filtro de estado previos', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    // El operador venía filtrando por «Inactivos» y buscando otra cosa. Si eso
+    // sobreviviera, entraría a ver los asociados y encontraría la lista vacía.
+    await tester.tap(find.text('Inactivos').last);
+    await tester.enterText(find.byType(TextField).first, 'zzz');
+    await tester.pumpAndSettle();
+    expect(find.text('Ningún socio coincide con la consulta.'), findsOneWidget);
+
+    container
+        .read(clientsScopeFilterProvider.notifier)
+        .showPlan(planId: 'plan-mensual', planName: 'Mensual');
+    await tester.pumpAndSettle();
+
+    final list = find.byKey(const PageStorageKey('pulso-clients-list'));
+    expect(
+      find.descendant(of: list, matching: find.text('Ana Pérez')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('exportar en CSV solo se ofrece si hay algo a la vista', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    IconButton exportButton() => tester.widget<IconButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('clients-export-csv')),
+        matching: find.byType(IconButton),
+      ),
+    );
+
+    expect(exportButton().onPressed, isNotNull);
+
+    await tester.enterText(find.byType(TextField).first, 'zzz');
+    await tester.pumpAndSettle();
+    // Sin filas visibles no hay nada que exportar: el botón se apaga en vez de
+    // producir un archivo con solo la cabecera.
+    expect(exportButton().onPressed, isNull);
     expect(tester.takeException(), isNull);
   });
 
@@ -233,17 +459,17 @@ void _expectOriginalFormGeometry(WidgetTester tester) {
         .first,
   );
 
-  final ci = labelPosition('Cédula de Identidad (CI)');
+  final ci = tester.getTopLeft(find.byKey(const ValueKey('pulso-client-ci')));
   final sex = labelPosition('Sexo');
   final names = labelPosition('Nombres');
   final surnames = labelPosition('Apellidos');
   final height = labelPosition('Estatura');
   final weight = labelPosition('Peso');
 
-  expect(ci.dy, closeTo(sex.dy, 1));
   expect(names.dy, closeTo(surnames.dy, 1));
   expect(height.dy, closeTo(weight.dy, 1));
   expect(ci.dx, lessThan(sex.dx));
+  expect(find.byKey(const ValueKey('document-type-selector')), findsOneWidget);
   expect(names.dx, lessThan(surnames.dx));
   expect(ci.dy, lessThan(names.dy));
   expect(names.dy, lessThan(height.dy));
@@ -261,6 +487,7 @@ List<ClientModel> _clients() {
       direccion: 'Main St 1',
       nacionalidadId: 'nat-us',
       planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
       trainerId: 'trainer-ana',
       scheduleId: 'morning',
       startDate: calendarDateToUtc(today.subtract(const Duration(days: 5))),
@@ -268,14 +495,27 @@ List<ClientModel> _clients() {
       estatura_cliente: 165,
       peso: 62,
     ),
+    // Venció hace 10 días: sigue siendo asociado del plan (ventana de 30).
     ClientModel(
       id: '200',
       nombres: 'Luis',
       apellidos: 'Gómez',
       nacionalidadId: 'nat-us',
       planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
       startDate: calendarDateToUtc(today.subtract(const Duration(days: 40))),
       endDate: calendarDateToUtc(today.subtract(const Duration(days: 10))),
+    ),
+    // Venció hace 90 días: ya no cuenta como asociado del plan.
+    ClientModel(
+      id: '250',
+      nombres: 'Tomás',
+      apellidos: 'Vega',
+      nacionalidadId: 'nat-us',
+      planId: 'plan-mensual',
+      membershipStatus: 'ACTIVA',
+      startDate: calendarDateToUtc(today.subtract(const Duration(days: 120))),
+      endDate: calendarDateToUtc(today.subtract(const Duration(days: 90))),
     ),
     ClientModel(
       id: '300',
@@ -287,9 +527,20 @@ List<ClientModel> _clients() {
   ];
 }
 
-Widget _harness({_ClientNotifier? notifier, Widget? view}) {
+Widget _harness({
+  _ClientNotifier? notifier,
+  Widget? view,
+  ProviderContainer? container,
+}) {
+  return UncontrolledProviderScope(
+    container: container ?? _container(notifier: notifier),
+    child: MaterialApp(home: Scaffold(body: view ?? const ClientsPulsoView())),
+  );
+}
+
+ProviderContainer _container({_ClientNotifier? notifier}) {
   final clients = _clients();
-  return ProviderScope(
+  final container = ProviderContainer(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
@@ -321,8 +572,9 @@ Widget _harness({_ClientNotifier? notifier, Widget? view}) {
         weightHistoryProvider(client.id).overrideWith((ref) async => const []),
       ],
     ],
-    child: MaterialApp(home: Scaffold(body: view ?? const ClientsPulsoView())),
   );
+  addTearDown(container.dispose);
+  return container;
 }
 
 List<PaymentPlanModel> _plans() => [

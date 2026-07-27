@@ -37,6 +37,28 @@ void main() {
     expect(csv, contains('"0123456789abcdef"'));
     expect(csv, contains('"Administración Demo"'));
     expect(csv, isNot(contains('TOTAL GENERAL')));
+    // R5.6: el cobrador viaja en su propia fila, con su propio tipo, para que
+    // nadie la sume con las de cuenta o de día.
+    expect(csv, contains('"COBRADOR","2026-07","CUP","2 cuenta(s)","Ana Recepción"'));
+    expect(csv, contains('"COBRADOR","2026-07","EUR"'));
+    expect(csv, contains('"Sin atribuir · histórico"'));
+    expect(csv, contains('"cobrado_por"'));
+  });
+
+  test('el alcance de una moneda no arrastra cobradores de otra', () {
+    final snapshot = service.snapshot(
+      summary: summary,
+      allCurrencies: false,
+      selectedCurrencyId: 'cup',
+      includeDailyTrend: false,
+      generatedAtUtc: generatedAt,
+      timezone: 'America/Havana',
+    );
+    final csv = utf8.decode(service.buildCsv(snapshot).sublist(3));
+
+    expect(snapshot.collectors.map((row) => row.currencyId), ['cup']);
+    expect(csv, contains('"COBRADOR","2026-07","CUP"'));
+    expect(csv, isNot(contains('"COBRADOR","2026-07","EUR"')));
   });
 
   test('filtro por cuenta recalcula totales y evita tendencia atribuida', () {
@@ -89,6 +111,37 @@ TreasuryMonthlySummaryModel _summary() => TreasuryMonthlySummaryModel.fromJson({
   'mes': '2026-07',
   'fecha_desde': '2026-07-01',
   'fecha_hasta': '2026-07-31',
+  // R5.6 — cobros del mes por persona y moneda.
+  'cobros_por_recepcionista': [
+    {
+      'moneda_id': 'cup',
+      'moneda_codigo': 'CUP',
+      'cobrado_por_user_id': 'ana',
+      'cobrado_por_nombre_snapshot': 'Ana Recepción',
+      'cobrado_por_rol_snapshot': 'reception',
+      'historico_sin_atribuir': false,
+      'cuentas': 2,
+      'pagos': 7,
+      'clientes': 6,
+      'bruto': '900.00',
+      'cambio': '0.00',
+      'anulado': '100.00',
+      'neto': '800.00',
+    },
+    {
+      'moneda_id': 'eur',
+      'moneda_codigo': 'EUR',
+      'cobrado_por_user_id': null,
+      'historico_sin_atribuir': true,
+      'cuentas': 1,
+      'pagos': 2,
+      'clientes': 2,
+      'bruto': '40.00',
+      'cambio': '0.00',
+      'anulado': '0.00',
+      'neto': '40.00',
+    },
+  ],
   'cierre_mensual': {
     'estado': 'CERRADO',
     'mes_terminado': true,

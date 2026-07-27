@@ -10,6 +10,8 @@ part 'client_model.g.dart';
 class ClientModel {
   @JsonKey(name: 'ci')
   final String id;
+  @JsonKey(name: 'tipo_documento')
+  final String? documentType;
 
   final String? nombres;
   final String? apellidos;
@@ -53,6 +55,7 @@ class ClientModel {
 
   ClientModel({
     required this.id,
+    this.documentType,
     this.nombres,
     this.apellidos,
     this.sexo,
@@ -86,6 +89,7 @@ class ClientModel {
 
   ClientModel copyWith({
     String? id,
+    String? documentType,
     String? nombres,
     String? apellidos,
     String? sexo,
@@ -113,6 +117,7 @@ class ClientModel {
   }) {
     return ClientModel(
       id: id ?? this.id,
+      documentType: documentType ?? this.documentType,
       nombres: nombres ?? this.nombres,
       apellidos: apellidos ?? this.apellidos,
       sexo: sexo ?? this.sexo,

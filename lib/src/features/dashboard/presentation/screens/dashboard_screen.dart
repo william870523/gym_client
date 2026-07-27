@@ -41,6 +41,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Widget>? _cachedViews;
   String? _cachedRole;
+  bool _isLoggingOut = false;
+
+  Future<void> _logout() async {
+    if (_isLoggingOut) return;
+    _isLoggingOut = true;
+
+    try {
+      await ref.read(authProvider.notifier).logout();
+      ref.read(dashboardNavProvider.notifier).reset();
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    } finally {
+      _isLoggingOut = false;
+    }
+  }
 
   List<Widget> _getViews(String role) {
     if (_cachedViews != null && _cachedRole == role) {
@@ -177,11 +196,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Navigator.of(context).pop();
           }
         },
-        onLogout: () {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
-        },
+        onLogout: _logout,
       );
     }
 
@@ -208,11 +223,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   title: title,
                   role: role,
                   onToggleRole: () {},
-                  onLogout: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    );
-                  },
+                  onLogout: _logout,
                   onMenuPressed: isCompact
                       ? () => _scaffoldKey.currentState?.openDrawer()
                       : null,

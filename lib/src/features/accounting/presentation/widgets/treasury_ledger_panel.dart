@@ -17,6 +17,24 @@ import 'treasury_monthly_panel.dart';
 
 final _treasuryMoney = NumberFormat('#,##0.00');
 
+/// Alto de la línea «recargos condonados» plegada y de su detalle abierto.
+///
+/// El panel del cierre tiene altura fija, así que el alto lo fija el padre y la
+/// línea se ajusta a él: si estos números no cuadraran con lo que dibuja
+/// `_WaivedLateFeesLine`, la vista desbordaría a 360 px.
+const double _waivedLineCompactHeight = 96;
+const double _waivedLineHeight = 70;
+const double _waivedDetailHeight = 150;
+
+/// Por debajo de este ancho la línea apila el importe bajo el rótulo.
+const double _waivedCompactWidth = 520;
+
+/// Alto de la línea «cobros por recepcionista» (R5.6) plegada y abierta. Mismo
+/// motivo que arriba: el panel tiene alto fijo y lo reserva el padre.
+const double _collectorsLineHeight = 70;
+const double _collectorsLineCompactHeight = 96;
+const double _collectorsDetailHeight = 176;
+
 enum _TreasuryRange { daily, monthly }
 
 String _treasuryError(Object error) {
@@ -186,6 +204,10 @@ class _TreasuryLedgerPanelState extends ConsumerState<TreasuryLedgerPanel> {
   String? _selectedDate;
   String? _accountFilterId;
   _TreasuryRange _range = _TreasuryRange.daily;
+  // El plegado vive aquí, no dentro de la línea: el panel tiene alto fijo y
+  // necesita reservar el espacio del detalle para no desbordar a 360 px.
+  bool _waivedExpanded = false;
+  bool _collectorsExpanded = false;
 
   @override
   void dispose() {
@@ -203,8 +225,25 @@ class _TreasuryLedgerPanelState extends ConsumerState<TreasuryLedgerPanel> {
   Widget build(BuildContext context) {
     final state = ref.watch(treasuryLedgerProvider(_selectedDate));
     final width = MediaQuery.sizeOf(context).width;
+    final hasWaived = state.value?.waivedLateFees.isEmpty == false;
+    final waivedCompact = width < _waivedCompactWidth;
+    final waivedHeight = !hasWaived
+        ? 0.0
+        : (waivedCompact ? _waivedLineCompactHeight : _waivedLineHeight) +
+              10 +
+              (_waivedExpanded ? _waivedDetailHeight : 0.0);
+    final hasCollectors = state.value?.collectorRows.isNotEmpty == true;
+    final collectorsHeight = !hasCollectors
+        ? 0.0
+        : (waivedCompact
+                  ? _collectorsLineCompactHeight
+                  : _collectorsLineHeight) +
+              10 +
+              (_collectorsExpanded ? _collectorsDetailHeight : 0.0);
+    // El libro apilado (cuentas sobre movimientos) entra por debajo de 880 px,
+    // no de 760: con el umbral viejo la vista desbordaba entre 760 y 880.
     return SizedBox(
-      height: width < 760 ? 910 : 770,
+      height: (width < 880 ? 970 : 770) + waivedHeight + collectorsHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -268,6 +307,27 @@ class _TreasuryLedgerPanelState extends ConsumerState<TreasuryLedgerPanel> {
           summaries: ledger.currencySummaries,
           incidents: ledger.incidents,
         ),
+        // Solo se dibuja si hubo condonaciones: si no, no se ensucia el cierre.
+        if (!ledger.waivedLateFees.isEmpty) ...[
+          const SizedBox(height: 10),
+          _WaivedLateFeesLine(
+            waived: ledger.waivedLateFees,
+            expanded: _waivedExpanded,
+            compact: MediaQuery.sizeOf(context).width < _waivedCompactWidth,
+            onToggle: () => setState(() => _waivedExpanded = !_waivedExpanded),
+          ),
+        ],
+        // R5.6 — quién recibió el dinero. Solo aparece si hubo cobros ese día.
+        if (ledger.collectorRows.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _CollectorsLine(
+            rows: ledger.collectorRows,
+            expanded: _collectorsExpanded,
+            compact: MediaQuery.sizeOf(context).width < _waivedCompactWidth,
+            onToggle: () =>
+                setState(() => _collectorsExpanded = !_collectorsExpanded),
+          ),
+        ],
         const SizedBox(height: 10),
         Expanded(
           child: LayoutBuilder(
@@ -1929,6 +1989,358 @@ class _CurrencySummaryStrip extends StatelessWidget {
   }
 }
 
+/// Línea «recargos condonados» del cierre (docs/RECARGO_MORA.md §6-bis).
+///
+/// Muestra cuánto dinero se dejó de cobrar y, al abrirla, quién lo autorizó y
+/// por qué. Los importes vienen calculados y agrupados por moneda desde el
+/// servidor: aquí no se suma nada, y menos entre monedas distintas.
+class _WaivedLateFeesLine extends StatelessWidget {
+  const _WaivedLateFeesLine({
+    required this.waived,
+    required this.expanded,
+    required this.compact,
+    required this.onToggle,
+  });
+
+  final TreasuryWaivedLateFeesModel waived;
+  final bool expanded;
+
+  /// Lo decide el padre, que es quien reserva el alto de la línea.
+  final bool compact;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final amounts = waived.byCurrency
+        .map(
+          (currency) =>
+              '${currency.currencyCode} ${_treasuryMoney.format(currency.amount)}',
+        )
+        .join('  ·  ');
+
+    return PulsoPanel(
+      padding: EdgeInsets.zero,
+      color: tokens.warningSoft,
+      borderColor: tokens.warning,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: expanded,
+            child: InkWell(
+              onTap: onToggle,
+              child: SizedBox(
+                height: compact ? _waivedLineCompactHeight : _waivedLineHeight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 11, 10, 11),
+                  child: Builder(
+                    builder: (context) {
+                      final label = Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const PulsoLabel('Recargos condonados'),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${waived.count} condonación(es) · no afecta el arqueo',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: tokens.muted, fontSize: 10),
+                          ),
+                        ],
+                      );
+                      final total = Text(
+                        amounts,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: compact ? TextAlign.left : TextAlign.right,
+                        style: TextStyle(
+                          color: tokens.warning,
+                          fontFamily: PulsoFonts.mono,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      );
+                      final chevron = Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
+                        color: tokens.warning,
+                      );
+                      // A 360 px el importe no cabe al lado del rótulo.
+                      if (compact) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  label,
+                                  const SizedBox(height: 6),
+                                  total,
+                                ],
+                              ),
+                            ),
+                            chevron,
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Icon(Icons.gavel_outlined, color: tokens.warning),
+                          const SizedBox(width: 10),
+                          Expanded(child: label),
+                          const SizedBox(width: 10),
+                          Flexible(child: total),
+                          const SizedBox(width: 4),
+                          chevron,
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (expanded)
+            Container(
+              // Alto acotado y con scroll propio: el panel del cierre tiene
+              // altura fija y muchas condonaciones no pueden desbordarlo.
+              height: _waivedDetailHeight,
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: tokens.warning)),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: ListView(
+                primary: false,
+                children: [
+                  for (final row in waived.details)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  row.memberName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: tokens.chalk,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${row.currencyCode} ${_treasuryMoney.format(row.amount)}',
+                                style: TextStyle(
+                                  color: tokens.warning,
+                                  fontFamily: PulsoFonts.mono,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${row.reason} · autorizó ${row.authorizedBy}',
+                            style: TextStyle(color: tokens.muted, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Resumen auditable de cobros por persona, cuenta y moneda (R5.6).
+///
+/// Las filas ya llegan agrupadas desde el servidor. Esta vista no suma
+/// monedas ni reconstruye importes: se limita a presentar cada grupo y sus
+/// componentes bruto, cambio, anulado y neto.
+class _CollectorsLine extends StatelessWidget {
+  const _CollectorsLine({
+    required this.rows,
+    required this.expanded,
+    required this.compact,
+    required this.onToggle,
+  });
+
+  final List<TreasuryCollectorRowModel> rows;
+  final bool expanded;
+  final bool compact;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final attributed = rows.where((row) => !row.unattributed).length;
+    final historical = rows.length - attributed;
+    final detail = historical == 0
+        ? '$attributed grupo(s) atribuido(s) por persona, cuenta y moneda'
+        : '$attributed atribuido(s) · $historical histórico(s) sin atribuir';
+
+    return PulsoPanel(
+      padding: EdgeInsets.zero,
+      color: tokens.accentSoft,
+      borderColor: tokens.accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: expanded,
+            child: InkWell(
+              key: const Key('treasury-collectors-toggle'),
+              onTap: onToggle,
+              child: SizedBox(
+                height: compact
+                    ? _collectorsLineCompactHeight
+                    : _collectorsLineHeight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 11, 10, 11),
+                  child: Row(
+                    children: [
+                      if (!compact) ...[
+                        Icon(Icons.badge_outlined, color: tokens.accent),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const PulsoLabel('Cobros por recepcionista'),
+                            const SizedBox(height: 3),
+                            Text(
+                              detail,
+                              maxLines: compact ? 2 : 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: tokens.muted,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
+                        color: tokens.accent,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (expanded)
+            Container(
+              key: const Key('treasury-collectors-detail'),
+              height: _collectorsDetailHeight,
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: tokens.accent)),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: ListView.separated(
+                primary: false,
+                itemCount: rows.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final row = rows[index];
+                  final actorColor = row.unattributed
+                      ? tokens.warning
+                      : tokens.chalk;
+                  final actorContext = [
+                    if ((row.role ?? '').isNotEmpty) row.role!,
+                    if ((row.origin ?? '').isNotEmpty) row.origin!,
+                  ].join(' · ');
+
+                  return Semantics(
+                    label:
+                        '${row.name}, ${row.accountName}, '
+                        '${row.currencyCode} ${_treasuryMoney.format(row.net)} neto',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                row.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: actorColor,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${row.currencyCode} '
+                              '${_treasuryMoney.format(row.net)} neto',
+                              style: TextStyle(
+                                color: tokens.accent,
+                                fontFamily: PulsoFonts.mono,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            row.accountName,
+                            '${row.payments} pago(s)',
+                            '${row.clients} cliente(s)',
+                            if (actorContext.isNotEmpty) actorContext,
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: tokens.muted, fontSize: 10),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Bruto ${_treasuryMoney.format(row.gross)}'
+                          ' · cambio ${_treasuryMoney.format(row.change)}'
+                          ' · anulado ${_treasuryMoney.format(row.annulled)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: tokens.muted2,
+                            fontFamily: PulsoFonts.mono,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AccountsLedger extends StatelessWidget {
   const _AccountsLedger({
     required this.ledger,
@@ -2332,11 +2744,30 @@ class _MovementRow extends StatelessWidget {
   final TreasuryMovementModel movement;
   final bool compact;
 
+  /// R5.6 — «Cobrado por A / Anulado por B» del movimiento.
+  ///
+  /// Solo se dibuja en movimientos nacidos de un cobro: en un gasto o un
+  /// movimiento manual no hay recepcionista que atribuir y la línea sería
+  /// ruido. Un cobro anterior al corte lo dice en vez de dejar el hueco.
+  String? get _attribution {
+    const fromPayment = {"PAGO_CLIENTE", "PAGO_CAMBIO", "PAGO_REVERSION"};
+    if (!fromPayment.contains(movement.sourceType)) return null;
+    final parts = <String>[
+      movement.hasCollector
+          ? 'Cobrado por ${movement.collectorName}'
+          : 'Sin atribuir · histórico',
+      if ((movement.annulledByName ?? '').isNotEmpty)
+        'Anulado por ${movement.annulledByName}',
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
     final manual = movement.manualOperation;
     final concept = manual?.concept ?? _conceptLabel(movement.concept);
+    final attribution = _attribution;
     final directionColor = movement.isEntry ? tokens.success : tokens.danger;
     final amount = Text(
       '${movement.isEntry ? '+' : '−'} ${movement.currencyCode} ${_treasuryMoney.format(movement.amount)}',
@@ -2385,6 +2816,19 @@ class _MovementRow extends StatelessWidget {
               '${formatDateInZone(movement.occurredAt, appClock.gymTimezone, pattern: 'HH:mm')} · ${movement.accountName} · ${movement.paymentTypeName ?? 'sin método'}',
               style: TextStyle(color: tokens.muted, fontSize: 9),
             ),
+            if (attribution != null) ...[
+              const SizedBox(height: 3),
+              Text(
+                attribution,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: movement.hasCollector ? tokens.chalkDim : tokens.muted2,
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 8,
+                ),
+              ),
+            ],
             if (manual != null) ...[
               const SizedBox(height: 3),
               Text(
@@ -2459,6 +2903,19 @@ class _MovementRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: tokens.muted,
+                      fontFamily: PulsoFonts.mono,
+                      fontSize: 8,
+                    ),
+                  ),
+                if (attribution != null)
+                  Text(
+                    attribution,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: movement.hasCollector
+                          ? tokens.chalkDim
+                          : tokens.muted2,
                       fontFamily: PulsoFonts.mono,
                       fontSize: 8,
                     ),

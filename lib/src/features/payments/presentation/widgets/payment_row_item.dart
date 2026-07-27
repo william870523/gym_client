@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:gym_client/src/features/configuration/presentation/state/payment_type_notifier.dart';
 import 'package:gym_client/src/features/financials/presentation/state/account_notifier.dart';
 import 'package:gym_client/src/features/financials/presentation/providers/exchange_rate_notifier.dart';
@@ -12,8 +13,13 @@ import 'package:gym_client/src/features/financials/presentation/state/currency_n
 import 'package:gym_client/src/features/financials/presentation/widgets/exchange_rate_pulso_form.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
+import '../../../../core/time/app_clock.dart';
 import '../../../../core/widgets/app_flag.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+
+// Mismo formato que la vista de tasas: entero para 450, decimales solo si la
+// tasa los tiene (una tasa inversa como 0.0022 no se puede redondear).
+final _rateValueFmt = NumberFormat('#,##0.######');
 
 class PaymentRowItem extends ConsumerStatefulWidget {
   final String planCurrencyId;
@@ -214,68 +220,66 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
 
     final ratesAsync = ref.read(exchangeRateProvider);
     ratesAsync.whenData((rates) {
-      double rate = 0.0;
-      String? rateId;
-      bool found = false;
-      bool divideByRate = false;
-      Map<String, String> surcharges = const {};
-
-      // 1. Same Currency Case (1:1)
-      if (_isSameCurrencyId(currencyId, widget.planCurrencyId)) {
-        rate = 1.0;
-        found = true;
-        rateId = null;
-        try {
-          final sameRateModel = rates.firstWhere(
-            (r) =>
-                _isSameCurrencyId(r.monedaIdBase, planCurrencyId) &&
-                _isSameCurrencyId(r.monedaIdTarget, accountCurrencyId) &&
-                r.activo,
-          );
-          surcharges = sameRateModel.recargos;
-          rateId = sameRateModel.id;
-        } catch (_) {}
-      }
-      // 2. Different Currencies
-      else {
-        try {
-          final rateModel = rates.firstWhere(
-            (r) =>
-                _isSameCurrencyId(r.monedaIdBase, planCurrencyId) &&
-                _isSameCurrencyId(r.monedaIdTarget, accountCurrencyId) &&
-                r.activo,
-          );
-          rate = rateModel.exchangeRate;
-          rateId = rateModel.id;
-          found = true;
-          divideByRate = true;
-          surcharges = rateModel.recargos;
-        } catch (e) {
-          try {
-            final reverseRate = rates.firstWhere(
-              (r) =>
-                  _isSameCurrencyId(r.monedaIdBase, accountCurrencyId) &&
-                  _isSameCurrencyId(r.monedaIdTarget, planCurrencyId) &&
-                  r.activo,
-            );
-            rate = reverseRate.exchangeRate;
-            rateId = reverseRate.id; // Use the reverse rate ID
-            found = true;
-            surcharges = reverseRate.recargos;
-          } catch (_) {
-            found = false;
-          }
-        }
+      // La moneda con la que paga el cliente es la base de la tasa —plan en
+      // CUP cobrado en euros con «1 EUR = 450 CUP»—: se multiplica.
+      final direct = _pickCurrentRate(rates, accountCurrencyId, planCurrencyId);
+      if (direct != null) {
+        _applyRateState(
+          found: true,
+          rate: direct.exchangeRate,
+          rateId: direct.id,
+          surcharges: direct.recargos,
+        );
+        return;
       }
 
-      _applyRateState(
-        found: found,
-        rate: rate,
-        rateId: rateId,
-        divideByRate: found && divideByRate,
-        surcharges: surcharges,
-      );
+      // Par al revés —plan en euros cobrado en CUP con esa misma tasa, o una
+      // tasa dada como «1 CUP = 0.0022 EUR»—: entonces toca dividir.
+      final inverse = _pickCurrentRate(rates, planCurrencyId, accountCurrencyId);
+      if (inverse != null) {
+        _applyRateState(
+          found: true,
+          rate: inverse.exchangeRate,
+          rateId: inverse.id,
+          divideByRate: true,
+          surcharges: inverse.recargos,
+        );
+        return;
+      }
+
+      _applyRateState(found: false, rate: 0.0);
     });
+  }
+
+  /// Tasa vigente del par en el orden dado: activa, ya iniciada y sin vencer
+  /// según el reloj calibrado. Si hay varias candidatas gana la de vigencia
+  /// más reciente —antes ganaba la que llegara primero del API, que no ordena.
+  ExchangeRateModel? _pickCurrentRate(
+    List<ExchangeRateModel> rates,
+    String baseCurrencyId,
+    String targetCurrencyId,
+  ) {
+    final now = appClock.nowUtc();
+    final candidates =
+        rates
+            .where(
+              (r) =>
+                  r.activo &&
+                  _isSameCurrencyId(r.monedaIdBase, baseCurrencyId) &&
+                  _isSameCurrencyId(r.monedaIdTarget, targetCurrencyId) &&
+                  !r.fechaInicio.toUtc().isAfter(now) &&
+                  !(r.fechaExpiracion?.toUtc().isBefore(now) ?? false),
+            )
+            .toList()
+          ..sort((a, b) {
+            final byStart = b.fechaInicio.compareTo(a.fechaInicio);
+            if (byStart != 0) return byStart;
+            final aTouched = a.updatedAt ?? a.createdAt;
+            final bTouched = b.updatedAt ?? b.createdAt;
+            if (aTouched == null || bTouched == null) return 0;
+            return bTouched.compareTo(aTouched);
+          });
+    return candidates.isEmpty ? null : candidates.first;
   }
 
   void _applyRateState({
@@ -340,6 +344,37 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
     return left.isNotEmpty && right.isNotEmpty && left == right;
   }
 
+  /// Orientación con la que se propone una tasa que falta. La calle cotiza
+  /// «450 CUP por 1 EUR»: la moneda fuerte va de base y la débil de destino,
+  /// y así el operador teclea 450 y no 0.0022. Se deduce de las tasas ya
+  /// cargadas —si una de las dos monedas ya suele ser el destino, se respeta—
+  /// porque el plan tanto puede estar en la débil como en la fuerte. Sin
+  /// pistas se asume que el cliente paga en la fuerte, que es lo corriente.
+  ({String baseId, String targetId}) _suggestedRateOrientation() {
+    final accountId = _selectedAccount!.currencyId;
+    final planId = widget.planCurrencyId;
+    final rates =
+        ref.read(exchangeRateProvider).value ?? const <ExchangeRateModel>[];
+
+    var accountAsTarget = 0;
+    var planAsTarget = 0;
+    for (final rate in rates) {
+      if (!rate.activo) continue;
+      if (_isSameCurrencyId(rate.monedaIdTarget, accountId)) accountAsTarget++;
+      if (_isSameCurrencyId(rate.monedaIdTarget, planId)) planAsTarget++;
+    }
+
+    if (accountAsTarget > planAsTarget) {
+      return (baseId: planId, targetId: accountId);
+    }
+    return (baseId: accountId, targetId: planId);
+  }
+
+  String _currencyLabelFor(String currencyId) =>
+      _isSameCurrencyId(currencyId, widget.planCurrencyId)
+      ? _planCurrencyLabel(ref.read(currencyProvider).value ?? const [])
+      : _accountCurrencyLabel();
+
   bool get _usesImplicitSameCurrencyRate {
     final account = _selectedAccount;
     return account != null &&
@@ -347,9 +382,16 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
         _currentRateId == null;
   }
 
-  String _rateLabel() {
+  /// Se enuncia la tasa entera («1 EUR = 450 CUP») para que el recepcionista
+  /// detecte de un vistazo una tasa cargada al revés; el `x`/`/` de la fórmula
+  /// queda detrás porque por sí solo no dice nada.
+  String _rateLabel(String planCurrencyLabel) {
     if (_usesImplicitSameCurrencyRate) return '1:1 sin tasa';
-    return '${_divideByRate ? '/' : 'x'} ${_currentRate.toStringAsFixed(4)}';
+    final accountCurrencyLabel = _accountCurrencyLabel();
+    final from = _divideByRate ? planCurrencyLabel : accountCurrencyLabel;
+    final to = _divideByRate ? accountCurrencyLabel : planCurrencyLabel;
+    final value = _rateValueFmt.format(_currentRate);
+    return '1 $from = $value $to  ${_divideByRate ? '/' : 'x'}';
   }
 
   String _accountCurrencyLabel() {
@@ -394,12 +436,17 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       return;
     }
 
+    // La tasa se precarga como la enuncia el operador («1 EUR = 450 CUP»).
+    // Antes la base era siempre la moneda del plan, lo que obligaba a teclear
+    // 0.0022 y acababa guardándose la tasa invertida.
+    final orientation = _suggestedRateOrientation();
+
     await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => ExchangeRatePulsoForm(
-        initialBaseCurrencyId: widget.planCurrencyId,
-        initialTargetCurrencyId: _selectedAccount!.currencyId,
+        initialBaseCurrencyId: orientation.baseId,
+        initialTargetCurrencyId: orientation.targetId,
         onSubmit: (data) async {
           await ref.read(exchangeRateProvider.notifier).create(data);
         },
@@ -454,6 +501,9 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
 
   Future<void> _showMissingRateDialog(String planCurrencyLabel) async {
     final accountCurrencyLabel = _accountCurrencyLabel();
+    final orientation = _suggestedRateOrientation();
+    final baseLabel = _currencyLabelFor(orientation.baseId);
+    final targetLabel = _currencyLabelFor(orientation.targetId);
     final action = await showDialog<String>(
       context: context,
       builder: (context) => PulsoThemeScope(
@@ -461,9 +511,10 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
           title: const Text('Falta una tasa activa'),
           content: Text(
             'El cliente va a pagar en $accountCurrencyLabel y el plan está en $planCurrencyLabel. '
-            'La tasa recomendada es $planCurrencyLabel → $accountCurrencyLabel: 1 $planCurrencyLabel equivale a N $accountCurrencyLabel. '
-            'Con esa tasa el sistema divide el monto pagado para calcular el equivalente del plan. '
-            'También se acepta la tasa inversa $accountCurrencyLabel → $planCurrencyLabel. Si no puedes crearla, contacta al administrador.',
+            'Crea la tasa $baseLabel → $targetLabel: 1 $baseLabel equivale a N $targetLabel, '
+            'que es como se dice la tasa de la calle. '
+            'También se acepta al revés ($targetLabel → $baseLabel), pero entonces el número de la tasa es una fracción. '
+            'Si no puedes crearla, contacta al administrador.',
           ),
           actions: [
             PulsoSecondaryButton(
@@ -737,7 +788,9 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
                     ),
                   if (_rateFound) ...[
                     Text(
-                      _rateLabel(),
+                      _rateLabel(planCurrencyLabel),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: PulsoFonts.mono,
                         fontSize: 10,
@@ -812,7 +865,9 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
   }
 
   Widget _missingRateAction(PulsoTokens tokens, String planCurrencyLabel) {
-    final accountCurrencyLabel = _accountCurrencyLabel();
+    final orientation = _suggestedRateOrientation();
+    final baseLabel = _currencyLabelFor(orientation.baseId);
+    final targetLabel = _currencyLabelFor(orientation.targetId);
 
     return InkWell(
       onTap: () => _showMissingRateDialog(planCurrencyLabel),
@@ -833,7 +888,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Falta tasa $planCurrencyLabel → $accountCurrencyLabel',
+                    'Falta tasa $baseLabel → $targetLabel',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -8,6 +8,7 @@ sealed class TrainerModel with _$TrainerModel {
   const factory TrainerModel({
     @JsonKey(name: 'id_entrenador') required String id,
     @JsonKey(name: 'ci_entrenador') required String ci,
+    @JsonKey(name: 'tipo_documento') String? documentType,
     @JsonKey(name: 'nombres_entrenador') String? nombres,
     @JsonKey(name: 'apellidos_entrenador') String? apellidos,
     @JsonKey(name: 'sexo_entrenador') String? sexo,

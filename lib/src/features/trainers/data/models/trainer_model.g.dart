@@ -10,6 +10,7 @@ _TrainerModel _$TrainerModelFromJson(Map<String, dynamic> json) =>
     _TrainerModel(
       id: json['id_entrenador'] as String,
       ci: json['ci_entrenador'] as String,
+      documentType: json['tipo_documento'] as String?,
       nombres: json['nombres_entrenador'] as String?,
       apellidos: json['apellidos_entrenador'] as String?,
       sexo: json['sexo_entrenador'] as String?,
@@ -28,6 +29,7 @@ Map<String, dynamic> _$TrainerModelToJson(_TrainerModel instance) =>
     <String, dynamic>{
       'id_entrenador': instance.id,
       'ci_entrenador': instance.ci,
+      'tipo_documento': instance.documentType,
       'nombres_entrenador': instance.nombres,
       'apellidos_entrenador': instance.apellidos,
       'sexo_entrenador': instance.sexo,

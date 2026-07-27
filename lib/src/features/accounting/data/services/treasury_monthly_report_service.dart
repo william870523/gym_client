@@ -23,6 +23,7 @@ class TreasuryMonthlyReportSnapshot {
     required this.scope,
     required this.includeDailyTrend,
     required this.currencies,
+    this.collectors = const [],
     required this.closeState,
     this.closeId,
     this.closeActor,
@@ -42,6 +43,9 @@ class TreasuryMonthlyReportSnapshot {
   final String scope;
   final bool includeDailyTrend;
   final List<TreasuryMonthlyReportCurrency> currencies;
+  /// R5.6 — cobros del mes por persona y moneda, tal y como los agrupa el
+  /// servidor. Vacío en informes anteriores al corte.
+  final List<TreasuryCollectorRowModel> collectors;
   final String closeState;
   final String? closeId;
   final String? closeActor;
@@ -254,6 +258,15 @@ class TreasuryMonthlyReportService {
           : 'Moneda ${reportCurrencies.first.source.currencyCode} · cuenta ${account.name}',
       includeDailyTrend: includeDailyTrend && accountId == null,
       currencies: reportCurrencies,
+      // Solo las monedas que el informe incluye: exportar un alcance de una
+      // moneda no debe arrastrar los cobros de otra.
+      collectors: summary.collectorRows
+          .where(
+            (row) => reportCurrencies.any(
+              (currency) => currency.source.currencyId == row.currencyId,
+            ),
+          )
+          .toList(growable: false),
       closeState: summary.monthlyClose.state,
       closeId: close?.id,
       closeActor: close?.closerName,
@@ -296,6 +309,8 @@ class TreasuryMonthlyReportService {
         'mes',
         'moneda',
         'cuenta',
+        // R5.6: vacío salvo en las filas COBRADOR.
+        'cobrado_por',
         'fecha',
         'estado',
         'entradas',
@@ -341,6 +356,7 @@ class TreasuryMonthlyReportService {
         currency.source.currencyCode,
         '',
         '',
+        '',
         currency.requiresAttention ? 'REQUIERE_ATENCION' : 'AL_DIA',
         _number(currency.entries),
         _number(currency.exits),
@@ -377,6 +393,7 @@ class TreasuryMonthlyReportService {
           snapshot.month,
           account.currencyCode,
           account.name,
+          '',
           account.lastCloseDate ?? '',
           account.status,
           _number(account.entries),
@@ -418,12 +435,43 @@ class TreasuryMonthlyReportService {
           ..._closureCsv(snapshot),
         ]);
       }
+      // R5.6 — una fila por persona dentro de esta moneda. Van con su propio
+      // `tipo_fila` para que nadie las sume con las de cuenta o de día: son la
+      // misma plata mirada por quien la recibió.
+      for (final collector in snapshot.collectors.where(
+        (row) => row.currencyId == currency.source.currencyId,
+      )) {
+        rows.add([
+          'COBRADOR',
+          snapshot.month,
+          collector.currencyCode,
+          collector.accountName,
+          collector.unattributed
+              ? 'Sin atribuir · histórico'
+              : collector.name,
+          '',
+          collector.unattributed
+              ? 'SIN_ATRIBUIR'
+              : (collector.role ?? collector.origin ?? ''),
+          _number(collector.gross),
+          _number(collector.annulled),
+          _number(collector.net),
+          '${collector.payments}',
+          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+          '', '', '',
+          snapshot.scope,
+          snapshot.timezone,
+          snapshot.generatedAtUtc.toIso8601String(),
+          ..._closureCsv(snapshot),
+        ]);
+      }
       if (snapshot.includeDailyTrend) {
         for (final day in currency.trend) {
           rows.add([
             'DIA',
             snapshot.month,
             currency.source.currencyCode,
+            '',
             '',
             day.businessDate,
             '',

@@ -1,12 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/accounting_models.dart';
+import '../../data/models/accrual_operating_result_models.dart';
 import '../../data/models/exchange_revaluation_models.dart';
 import '../../data/models/management_margin_annual_models.dart';
 import '../../data/models/management_margin_models.dart';
 import '../../data/models/membership_revenue_models.dart';
 import '../../data/models/operational_annual_results_models.dart';
 import '../../data/models/operational_results_models.dart';
+import '../../data/models/recurring_expense_models.dart';
 import '../../data/models/trainer_service_cost_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 
@@ -124,6 +126,25 @@ final managementMarginProvider = FutureProvider.autoDispose
           .getManagementMargin(month: month);
     });
 
+final recurringExpensesProvider =
+    FutureProvider.autoDispose<List<RecurringExpenseModel>>((ref) {
+      return ref.watch(accountingRepositoryProvider).getRecurringExpenses();
+    });
+
+final recurringExpensePlanProvider = FutureProvider.autoDispose
+    .family<RecurringExpensePlanModel, String?>((ref, month) {
+      return ref
+          .watch(accountingRepositoryProvider)
+          .previewRecurringExpenses(month: month);
+    });
+
+final accrualOperatingResultProvider = FutureProvider.autoDispose
+    .family<AccrualOperatingResultModel, String?>((ref, month) {
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getAccrualOperatingResult(month: month);
+    });
+
 final managementMarginAnnualResultsProvider = FutureProvider.autoDispose
     .family<ManagementMarginAnnualResultsModel, String?>((ref, year) {
       return ref
@@ -145,10 +166,14 @@ final governedExpensesProvider = FutureProvider.autoDispose
 
 final governedExpenseCategoriesProvider =
     FutureProvider.autoDispose<List<GastoCategoriaModel>>((ref) {
-      return ref.watch(accountingRepositoryProvider).getGovernedExpenseCategories();
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getGovernedExpenseCategories();
     });
 
 final governedExpenseSuppliersProvider =
     FutureProvider.autoDispose<List<GastoProveedorModel>>((ref) {
-      return ref.watch(accountingRepositoryProvider).getGovernedExpenseSuppliers();
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getGovernedExpenseSuppliers();
     });

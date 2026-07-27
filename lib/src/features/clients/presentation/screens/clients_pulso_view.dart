@@ -19,7 +19,9 @@ import '../../../schedules/presentation/state/horario_notifier.dart';
 import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
 import '../../data/models/client_model.dart';
+import '../../data/services/client_list_export_service.dart';
 import '../state/client_notifier.dart';
+import '../state/clients_scope_filter_provider.dart';
 import '../state/weight_history_notifier.dart';
 import '../widgets/add_weight_pulso_dialog.dart';
 import '../widgets/client_form.dart';
@@ -45,6 +47,20 @@ enum _MembershipState {
   pendingPayment,
   noPlan,
   inactive,
+}
+
+/// Nombre de archivo legible a partir del nombre del plan o del entrenador.
+String _slug(String value) {
+  final ascii = value
+      .toLowerCase()
+      .replaceAll(RegExp('[áàä]'), 'a')
+      .replaceAll(RegExp('[éèë]'), 'e')
+      .replaceAll(RegExp('[íìï]'), 'i')
+      .replaceAll(RegExp('[óòö]'), 'o')
+      .replaceAll(RegExp('[úùü]'), 'u')
+      .replaceAll('ñ', 'n');
+  final slug = ascii.replaceAll(RegExp('[^a-z0-9]+'), '-');
+  return slug.replaceAll(RegExp('^-+|-+\$'), '');
 }
 
 String _name(ClientModel client) {
@@ -118,6 +134,8 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   _ClientFilter _filter = _ClientFilter.all;
   _ClientSort _sort = _ClientSort.name;
   bool _ascending = true;
+  bool _exporting = false;
+  final _exportService = ClientListExportService();
 
   @override
   void dispose() {
@@ -129,10 +147,16 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   List<ClientModel> _visible(
     List<ClientModel> all,
     Map<String, String> plans,
-    DateTime today,
-  ) {
+    DateTime today, {
+    ClientsScopeFilter? scopeFilter,
+  }) {
     final query = _query.trim().toLowerCase();
     final result = all.where((client) {
+      // Filtro traído desde Planes o desde Entrenadores: el mismo criterio con
+      // el que allí se contó (docs/PLAN_ASOCIADOS.md §5).
+      if (scopeFilter != null && !scopeFilter.matches(client, today: today)) {
+        return false;
+      }
       final state = _membership(client, today);
       final plan = plans[client.planId] ?? 'Sin plan';
       final haystack =
@@ -279,6 +303,61 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     );
   }
 
+  /// Exporta en CSV **lo que está a la vista**, con el filtro puesto. Es el
+  /// caso que pidió el dueño: saber a quién avisar cuando un plan se retira.
+  Future<void> _exportVisible({
+    required List<ClientModel> visible,
+    required Map<String, String> plans,
+    required DateTime today,
+    required ClientsScopeFilter? scopeFilter,
+  }) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final rows = [
+        for (final client in visible)
+          buildClientExportRow(
+            client,
+            plan: plans[client.planId] ?? 'Sin plan',
+            estado: _membershipLabel(_membership(client, today)),
+            vigencia: client.endDate == null
+                ? ''
+                : DateFormat('dd/MM/yyyy').format(
+                    toGymWallClock(client.endDate!, appClock.gymTimezone),
+                  ),
+          ),
+      ];
+      final businessDate = DateFormat('yyyy-MM-dd').format(today);
+      final scope = scopeFilter?.scope ?? 'Todos los socios visibles';
+      final saved = await _exportService.saveCsv(
+        rows: rows,
+        alcance: scope,
+        fechaCorte: businessDate,
+        zonaHoraria: appClock.gymTimezone,
+        nombreArchivo: scopeFilter == null
+            ? 'socios-$businessDate.csv'
+            : 'socios-${_slug(scopeFilter.label)}-$businessDate.csv',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            saved == null
+                ? 'Exportación cancelada.'
+                : '${rows.length} socio(s) exportados.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo exportar: $error')));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<void> _processPayment(ClientModel client) async {
     final planId = client.planId;
     if (planId == null || planId.isEmpty) return;
@@ -336,6 +415,20 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
 
   @override
   Widget build(BuildContext context) {
+    // Al llegar desde Planes se limpia lo que hubiera puesto antes: entrar a
+    // ver los asociados de un plan y encontrarse la lista vacía porque quedaba
+    // un filtro de estado sería exactamente lo contrario de lo que se pidió.
+    ref.listen<ClientsScopeFilter?>(clientsScopeFilterProvider, (
+      previous,
+      next,
+    ) {
+      if (next == null || previous?.id == next.id) return;
+      setState(() {
+        _filter = _ClientFilter.all;
+        _query = '';
+        _searchController.clear();
+      });
+    });
     return PulsoThemeScope(
       child: Builder(
         builder: (context) => ColoredBox(
@@ -355,6 +448,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   }
 
   Widget _buildPage(BuildContext context) {
+    final scopeFilter = ref.watch(clientsScopeFilterProvider);
     final clientsState = ref.watch(clientNotifierProvider);
     final plansState = ref.watch(paymentPlanProvider);
     final trainersState = ref.watch(trainerProvider);
@@ -374,7 +468,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     };
     final all = clientsState.value ?? const <ClientModel>[];
     final today = todayInZone(appClock.gymTimezone);
-    final visible = _visible(all, plans, today);
+    final visible = _visible(all, plans, today, scopeFilter: scopeFilter);
     final states = [for (final client in all) _membership(client, today)];
     final active = states
         .where((state) => state == _MembershipState.active)
@@ -424,7 +518,10 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
                     kind: PulsoStateKind.empty,
                     message: all.isEmpty
                         ? 'Todavía no hay socios registrados.'
-                        : 'Ningún socio coincide con la consulta.',
+                        : scopeFilter == null
+                        ? 'Ningún socio coincide con la consulta.'
+                        : 'Ningún socio de “${scopeFilter.label}” coincide '
+                              'con la consulta.',
                   ),
                 )
               : _ClientWorkspace(
@@ -493,11 +590,29 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
               controller: _searchController,
               focusNode: _searchFocus,
               filter: _filter,
+              exporting: _exporting,
+              exportEnabled: visible.isNotEmpty,
               onSearch: (value) => setState(() => _query = value),
               onFilter: (value) => setState(() => _filter = value),
               onRefresh: () =>
                   ref.read(clientNotifierProvider.notifier).refresh(),
+              onExport: () => _exportVisible(
+                visible: visible,
+                plans: plans,
+                today: today,
+                scopeFilter: scopeFilter,
+              ),
             ),
+            if (scopeFilter != null) ...[
+              const SizedBox(height: 10),
+              _ScopeFilterNotice(
+                heading: scopeFilter.heading,
+                label: scopeFilter.label,
+                count: visible.length,
+                onClear: () =>
+                    ref.read(clientsScopeFilterProvider.notifier).clear(),
+              ),
+            ],
             const SizedBox(height: 12),
             if (scrollPage)
               SizedBox(height: 410, child: catalog)
@@ -602,21 +717,91 @@ class _ClientHeader extends StatelessWidget {
   }
 }
 
+/// Aviso de que la lista está acotada a los socios de un plan o de un
+/// entrenador. Se dibuja siempre que el filtro esté puesto: un listado
+/// filtrado sin decirlo es la forma más fácil de que alguien concluya que
+/// «faltan socios».
+class _ScopeFilterNotice extends StatelessWidget {
+  const _ScopeFilterNotice({
+    required this.heading,
+    required this.label,
+    required this.count,
+    required this.onClear,
+  });
+
+  final String heading;
+  final String label;
+  final int count;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return PulsoPanel(
+      key: const ValueKey('clients-scope-filter-notice'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      child: Row(
+        children: [
+          Icon(Icons.groups_outlined, size: 18, color: tokens.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: '$heading ',
+                children: [
+                  TextSpan(
+                    text: '“$label”',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  TextSpan(
+                    text: count == 1 ? ' · 1 socio' : ' · $count socios',
+                    style: TextStyle(
+                      fontFamily: PulsoFonts.mono,
+                      fontSize: 11,
+                      color: tokens.muted,
+                    ),
+                  ),
+                ],
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: tokens.chalkDim, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 10),
+          PulsoSecondaryButton(
+            key: const ValueKey('clients-scope-filter-clear'),
+            label: 'Quitar filtro',
+            icon: Icons.close,
+            onPressed: onClear,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ClientCommand extends StatelessWidget {
   const _ClientCommand({
     required this.controller,
     required this.focusNode,
     required this.filter,
+    required this.exporting,
+    required this.exportEnabled,
     required this.onSearch,
     required this.onFilter,
     required this.onRefresh,
+    required this.onExport,
   });
   final TextEditingController controller;
   final FocusNode focusNode;
   final _ClientFilter filter;
+  final bool exporting;
+  final bool exportEnabled;
   final ValueChanged<String> onSearch;
   final ValueChanged<_ClientFilter> onFilter;
   final VoidCallback onRefresh;
+  final VoidCallback onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -657,6 +842,12 @@ class _ClientCommand extends StatelessWidget {
                 label: 'Inactivos',
                 selected: filter == _ClientFilter.inactive,
                 onTap: () => onFilter(_ClientFilter.inactive),
+              ),
+              PulsoIconButton(
+                key: const ValueKey('clients-export-csv'),
+                icon: exporting ? Icons.hourglass_empty : Icons.download,
+                tooltip: 'Exportar en CSV lo que está a la vista',
+                onPressed: exporting || !exportEnabled ? null : onExport,
               ),
               PulsoIconButton(
                 icon: Icons.refresh,

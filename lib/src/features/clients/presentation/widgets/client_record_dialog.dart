@@ -230,6 +230,23 @@ class _RecordBody extends ConsumerWidget {
             },
           ),
         ),
+        // La barra de filtros queda FIJA cuando hay ancho para ello: es el
+        // mando del expediente y, dentro del scroll, con un historial largo
+        // había que subir hasta arriba solo para cambiar un filtro. En
+        // compacto no se fija: el alto disponible no da y desbordaría.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 760) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: _RecordExplorerBar(
+                record: record,
+                filter: filter,
+                visibleCount: visibleMemberships.length,
+              ),
+            );
+          },
+        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -238,12 +255,21 @@ class _RecordBody extends ConsumerWidget {
               children: [
                 _Summary(record: record),
                 const SizedBox(height: 16),
-                _RecordExplorerBar(
-                  record: record,
-                  filter: filter,
-                  visibleCount: visibleMemberships.length,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth >= 760) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _RecordExplorerBar(
+                        record: record,
+                        filter: filter,
+                        visibleCount: visibleMemberships.length,
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
                 const PulsoLabel('HISTORIAL DE MEMBRESÍAS'),
                 const SizedBox(height: 8),
                 if (visibleMemberships.isEmpty)
@@ -1192,16 +1218,76 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                     style: TextStyle(color: tokens.muted, fontSize: 11.5),
                   )
                 else
-                  for (final payment in membership.payments)
-                    _PaymentLine(
-                      payment: payment,
-                      client: client,
-                      planName: membership.planName,
-                    ),
+                  _ListaAcotada(
+                    key: ValueKey('membership-payments-${membership.id}'),
+                    filas: membership.payments.length,
+                    children: [
+                      for (final payment in membership.payments)
+                        _PaymentLine(
+                          payment: payment,
+                          client: client,
+                          planName: membership.planName,
+                        ),
+                    ],
+                  ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Lista que crece hasta cierto punto y a partir de ahí se desplaza por dentro.
+///
+/// Regla PULSO: **la tabla scrollea, no la vista**. Un socio con muchos cobros
+/// alargaba el expediente hasta empujar los filtros fuera de la pantalla.
+class _ListaAcotada extends StatefulWidget {
+  const _ListaAcotada({
+    super.key,
+    required this.filas,
+    required this.children,
+  });
+
+  final int filas;
+  final List<Widget> children;
+
+  /// A partir de aquí la lista deja de crecer y se desplaza por dentro.
+  static const int filasSinScroll = 5;
+  static const double altoFila = 46;
+
+  @override
+  State<_ListaAcotada> createState() => _ListaAcotadaState();
+}
+
+class _ListaAcotadaState extends State<_ListaAcotada> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contenido = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: widget.children,
+    );
+    if (widget.filas <= _ListaAcotada.filasSinScroll) return contenido;
+    return SizedBox(
+      height: _ListaAcotada.filasSinScroll * _ListaAcotada.altoFila,
+      child: Scrollbar(
+        controller: _controller,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _controller,
+          primary: false,
+          child: contenido,
+        ),
       ),
     );
   }

@@ -6,10 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/identity/document_type.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
+import '../../../../core/utils/cuba_ci.dart';
 import '../../../../core/utils/datetime_zone.dart';
+import '../../../../core/widgets/cuba_ci_field.dart';
+import '../../../../core/widgets/document_type_selector.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/trainer_model.dart';
 import 'camera_selector_dialog.dart';
@@ -41,11 +45,16 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
   late final TextEditingController _correoController;
 
   String _sexo = 'M';
+  DocumentType _documentType = DocumentType.cubanCi;
+  bool _documentTypeManuallySelected = false;
+  bool _sexoSeleccionadoManualmente = false;
+  bool _sexoDerivadoDelCi = false;
   bool _activo = true;
   Uint8List? _fotoBytes;
   late DateTime _fechaInicio;
   bool _busy = false;
   String? _error;
+  late final DateTime _ciReferenceDate;
 
   static final _dateFmt = DateFormat('yyyy-MM-dd');
 
@@ -55,7 +64,13 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
   void initState() {
     super.initState();
     final trainer = widget.trainer;
+    _ciReferenceDate = todayInZone(appClock.gymTimezone);
     _ciController = TextEditingController(text: trainer?.ci);
+    _documentType = trainer == null
+        ? DocumentType.cubanCi
+        : DocumentType.fromCode(trainer.documentType);
+    _documentTypeManuallySelected =
+        trainer != null && _documentType.isClassified;
     _nombresController = TextEditingController(text: trainer?.nombres);
     _apellidosController = TextEditingController(text: trainer?.apellidos);
     _direccionController = TextEditingController(text: trainer?.direccion);
@@ -66,6 +81,7 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
     if (trainer != null) {
       final rawSexo = (trainer.sexo ?? 'M').trim().toUpperCase();
       _sexo = rawSexo.startsWith('F') ? 'F' : 'M';
+      _sexoSeleccionadoManualmente = true;
       _activo = trainer.activo;
       _fechaInicio = trainer.fechaInicio;
       if (trainer.foto != null) {
@@ -76,6 +92,62 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
     } else {
       _fechaInicio = todayInZone(appClock.gymTimezone);
     }
+  }
+
+  void _handleCiAnalysis(CubaCiAnalisis analysis) {
+    if (analysis.esValido &&
+        !_documentTypeManuallySelected &&
+        _documentType != DocumentType.cubanCi &&
+        mounted) {
+      setState(() => _documentType = DocumentType.cubanCi);
+    }
+    if (!_documentType.validatesCubanCi ||
+        _isEdit ||
+        _sexoSeleccionadoManualmente) {
+      return;
+    }
+    if (!analysis.esValido || analysis.sexoCodificado == null) {
+      if (_sexoDerivadoDelCi && mounted) {
+        setState(() => _sexoDerivadoDelCi = false);
+      }
+      return;
+    }
+    final next = analysis.sexoCodificado == CubaCiSexo.masculino ? 'M' : 'F';
+    if (next == _sexo && _sexoDerivadoDelCi) return;
+    setState(() {
+      _sexo = next;
+      _sexoDerivadoDelCi = true;
+    });
+  }
+
+  void _selectDocumentType(DocumentType value) {
+    final restricted = restrictDocumentText(_ciController.text, value);
+    if (restricted != _ciController.text) {
+      _ciController.value = TextEditingValue(
+        text: restricted,
+        selection: TextSelection.collapsed(offset: restricted.length),
+      );
+    }
+    setState(() {
+      _documentType = value;
+      _documentTypeManuallySelected = true;
+      if (!value.validatesCubanCi) {
+        _sexoDerivadoDelCi = false;
+      }
+    });
+    if (value.validatesCubanCi) {
+      _handleCiAnalysis(
+        analizarCubaCi(_ciController.text, fechaReferencia: _ciReferenceDate),
+      );
+    }
+  }
+
+  void _selectSexoManually(String? value) {
+    setState(() {
+      _sexo = value ?? 'M';
+      _sexoSeleccionadoManualmente = true;
+      _sexoDerivadoDelCi = false;
+    });
   }
 
   @override
@@ -132,6 +204,7 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
     final correo = _correoController.text.trim();
     final payload = <String, dynamic>{
       'ci_entrenador': _ciController.text.trim(),
+      'tipo_documento': _documentType.code,
       'nombres_entrenador': _nombresController.text.trim(),
       'apellidos_entrenador': _apellidosController.text.trim(),
       'sexo_entrenador': _sexo == 'M' ? 'Masculino' : 'Femenino',
@@ -375,18 +448,40 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
   }
 
   Widget _buildPersonalFields(BuildContext context) {
-    final ci = TextFormField(
-      key: const ValueKey('pulso-trainer-ci'),
-      controller: _ciController,
-      textInputAction: TextInputAction.next,
-      style: const TextStyle(
-        fontFamily: PulsoFonts.mono,
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: const InputDecoration(
-        labelText: 'Cédula de identidad (CI)',
-      ),
-      validator: _required,
+    final ci = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DocumentTypeSelector(
+          value: _documentType,
+          onChanged: _selectDocumentType,
+          enabled: !_busy,
+          showUnknown: _isEdit && _documentType == DocumentType.unknown,
+        ),
+        const SizedBox(height: 10),
+        CubaCiField(
+          fieldKey: const ValueKey('pulso-trainer-ci'),
+          controller: _ciController,
+          referenceDate: _ciReferenceDate,
+          documentType: _documentType,
+          onAnalysisChanged: _handleCiAnalysis,
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(
+            fontFamily: PulsoFonts.mono,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: InputDecoration(
+            labelText: _documentType == DocumentType.cubanCi
+                ? 'Carné de identidad (CI)'
+                : 'Número de documento',
+            hintText: _documentType == DocumentType.cubanCi
+                ? 'Ej: 91021020015'
+                : _documentType == DocumentType.passport
+                ? 'Ej: AB1234567'
+                : 'Número o código del documento',
+          ),
+          requiredMessage: 'Campo requerido',
+        ),
+      ],
     );
     final fecha = TextFormField(
       key: ValueKey('pulso-trainer-start-$_fechaLabel'),
@@ -420,14 +515,14 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
       key: const ValueKey('pulso-trainer-sexo'),
       initialValue: _sexo,
       isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Sexo'),
+      decoration: InputDecoration(
+        labelText: _sexoDerivadoDelCi ? 'Sexo · desde CI' : 'Sexo',
+      ),
       items: const [
         DropdownMenuItem(value: 'M', child: Text('Masculino')),
         DropdownMenuItem(value: 'F', child: Text('Femenino')),
       ],
-      onChanged: _busy
-          ? null
-          : (value) => setState(() => _sexo = value ?? 'M'),
+      onChanged: _busy ? null : _selectSexoManually,
     );
     return LayoutBuilder(
       builder: (context, constraints) {

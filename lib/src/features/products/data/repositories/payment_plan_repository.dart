@@ -72,13 +72,15 @@ class PaymentPlanRepository {
     }
   }
 
+  /// Esquema de cuotas de un plan (R5.2).
+  ///
+  /// Propaga el error en vez de devolver una lista vacía: quien llama necesita
+  /// distinguir «este plan no tiene cuotas» de «no se pudieron leer». Confundir
+  /// ambos casos hacía que la ventana de cobro dejara de ofrecer el pago por
+  /// cuotas sin decir por qué.
   Future<List<Map<String, dynamic>>> getPlanCuotasScheme(String planId) async {
-    try {
-      final response = await _client.get('/planes-pago/$planId/cuotas');
-      return (response.data as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      return [];
-    }
+    final response = await _client.get('/planes-pago/$planId/cuotas');
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// Cuotas materializadas de una membresía (R5.2), en orden.

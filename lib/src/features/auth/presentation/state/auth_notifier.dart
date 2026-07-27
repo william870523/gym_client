@@ -33,6 +33,8 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> logout() async {
+    final repository = ref.read(authRepositoryProvider);
+    await repository.logout();
     ref.read(appearanceUserProvider.notifier).set(null);
     state = const AsyncValue.data(null);
   }

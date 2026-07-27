@@ -129,7 +129,10 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
           padding,
           compact ? 18 : 24,
         );
-        if (_tab == _AccountingTab.operationalResults) {
+        final contentOwnsVerticalScroll =
+            _tab == _AccountingTab.operationalResults ||
+            _tab == _AccountingTab.expenses;
+        if (contentOwnsVerticalScroll) {
           return Padding(
             padding: pagePadding,
             child: Column(

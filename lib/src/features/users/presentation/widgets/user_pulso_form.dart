@@ -77,6 +77,27 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
     super.dispose();
   }
 
+  /// Roles que el sistema ofrece al crear o editar una cuenta.
+  static const _knownRoles = <String>[
+    'admin',
+    'reception',
+    'accounting',
+    'trainer',
+    'maintenance',
+  ];
+
+  /// Opciones del desplegable **incluyendo el rol que la cuenta ya tiene**.
+  ///
+  /// Sin esto, abrir un usuario cuyo rol no esté en la lista —el `user` por
+  /// defecto del esquema, o cualquier rol sembrado por una fixture— reventaba
+  /// el formulario entero con una aserción de Flutter en vez de dejar
+  /// corregirlo. Se conserva el valor tal cual para no cambiar el rol de nadie
+  /// por el mero hecho de abrir su ficha.
+  List<String> get _roleOptions => [
+    ..._knownRoles,
+    if (_role.isNotEmpty && !_knownRoles.contains(_role)) _role,
+  ];
+
   String _roleLabel(String role) => switch (role) {
     'admin' => 'Administrador',
     'reception' => 'Recepción',
@@ -276,16 +297,14 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
                                 labelText: 'Rol del sistema',
                               ),
                               items: [
-                                for (final role in const [
-                                  'admin',
-                                  'reception',
-                                  'accounting',
-                                  'trainer',
-                                  'maintenance',
-                                ])
+                                for (final role in _roleOptions)
                                   DropdownMenuItem(
                                     value: role,
-                                    child: Text(_roleLabel(role)),
+                                    child: Text(
+                                      _knownRoles.contains(role)
+                                          ? _roleLabel(role)
+                                          : '$role (rol heredado)',
+                                    ),
                                   ),
                               ],
                               onChanged: _busy

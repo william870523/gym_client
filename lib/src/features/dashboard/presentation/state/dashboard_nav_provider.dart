@@ -7,6 +7,10 @@ class DashboardNavNotifier extends Notifier<int> {
   void setIndex(int index) {
     state = index;
   }
+
+  void reset() {
+    state = 0;
+  }
 }
 
 final dashboardNavProvider = NotifierProvider<DashboardNavNotifier, int>(

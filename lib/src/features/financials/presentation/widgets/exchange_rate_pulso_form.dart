@@ -56,6 +56,7 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
   final List<_SurchargeEntry> _surcharges = [];
 
   static final _dateFmt = DateFormat('yyyy-MM-dd');
+  static final _rateFmt = NumberFormat('#,##0.######');
 
   bool get _isEdit => widget.initialData != null;
 
@@ -316,6 +317,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
                                 helperText:
                                     'Cuántas unidades de destino vale 1 unidad base.',
                               ),
+                              // Repinta el enunciado de abajo mientras se
+                              // teclea: es lo que delata una tasa al revés.
+                              onChanged: (_) => setState(() {}),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Campo obligatorio.';
@@ -327,6 +331,8 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
                                 return null;
                               },
                             ),
+                            const SizedBox(height: 12),
+                            _buildRateReading(context),
                             const SizedBox(height: 16),
                             _buildDateFields(context),
                             const SizedBox(height: 24),
@@ -384,7 +390,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       ),
       data: (currencies) {
         final base = _buildCurrencyDropdown(
-          key: const ValueKey('pulso-rate-base'),
+          // La clave lleva la selección vigente para que «Invertir el par»
+          // recargue el selector con la moneda nueva y no con la anterior.
+          key: ValueKey('pulso-rate-base-$_baseId'),
           label: 'Moneda base',
           value: _baseId,
           currencies: currencies,
@@ -460,6 +468,86 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       validator: (selection) =>
           selection == null ? 'Selecciona una divisa.' : null,
       onChanged: _busy ? null : onChanged,
+    );
+  }
+
+  /// Enuncia en voz alta lo que se va a guardar y, debajo, la lectura inversa.
+  /// Un par cargado al revés (450 CUP por euro escrito como «1 CUP = 450 EUR»)
+  /// es aritméticamente válido y pasa cualquier validación: solo se detecta
+  /// leyéndolo. Por eso también se ofrece invertir el par sin volver a teclear.
+  Widget _buildRateReading(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final currencies =
+        ref.watch(currencyProvider).value ?? const <CurrencyModel>[];
+
+    String? codeOf(String? id) {
+      if (id == null) return null;
+      for (final currency in currencies) {
+        if (currency.id == id) return currency.code.toUpperCase();
+      }
+      return null;
+    }
+
+    final base = codeOf(_baseId);
+    final target = codeOf(_targetId);
+    final value = double.tryParse(_rateController.text.trim());
+    final ready = base != null && target != null && value != null && value > 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.raised,
+        border: Border.all(color: ready ? tokens.accent : tokens.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const PulsoLabel('Se guardará así'),
+          const SizedBox(height: 8),
+          if (!ready)
+            Text(
+              'Elige el par y escribe la tasa para leer cómo queda enunciada.',
+              style: TextStyle(color: tokens.muted, fontSize: 12),
+            )
+          else ...[
+            Text(
+              '1 $base = ${_rateFmt.format(value)} $target',
+              key: const ValueKey('pulso-rate-reading'),
+              style: const TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'lo que equivale a 1 $target = ${_rateFmt.format(1 / value)} $base',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 11,
+                color: tokens.muted,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: PulsoSecondaryButton(
+                key: const ValueKey('pulso-rate-swap'),
+                label: 'Invertir el par',
+                icon: Icons.swap_horiz,
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        final previousBase = _baseId;
+                        _baseId = _targetId;
+                        _targetId = previousBase;
+                      }),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

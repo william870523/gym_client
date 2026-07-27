@@ -165,6 +165,53 @@ void main() {
     expect(repository.pausedMembershipId, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  /// Regla PULSO: la tabla scrollea, no la vista. Los filtros son el mando del
+  /// expediente; dentro del scroll, con un historial largo había que subir
+  /// hasta arriba solo para cambiar uno.
+  testWidgets('en escritorio los filtros no se van con el scroll', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    final filtros = find.text('EXPLORAR HISTORIAL');
+    expect(filtros, findsOneWidget);
+    final antes = tester.getTopLeft(filtros);
+
+    // Se desplaza el historial hacia arriba.
+    await tester.drag(
+      find.text('HISTORIAL DE MEMBRESÍAS'),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
+
+    // La barra sigue visible y en el mismo sitio: no viajó con el scroll.
+    expect(filtros, findsOneWidget);
+    expect(tester.getTopLeft(filtros), antes);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('en compacto los filtros siguen accesibles dentro del scroll', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // No se fijan (no cabrían), pero existen una sola vez: sin duplicados.
+    expect(find.text('EXPLORAR HISTORIAL'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Widget _harness({

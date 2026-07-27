@@ -1360,6 +1360,12 @@ class TreasuryMovementModel {
   final bool late;
   final bool reconciled;
   final TreasuryManualOperationModel? manualOperation;
+  // R5.6 — quién recibió el dinero y, si el movimiento es un contramovimiento,
+  // quién lo anuló. Son responsabilidades distintas y nunca se sustituyen.
+  final String? collectorUserId;
+  final String? collectorName;
+  final String? collectorRole;
+  final String? annulledByName;
 
   const TreasuryMovementModel({
     required this.id,
@@ -1382,9 +1388,17 @@ class TreasuryMovementModel {
     required this.late,
     this.reconciled = false,
     this.manualOperation,
+    this.collectorUserId,
+    this.collectorName,
+    this.collectorRole,
+    this.annulledByName,
   });
 
   bool get isEntry => direction == 'ENTRADA';
+
+  /// Cobro anterior a R5.6: no se sabe quién lo recibió y se dice así, en vez
+  /// de dejar el hueco en blanco o atribuirlo a nadie.
+  bool get hasCollector => (collectorUserId ?? '').isNotEmpty;
 
   factory TreasuryMovementModel.fromJson(Map<String, dynamic> json) {
     return TreasuryMovementModel(
@@ -1416,6 +1430,81 @@ class TreasuryMovementModel {
               Map<String, dynamic>.from(json['operacion_manual'] as Map),
             )
           : null,
+      collectorUserId: json['cobrado_por_user_id'] as String?,
+      collectorName: json['cobrado_por_nombre_snapshot'] as String?,
+      collectorRole: json['cobrado_por_rol_snapshot'] as String?,
+      annulledByName: json['anulado_por_nombre_snapshot'] as String?,
+    );
+  }
+}
+
+/// Una fila de «Cobros por recepcionista»: una persona, una cuenta y una
+/// moneda (docs/PAYMENT_COLLECTOR_ATTRIBUTION.md §6).
+///
+/// El servidor calcula los importes y ya los separa por moneda; aquí solo se
+/// presentan. Nunca se suman dos monedas en una misma fila ni en un total.
+class TreasuryCollectorRowModel {
+  final String? userId;
+  final String name;
+  final String? role;
+  final String? origin;
+  final bool unattributed;
+  final String? accountId;
+  final String accountName;
+  final String currencyId;
+  final String currencyCode;
+  final int payments;
+  final int clients;
+  final double gross;
+  final double change;
+  final double annulled;
+  final double net;
+
+  const TreasuryCollectorRowModel({
+    required this.userId,
+    required this.name,
+    required this.role,
+    required this.origin,
+    required this.unattributed,
+    required this.accountId,
+    required this.accountName,
+    required this.currencyId,
+    required this.currencyCode,
+    required this.payments,
+    required this.clients,
+    required this.gross,
+    required this.change,
+    required this.annulled,
+    required this.net,
+  });
+
+  factory TreasuryCollectorRowModel.fromJson(Map<String, dynamic> json) {
+    final unattributed = json['historico_sin_atribuir'] == true;
+    return TreasuryCollectorRowModel(
+      userId: json['cobrado_por_user_id'] as String?,
+      name: unattributed
+          ? 'Sin atribuir · histórico'
+          : (json['cobrado_por_nombre_snapshot'] as String? ??
+                json['cobrado_por_user_id'] as String? ??
+                'Sin atribuir · histórico'),
+      role: json['cobrado_por_rol_snapshot'] as String?,
+      origin: json['cobrado_por_origen'] as String?,
+      unattributed: unattributed,
+      accountId: json['cuenta_id'] as String?,
+      // En el rollup mensual no hay una cuenta única: llega cuántas hubo.
+      accountName: json['cuenta_nombre'] as String? ??
+          (json['cuentas'] == null
+              ? 'Sin cuenta'
+              : '${json['cuentas']} cuenta(s)'),
+      currencyId: json['moneda_id'] as String? ?? '',
+      currencyCode:
+          json['moneda_codigo'] as String? ?? json['moneda_id'] as String? ?? '',
+      payments: (json['pagos'] as num?)?.toInt() ?? 0,
+      clients: (json['clientes'] as num?)?.toInt() ?? 0,
+      gross: _moneyValue(json['bruto']),
+      change: _moneyValue(json['cambio']),
+      annulled: _moneyValue(json['anulado']),
+      net: _moneyValue(json['neto']),
     );
   }
 }
@@ -1442,12 +1531,117 @@ class TreasuryIncidentsModel {
   }
 }
 
+/// Un recargo por mora perdonado en un cobro (docs/RECARGO_MORA.md §6-bis).
+class TreasuryWaivedLateFeeModel {
+  final String paymentId;
+  final String memberId;
+  final String memberName;
+  final double amount;
+  final String currencyId;
+  final String currencyCode;
+  final String reason;
+  final String authorizedBy;
+
+  const TreasuryWaivedLateFeeModel({
+    required this.paymentId,
+    required this.memberId,
+    required this.memberName,
+    required this.amount,
+    required this.currencyId,
+    required this.currencyCode,
+    required this.reason,
+    required this.authorizedBy,
+  });
+
+  factory TreasuryWaivedLateFeeModel.fromJson(Map<String, dynamic> json) {
+    return TreasuryWaivedLateFeeModel(
+      paymentId: json['pago_cliente_id'] as String? ?? '',
+      memberId: json['ci'] as String? ?? '',
+      memberName: json['socio'] as String? ?? json['ci'] as String? ?? '',
+      amount: _moneyValue(json['importe']),
+      currencyId: json['moneda_id'] as String? ?? '',
+      currencyCode:
+          json['moneda_codigo'] as String? ?? json['moneda_id'] as String? ?? '',
+      reason: json['motivo'] as String? ?? '',
+      authorizedBy: json['condonado_por'] as String? ?? 'Sin registrar',
+    );
+  }
+}
+
+/// Total condonado en UNA moneda. El servidor nunca mezcla monedas.
+class TreasuryWaivedLateFeeCurrencyModel {
+  final String currencyId;
+  final String currencyCode;
+  final double amount;
+  final int count;
+
+  const TreasuryWaivedLateFeeCurrencyModel({
+    required this.currencyId,
+    required this.currencyCode,
+    required this.amount,
+    required this.count,
+  });
+
+  factory TreasuryWaivedLateFeeCurrencyModel.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return TreasuryWaivedLateFeeCurrencyModel(
+      currencyId: json['moneda_id'] as String? ?? '',
+      currencyCode:
+          json['moneda_codigo'] as String? ?? json['moneda_id'] as String? ?? '',
+      amount: _moneyValue(json['importe']),
+      count: (json['condonaciones'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Línea «recargos condonados» del cierre diario.
+///
+/// El importe lo calcula el servidor; aquí solo se presenta. No es un
+/// movimiento de caja: no entra en el arqueo ni en el saldo.
+class TreasuryWaivedLateFeesModel {
+  final List<TreasuryWaivedLateFeeCurrencyModel> byCurrency;
+  final List<TreasuryWaivedLateFeeModel> details;
+  final int count;
+
+  const TreasuryWaivedLateFeesModel({
+    this.byCurrency = const [],
+    this.details = const [],
+    this.count = 0,
+  });
+
+  bool get isEmpty => count == 0 || byCurrency.isEmpty;
+
+  factory TreasuryWaivedLateFeesModel.fromJson(Map<String, dynamic> json) {
+    final details = (json['detalle'] as List? ?? const [])
+        .map(
+          (item) => TreasuryWaivedLateFeeModel.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+    return TreasuryWaivedLateFeesModel(
+      byCurrency: (json['por_moneda'] as List? ?? const [])
+          .map(
+            (item) => TreasuryWaivedLateFeeCurrencyModel.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(),
+      details: details,
+      count: (json['condonaciones'] as num?)?.toInt() ?? details.length,
+    );
+  }
+}
+
 class TreasuryLedgerModel {
   final String businessDate;
   final List<TreasuryCurrencySummaryModel> currencySummaries;
   final List<TreasuryAccountDayModel> accounts;
   final List<TreasuryMovementModel> movements;
   final TreasuryIncidentsModel incidents;
+  final TreasuryWaivedLateFeesModel waivedLateFees;
+  final List<TreasuryCollectorRowModel> collectorRows;
   final TreasuryClosePolicyModel closePolicy;
   final TreasuryCloseCapabilitiesModel closeCapabilities;
   final List<TreasuryCloseRequestModel> closeRequests;
@@ -1459,6 +1653,8 @@ class TreasuryLedgerModel {
     required this.accounts,
     required this.movements,
     required this.incidents,
+    this.waivedLateFees = const TreasuryWaivedLateFeesModel(),
+    this.collectorRows = const [],
     this.closePolicy = const TreasuryClosePolicyModel(),
     this.closeCapabilities = const TreasuryCloseCapabilitiesModel(),
     this.closeRequests = const [],
@@ -1494,6 +1690,18 @@ class TreasuryLedgerModel {
           json['incidencias'] as Map? ?? const <String, dynamic>{},
         ),
       ),
+      waivedLateFees: TreasuryWaivedLateFeesModel.fromJson(
+        Map<String, dynamic>.from(
+          json['recargos_condonados'] as Map? ?? const <String, dynamic>{},
+        ),
+      ),
+      collectorRows: (json['cobros_por_recepcionista'] as List? ?? const [])
+          .map(
+            (item) => TreasuryCollectorRowModel.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(),
       closePolicy: TreasuryClosePolicyModel.fromJson(
         Map<String, dynamic>.from(
           json['politica_arqueo'] as Map? ?? const <String, dynamic>{},
@@ -1523,6 +1731,10 @@ class TreasuryMonthlySummaryModel {
   final String endDate;
   final List<TreasuryMonthlyCurrencyModel> currencies;
   final TreasuryMonthlyCloseStatusModel monthlyClose;
+  /// R5.6 — cobros del mes por persona y moneda. En el mes las cuentas se
+  /// funden (una recepcionista puede haber cobrado en varias cajas); las
+  /// monedas nunca.
+  final List<TreasuryCollectorRowModel> collectorRows;
 
   const TreasuryMonthlySummaryModel({
     required this.month,
@@ -1530,6 +1742,7 @@ class TreasuryMonthlySummaryModel {
     required this.endDate,
     required this.currencies,
     this.monthlyClose = const TreasuryMonthlyCloseStatusModel(),
+    this.collectorRows = const [],
   });
 
   factory TreasuryMonthlySummaryModel.fromJson(Map<String, dynamic> json) {
@@ -1549,6 +1762,13 @@ class TreasuryMonthlySummaryModel {
           json['cierre_mensual'] as Map? ?? const <String, dynamic>{},
         ),
       ),
+      collectorRows: (json['cobros_por_recepcionista'] as List? ?? const [])
+          .map(
+            (item) => TreasuryCollectorRowModel.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -2039,12 +2259,25 @@ class GastoGobernadoAplicacionModel {
 
   factory GastoGobernadoAplicacionModel.fromJson(Map<String, dynamic> json) {
     return GastoGobernadoAplicacionModel(
-      aplicacionId: json['aplicacion_id']?.toString() ?? json['aplicacionId']?.toString() ?? '',
-      gastoId: json['gasto_id']?.toString() ?? json['gastoId']?.toString() ?? '',
-      movimientoId: json['movimiento_id']?.toString() ?? json['movimientoId']?.toString(),
-      montoAplicado: json['monto_aplicado']?.toString() ?? json['montoAplicado']?.toString() ?? json['amount']?.toString() ?? '0.00',
-      estado: json['estado']?.toString() ?? json['state']?.toString() ?? 'APLICADA',
-      aplicadaAt: _requiredUtcInstant(json['aplicada_at'] ?? json['aplicadaAt'] ?? json['paidAt'], 'aplicada_at'),
+      aplicacionId:
+          json['aplicacion_id']?.toString() ??
+          json['aplicacionId']?.toString() ??
+          '',
+      gastoId:
+          json['gasto_id']?.toString() ?? json['gastoId']?.toString() ?? '',
+      movimientoId:
+          json['movimiento_id']?.toString() ?? json['movimientoId']?.toString(),
+      montoAplicado:
+          json['monto_aplicado']?.toString() ??
+          json['montoAplicado']?.toString() ??
+          json['amount']?.toString() ??
+          '0.00',
+      estado:
+          json['estado']?.toString() ?? json['state']?.toString() ?? 'APLICADA',
+      aplicadaAt: _requiredUtcInstant(
+        json['aplicada_at'] ?? json['aplicadaAt'] ?? json['paidAt'],
+        'aplicada_at',
+      ),
     );
   }
 }
@@ -2089,25 +2322,160 @@ class GastoGobernadoModel {
   });
 
   factory GastoGobernadoModel.fromJson(Map<String, dynamic> json) {
-    final rawApps = json['aplicaciones'] as List<dynamic>? ?? json['applications'] as List<dynamic>? ?? [];
+    final rawApps =
+        json['aplicaciones'] as List<dynamic>? ??
+        json['applications'] as List<dynamic>? ??
+        [];
     return GastoGobernadoModel(
-      gastoId: json['gasto_id']?.toString() ?? json['gastoId']?.toString() ?? json['id']?.toString() ?? '',
-      categoriaId: json['categoria_id']?.toString() ?? json['categoriaId']?.toString() ?? json['categoryId']?.toString() ?? '',
-      categoriaNombre: json['categoria_nombre']?.toString() ?? json['categoriaNombre']?.toString() ?? json['categoryName']?.toString(),
-      naturaleza: json['naturaleza']?.toString() ?? json['nature']?.toString() ?? 'OPERATIVO',
-      proveedorId: json['proveedor_id']?.toString() ?? json['proveedorId']?.toString() ?? json['supplierId']?.toString(),
-      proveedorNombre: json['proveedor_nombre']?.toString() ?? json['proveedorNombre']?.toString() ?? json['supplierName']?.toString(),
-      monedaId: json['moneda_id']?.toString() ?? json['monedaId']?.toString() ?? json['currencyId']?.toString() ?? '',
-      codigoMoneda: json['codigo_moneda']?.toString() ?? json['codigoMoneda']?.toString() ?? json['currencyCode']?.toString(),
-      descripcion: json['descripcion']?.toString() ?? json['description']?.toString() ?? '',
-      monto: json['monto']?.toString() ?? json['amount']?.toString() ?? '0.00',
-      periodoPertenenciaMes: json['periodo_pertenencia_mes']?.toString() ?? json['periodoPertenenciaMes']?.toString() ?? json['accrualMonth']?.toString() ?? '',
-      fechaPago: json['fecha_pago']?.toString() ?? json['fechaPago']?.toString() ?? json['paidBusinessDate']?.toString(),
-      fechaProgramada: json['fecha_programada'] != null ? DateTime.tryParse(json['fecha_programada'].toString())?.toUtc() : null,
-      estado: json['estado']?.toString() ?? json['state']?.toString() ?? 'PENDIENTE',
-      pagadoAcumulado: json['pagado_acumulado']?.toString() ?? json['pagadoAcumulado']?.toString() ?? json['paidAmount']?.toString() ?? '0.00',
-      comprobanteReferencia: json['comprobante_referencia']?.toString() ?? json['comprobanteReferencia']?.toString() ?? json['reference']?.toString(),
-      aplicaciones: rawApps.map((a) => GastoGobernadoAplicacionModel.fromJson(a as Map<String, dynamic>)).toList(),
+      gastoId:
+          json['gasto_id']?.toString() ??
+          json['gastoId']?.toString() ??
+          json['id']?.toString() ??
+          '',
+      categoriaId:
+          json['categoria_id']?.toString() ??
+          json['categoriaId']?.toString() ??
+          json['categoryId']?.toString() ??
+          '',
+      categoriaNombre:
+          json['categoria_nombre']?.toString() ??
+          json['categoriaNombre']?.toString() ??
+          json['categoryName']?.toString(),
+      naturaleza:
+          json['categoria_naturaleza']?.toString() ??
+          json['naturaleza']?.toString() ??
+          json['nature']?.toString() ??
+          'OPERATIVO',
+      proveedorId:
+          json['proveedor_id']?.toString() ??
+          json['proveedorId']?.toString() ??
+          json['supplierId']?.toString(),
+      proveedorNombre:
+          json['proveedor_nombre']?.toString() ??
+          json['proveedorNombre']?.toString() ??
+          json['supplierName']?.toString(),
+      monedaId:
+          json['moneda_id']?.toString() ??
+          json['monedaId']?.toString() ??
+          json['currencyId']?.toString() ??
+          '',
+      codigoMoneda:
+          json['moneda_codigo']?.toString() ??
+          json['codigo_moneda']?.toString() ??
+          json['codigoMoneda']?.toString() ??
+          json['currencyCode']?.toString(),
+      descripcion:
+          json['descripcion']?.toString() ??
+          json['description']?.toString() ??
+          '',
+      monto:
+          json['importe']?.toString() ??
+          json['monto']?.toString() ??
+          json['amount']?.toString() ??
+          '0.00',
+      periodoPertenenciaMes:
+          json['mes_pertenencia']?.toString() ??
+          json['periodo_pertenencia_mes']?.toString() ??
+          json['periodoPertenenciaMes']?.toString() ??
+          json['accrualMonth']?.toString() ??
+          '',
+      fechaPago:
+          json['fecha_pago']?.toString() ??
+          json['fechaPago']?.toString() ??
+          json['paidBusinessDate']?.toString(),
+      fechaProgramada: json['fecha_programada'] != null
+          ? DateTime.tryParse(json['fecha_programada'].toString())?.toUtc()
+          : null,
+      estado:
+          json['estado']?.toString() ??
+          json['state']?.toString() ??
+          'PENDIENTE',
+      pagadoAcumulado:
+          json['pagado_acumulado']?.toString() ??
+          json['pagadoAcumulado']?.toString() ??
+          json['paidAmount']?.toString() ??
+          '0.00',
+      comprobanteReferencia:
+          json['comprobante_referencia']?.toString() ??
+          json['comprobanteReferencia']?.toString() ??
+          json['reference']?.toString(),
+      aplicaciones: rawApps
+          .map(
+            (a) => GastoGobernadoAplicacionModel.fromJson(
+              a as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class GovernedExpenseCurrencyModel {
+  final String monedaId;
+  final String codigoMoneda;
+  final String devengadoMes;
+  final String pagadoMes;
+  final String pagadoAcumulado;
+  final String pagoAnticipado;
+  final String pagoAtrasado;
+  final String pendientePago;
+  final List<GastoGobernadoModel> gastos;
+
+  GovernedExpenseCurrencyModel({
+    required this.monedaId,
+    required this.codigoMoneda,
+    required this.devengadoMes,
+    required this.pagadoMes,
+    required this.pagadoAcumulado,
+    required this.pagoAnticipado,
+    required this.pagoAtrasado,
+    required this.pendientePago,
+    required this.gastos,
+  });
+
+  factory GovernedExpenseCurrencyModel.fromJson(Map<String, dynamic> json) {
+    final rawExpenses =
+        json['gastos'] as List<dynamic>? ??
+        json['expenses'] as List<dynamic>? ??
+        const [];
+    return GovernedExpenseCurrencyModel(
+      monedaId:
+          json['moneda_id']?.toString() ?? json['currencyId']?.toString() ?? '',
+      codigoMoneda:
+          json['moneda_codigo']?.toString() ??
+          json['codigo_moneda']?.toString() ??
+          json['currencyCode']?.toString() ??
+          'SIN MONEDA',
+      devengadoMes:
+          json['devengado_mes']?.toString() ??
+          json['total_devengado']?.toString() ??
+          json['totalDevengado']?.toString() ??
+          '0.00',
+      pagadoMes:
+          json['pagado_mes']?.toString() ??
+          json['total_pagado']?.toString() ??
+          json['totalPagado']?.toString() ??
+          '0.00',
+      pagadoAcumulado:
+          json['pagado_acumulado']?.toString() ??
+          json['total_pagado']?.toString() ??
+          json['totalPagado']?.toString() ??
+          '0.00',
+      pagoAnticipado: json['pago_anticipado']?.toString() ?? '0.00',
+      pagoAtrasado: json['pago_atrasado']?.toString() ?? '0.00',
+      pendientePago:
+          json['pendiente_pago']?.toString() ??
+          json['total_pendiente']?.toString() ??
+          json['totalPendiente']?.toString() ??
+          '0.00',
+      gastos: rawExpenses
+          .whereType<Map>()
+          .map(
+            (expense) => GastoGobernadoModel.fromJson(
+              Map<String, dynamic>.from(expense),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }
@@ -2115,66 +2483,65 @@ class GastoGobernadoModel {
 class GovernedExpensesReportModel {
   final String mes;
   final String fechaNegocio;
-  final List<GastoGobernadoModel> gastos;
+  final List<GovernedExpenseCurrencyModel> monedas;
   final Map<String, String> resumenPorCategoria;
   final Map<String, String> resumenPorNaturaleza;
-  final String totalDevengado;
-  final String totalPagado;
-  final String totalPendiente;
 
   GovernedExpensesReportModel({
     required this.mes,
     required this.fechaNegocio,
-    required this.gastos,
-    required this.resumenPorCategoria,
-    required this.resumenPorNaturaleza,
-    required this.totalDevengado,
-    required this.totalPagado,
-    required this.totalPendiente,
+    required this.monedas,
+    this.resumenPorCategoria = const {},
+    this.resumenPorNaturaleza = const {},
   });
 
-  factory GovernedExpensesReportModel.fromJson(Map<String, dynamic> json) {
-    final List<GastoGobernadoModel> parsedGastos = [];
-    String totalDevengado = '0.00';
-    String totalPagado = '0.00';
-    String totalPendiente = '0.00';
+  List<GastoGobernadoModel> get gastos =>
+      monedas.expand((currency) => currency.gastos).toList(growable: false);
 
-    if (json['monedas'] is List && (json['monedas'] as List).isNotEmpty) {
-      final currencies = json['monedas'] as List<dynamic>;
-      for (final cur in currencies) {
-        if (cur is Map<String, dynamic>) {
-          if (cur['gastos'] is List) {
-            for (final g in cur['gastos'] as List<dynamic>) {
-              if (g is Map<String, dynamic>) {
-                parsedGastos.add(GastoGobernadoModel.fromJson(g));
-              }
-            }
-          }
-          totalDevengado = cur['devengado_mes']?.toString() ?? totalDevengado;
-          totalPagado = cur['pagado_mes']?.toString() ?? totalPagado;
-          totalPendiente = cur['pendiente_pago']?.toString() ?? totalPendiente;
-        }
-      }
-    } else {
-      final rawExpenses = json['gastos'] as List<dynamic>? ?? json['expenses'] as List<dynamic>? ?? [];
-      parsedGastos.addAll(rawExpenses.map((e) => GastoGobernadoModel.fromJson(e as Map<String, dynamic>)));
-      totalDevengado = json['total_devengado']?.toString() ?? json['totalDevengado']?.toString() ?? '0.00';
-      totalPagado = json['total_pagado']?.toString() ?? json['totalPagado']?.toString() ?? '0.00';
-      totalPendiente = json['total_pendiente']?.toString() ?? json['totalPendiente']?.toString() ?? '0.00';
+  factory GovernedExpensesReportModel.fromJson(Map<String, dynamic> json) {
+    final rawCurrencies = json['monedas'] as List<dynamic>? ?? const [];
+    final currencies = rawCurrencies
+        .whereType<Map>()
+        .map(
+          (currency) => GovernedExpenseCurrencyModel.fromJson(
+            Map<String, dynamic>.from(currency),
+          ),
+        )
+        .toList();
+
+    // Compatibilidad con respuestas antiguas de una sola moneda. El bloque se
+    // conserva como una moneda explícita; nunca se combina con otra.
+    if (currencies.isEmpty &&
+        (json['gastos'] is List ||
+            json['expenses'] is List ||
+            json['total_devengado'] != null ||
+            json['totalDevengado'] != null)) {
+      currencies.add(GovernedExpenseCurrencyModel.fromJson(json));
     }
 
-    final rawCatSummary = json['resumen_por_categoria'] as Map<String, dynamic>? ?? json['categorySummary'] as Map<String, dynamic>? ?? {};
-    final rawNatSummary = json['resumen_por_naturaleza'] as Map<String, dynamic>? ?? json['natureSummary'] as Map<String, dynamic>? ?? {};
+    final rawCatSummary =
+        json['resumen_por_categoria'] as Map<String, dynamic>? ??
+        json['categorySummary'] as Map<String, dynamic>? ??
+        {};
+    final rawNatSummary =
+        json['resumen_por_naturaleza'] as Map<String, dynamic>? ??
+        json['natureSummary'] as Map<String, dynamic>? ??
+        {};
 
     return GovernedExpensesReportModel(
       mes: json['mes']?.toString() ?? json['month']?.toString() ?? '',
-      fechaNegocio: json['fecha_corte']?.toString() ?? json['fecha_negocio']?.toString() ?? json['businessDate']?.toString() ?? '',
-      gastos: parsedGastos,
-      resumenPorCategoria: rawCatSummary.map((k, v) => MapEntry(k, v.toString())),
-      resumenPorNaturaleza: rawNatSummary.map((k, v) => MapEntry(k, v.toString())),
-      totalDevengado: totalDevengado,
-      totalPagado: totalPagado,
-      totalPendiente: totalPendiente,
+      fechaNegocio:
+          json['fecha_corte']?.toString() ??
+          json['fecha_negocio']?.toString() ??
+          json['businessDate']?.toString() ??
+          '',
+      monedas: currencies,
+      resumenPorCategoria: rawCatSummary.map(
+        (k, v) => MapEntry(k, v.toString()),
+      ),
+      resumenPorNaturaleza: rawNatSummary.map(
+        (k, v) => MapEntry(k, v.toString()),
+      ),
     );
   }
 }
