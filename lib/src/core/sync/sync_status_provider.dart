@@ -227,6 +227,70 @@ Future<SyncStatusSnapshot> _loadLocalSyncStatus(Dio client) async {
   }
 }
 
+/// Resultado de una sincronización pedida por el operador.
+class ForceSyncResult {
+  const ForceSyncResult({required this.ok, required this.message});
+
+  final bool ok;
+  final String message;
+}
+
+/// Empuja la cola **ahora**, sin esperar al ciclo de 30 s.
+///
+/// Antes de sincronizar reabre los eventos que agotaron sus reintentos: un
+/// evento se para a los 5 intentos y ahí se queda para siempre, así que cuando
+/// el motivo del rechazo se corrige en el servidor —pasó el 27-07 con el alta
+/// de sedes— sin esto habría que tocar la base a mano. Reabrir no borra nada ni
+/// salta la cola: solo permite reintentar.
+///
+/// Solo tiene sentido en el escritorio: la web escribe directamente contra la
+/// API remota, ahí no hay cola que empujar.
+Future<ForceSyncResult> forceSyncNow(Dio client) async {
+  try {
+    final reabiertos = await client
+        .post<Map<String, dynamic>>('/sync/reintentar')
+        .timeout(const Duration(seconds: 10));
+    final reopened = _asInt(reabiertos.data?['reabiertos']);
+
+    final response = await client
+        .post<Map<String, dynamic>>('/sync/ahora')
+        .timeout(const Duration(seconds: 60));
+    final data = response.data ?? <String, dynamic>{};
+    final pendientes = _asInt(data['pending_events_count']);
+    final fallidos = _asInt(data['failed_events_count']);
+
+    if (pendientes == 0) {
+      return ForceSyncResult(
+        ok: true,
+        message: reopened > 0
+            ? 'Sincronizado. Se reintentaron $reopened cambio(s) detenidos.'
+            : 'Sincronizado. No queda nada por subir.',
+      );
+    }
+    return ForceSyncResult(
+      ok: false,
+      message: fallidos > 0
+          ? '$fallidos cambio(s) siguen rechazados por el servidor; '
+                'quedan $pendientes en cola.'
+          : 'Quedan $pendientes cambio(s) por subir.',
+    );
+  } catch (error) {
+    return ForceSyncResult(
+      ok: false,
+      message: 'No se pudo sincronizar: ${_briefError(error)}',
+    );
+  }
+}
+
+String _briefError(Object error) {
+  if (error is DioException) {
+    final data = error.response?.data;
+    if (data is Map && data['error'] != null) return data['error'].toString();
+    return error.message ?? 'error de red';
+  }
+  return error.toString();
+}
+
 int _asInt(Object? value) {
   if (value is int) return value;
   return int.tryParse(value?.toString() ?? '') ?? 0;

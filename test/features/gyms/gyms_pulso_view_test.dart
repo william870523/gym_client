@@ -154,6 +154,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('la sede en la que se trabaja se marca y no ofrece baja', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness(dueno: true, sedeActiva: 'gym-central'));
+    await tester.pumpAndSettle();
+
+    // Se marca en la fila para que el operador sepa dónde está…
+    expect(find.text('AQUÍ'), findsOneWidget);
+    // …y no se ofrece cerrarla: el servidor responde 409 y sin explicación el
+    // operador se queda sin saber por qué.
+    expect(find.byTooltip('Eliminar Central'), findsNothing);
+    // La otra sede sí se puede cerrar.
+    expect(find.byTooltip('Eliminar Norte'), findsOneWidget);
+
+    await tester.tap(find.text('Central'));
+    await tester.pump();
+    expect(find.text('ELIMINAR SEDE'), findsNothing);
+    expect(
+      find.textContaining('Estás trabajando en esta sede'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra las sedes inactivas', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -199,10 +228,16 @@ List<Gym> _gyms() => [
   ),
 ];
 
-Widget _harness({_GymsController? controller, bool dueno = false}) {
+Widget _harness({
+  _GymsController? controller,
+  bool dueno = false,
+  String sedeActiva = 'gym-norte',
+}) {
   return ProviderScope(
     overrides: [
-      sedeSessionProvider.overrideWith(() => _SedeSession(dueno: dueno)),
+      sedeSessionProvider.overrideWith(
+        () => _SedeSession(dueno: dueno, gymId: sedeActiva),
+      ),
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
         (ref) => Stream.value(
@@ -240,14 +275,17 @@ class _GymsController extends GymsController {
 }
 
 class _SedeSession extends SedeSessionNotifier {
-  _SedeSession({required this.dueno});
+  _SedeSession({required this.dueno, this.gymId = 'gym-norte'});
 
   final bool dueno;
+  /// Sede activa. Por defecto NO es «Central», para que las pruebas que miran
+  /// el mando de baja no choquen con la regla de la sede activa.
+  final String gymId;
 
   @override
   SedeSession? build() => SedeSession(
     userId: 'u-1',
-    gymId: 'gym-central',
+    gymId: gymId,
     role: dueno ? 'admin' : 'recepcion',
     esPlataforma: dueno,
   );

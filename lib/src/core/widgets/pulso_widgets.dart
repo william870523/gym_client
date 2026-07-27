@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../network/api_client.dart';
 import '../sync/sync_status_provider.dart';
+import '../window/window_manager.dart';
 import '../theme/pulso/appearance_provider.dart';
 import '../theme/pulso/pulso_palette_id.dart';
 import '../theme/pulso/pulso_theme.dart';
@@ -215,13 +218,47 @@ class PulsoIconButton extends StatelessWidget {
   }
 }
 
-class PulsoSyncStatus extends ConsumerWidget {
+class PulsoSyncStatus extends ConsumerStatefulWidget {
   const PulsoSyncStatus({super.key, this.compact = false});
 
   final bool compact;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PulsoSyncStatus> createState() => _PulsoSyncStatusState();
+}
+
+class _PulsoSyncStatusState extends ConsumerState<PulsoSyncStatus> {
+  bool _busy = false;
+
+  /// Empuja la cola de verdad, no solo vuelve a mirarla.
+  ///
+  /// Antes este chip solo refrescaba el estado: si decía «1 cambio requiere
+  /// revisión», no había forma de hacer nada al respecto salvo esperar al ciclo
+  /// automático sin saber si iba a pasar algo. En la web no hay cola que
+  /// empujar —escribe directa contra el remoto—, así que allí se limita a
+  /// comprobar.
+  Future<void> _sync() async {
+    if (_busy) return;
+    if (kIsWeb || !isDesktopPlatform) {
+      ref.invalidate(syncStatusProvider);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final result = await forceSyncNow(ref.read(apiClientProvider));
+      ref.invalidate(syncStatusProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = widget.compact;
     final tokens = PulsoTokens.of(context);
     final status =
         ref.watch(syncStatusProvider).value ?? SyncStatusSnapshot.checking();
@@ -241,15 +278,18 @@ class PulsoSyncStatus extends ConsumerWidget {
       SyncStatusLevel.offline => 'Modo local',
     };
 
+    final puedeEmpujar = !kIsWeb && isDesktopPlatform;
     return Tooltip(
-      message: '${status.label} · ${status.detail}\nPulsa para verificar ahora',
+      message:
+          '${status.label} · ${status.detail}\n'
+          '${puedeEmpujar ? 'Pulsa para sincronizar ahora' : 'Pulsa para verificar ahora'}',
       child: Semantics(
         button: true,
         label: 'Sincronización: $label. ${status.detail}',
         child: Material(
           color: color.withValues(alpha: tokens.isDark ? 0.11 : 0.08),
           child: InkWell(
-            onTap: () => ref.invalidate(syncStatusProvider),
+            onTap: _busy ? null : _sync,
             child: Container(
               constraints: const BoxConstraints(minHeight: 34),
               padding: EdgeInsets.symmetric(
@@ -264,10 +304,20 @@ class PulsoSyncStatus extends ConsumerWidget {
                 children: [
                   Container(width: 7, height: 7, color: color),
                   const SizedBox(width: 7),
-                  Icon(icon, size: 14, color: color),
+                  if (_busy)
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    )
+                  else
+                    Icon(icon, size: 14, color: color),
                   const SizedBox(width: 6),
                   Text(
-                    label.toUpperCase(),
+                    (_busy ? 'Sincronizando' : label).toUpperCase(),
                     style: TextStyle(
                       fontFamily: PulsoFonts.mono,
                       fontSize: 9,

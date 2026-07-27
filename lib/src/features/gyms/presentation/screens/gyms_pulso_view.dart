@@ -163,7 +163,9 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
   }
 
   void _showDetail(Gym gym) {
-    final puedeDarDeBaja = ref.read(esDuenoDeCadenaProvider);
+    final esSedeActiva = ref.read(sedeSessionProvider)?.gymId == gym.id;
+    final puedeDarDeBaja =
+        ref.read(esDuenoDeCadenaProvider) && !esSedeActiva;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => PulsoThemeScope(
@@ -188,6 +190,7 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
                       _confirmDelete(gym);
                     },
               puedeDarDeBaja: puedeDarDeBaja,
+              esSedeActiva: esSedeActiva,
             ),
           ),
         ),
@@ -221,6 +224,10 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
     // (docs/MULTI_SEDE.md §3). Esconderlos es cortesía: quien manda es el
     // servidor, que responde 403 si la petición llega igualmente.
     final puedeGestionarSedes = ref.watch(esDuenoDeCadenaProvider);
+    // Sede en la que se está trabajando. Sin enseñarla no hay forma de saber
+    // por qué el servidor rechaza darla de baja (409), ni de elegir bien cuál
+    // cerrar (docs/MULTI_SEDE.md §3).
+    final sedeActiva = ref.watch(sedeSessionProvider)?.gymId;
     final all = state.value ?? const <Gym>[];
     final visible = _visible(all);
     final active = all.where((gym) => gym.active).length;
@@ -286,6 +293,7 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
                   onEdit: _openForm,
                   onDelete: _confirmDelete,
                   puedeDarDeBaja: puedeGestionarSedes,
+                  sedeActiva: sedeActiva,
                 ),
         );
         final page = Column(
@@ -544,6 +552,7 @@ class _GymWorkspace extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.puedeDarDeBaja,
+    required this.sedeActiva,
   });
 
   final List<Gym> items;
@@ -555,6 +564,8 @@ class _GymWorkspace extends StatelessWidget {
   final ValueChanged<Gym> onEdit;
   final ValueChanged<Gym> onDelete;
   final bool puedeDarDeBaja;
+  /// Sede en la que se está trabajando; el servidor no deja darla de baja.
+  final String? sedeActiva;
 
   @override
   Widget build(BuildContext context) {
@@ -570,6 +581,7 @@ class _GymWorkspace extends StatelessWidget {
           onEdit: onEdit,
           onDelete: onDelete,
           puedeDarDeBaja: puedeDarDeBaja,
+          sedeActiva: sedeActiva,
         );
         if (constraints.maxWidth < 1040) return list;
         return Row(
@@ -582,10 +594,14 @@ class _GymWorkspace extends StatelessWidget {
               child: _GymDetail(
                 gym: selected,
                 onEdit: selected == null ? null : () => onEdit(selected!),
-                onDelete: selected == null || !puedeDarDeBaja
+                onDelete:
+                    selected == null ||
+                        !puedeDarDeBaja ||
+                        selected!.id == sedeActiva
                     ? null
                     : () => onDelete(selected!),
-                puedeDarDeBaja: puedeDarDeBaja,
+                puedeDarDeBaja: puedeDarDeBaja && selected?.id != sedeActiva,
+                esSedeActiva: selected?.id == sedeActiva,
               ),
             ),
           ],
@@ -606,6 +622,7 @@ class _GymList extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.puedeDarDeBaja,
+    required this.sedeActiva,
   });
 
   final List<Gym> items;
@@ -617,6 +634,7 @@ class _GymList extends StatelessWidget {
   final ValueChanged<Gym> onEdit;
   final ValueChanged<Gym> onDelete;
   final bool puedeDarDeBaja;
+  final String? sedeActiva;
 
   @override
   Widget build(BuildContext context) {
@@ -691,7 +709,12 @@ class _GymList extends StatelessWidget {
                       selected: selectedId == gym.id,
                       onSelect: () => onSelect(gym),
                       onEdit: () => onEdit(gym),
-                      onDelete: puedeDarDeBaja ? () => onDelete(gym) : null,
+                      // La sede activa no ofrece baja: el servidor responde
+                      // 409 y el operador se quedaría sin saber por qué.
+                      onDelete: puedeDarDeBaja && gym.id != sedeActiva
+                          ? () => onDelete(gym)
+                          : null,
+                      esSedeActiva: gym.id == sedeActiva,
                     );
                   },
                 ),
@@ -769,6 +792,7 @@ class _GymRow extends StatelessWidget {
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
+    this.esSedeActiva = false,
   });
 
   final Gym gym;
@@ -778,6 +802,8 @@ class _GymRow extends StatelessWidget {
   final VoidCallback onEdit;
   /// Nulo cuando esta cuenta no es Dueño de la cadena: el mando no se enseña.
   final VoidCallback? onDelete;
+  /// La sede en la que se está trabajando ahora mismo.
+  final bool esSedeActiva;
 
   @override
   Widget build(BuildContext context) {
@@ -795,6 +821,26 @@ class _GymRow extends StatelessWidget {
         ),
       ),
     );
+    final marcaActual = !esSedeActiva
+        ? const SizedBox.shrink()
+        : Container(
+            margin: const EdgeInsets.only(left: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: tokens.accentSoft,
+              border: Border.all(color: tokens.accent.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              'AQUÍ',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: tokens.accent,
+              ),
+            ),
+          );
     return Material(
       color: selected ? tokens.accentSoft : tokens.surface,
       child: InkWell(
@@ -843,14 +889,21 @@ class _GymRow extends StatelessWidget {
                     ),
                     Expanded(
                       flex: 4,
-                      child: Text(
-                        gym.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: tokens.chalk,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              gym.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: tokens.chalk,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          marcaActual,
+                        ],
                       ),
                     ),
                     Expanded(
@@ -931,12 +984,14 @@ class _GymDetail extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.puedeDarDeBaja = true,
+    this.esSedeActiva = false,
   });
 
   final Gym? gym;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final bool puedeDarDeBaja;
+  final bool esSedeActiva;
 
   @override
   Widget build(BuildContext context) {
@@ -1021,6 +1076,19 @@ class _GymDetail extends StatelessWidget {
                 danger: true,
                 icon: Icons.delete_outline,
                 onPressed: onDelete,
+              ),
+            ],
+            if (esSedeActiva) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                color: tokens.raised,
+                child: Text(
+                  'Estás trabajando en esta sede, así que no se puede dar de '
+                  'baja desde aquí: la sesión quedaría apuntando a un gimnasio '
+                  'cerrado. Sitúate en otra sede para cerrarla.',
+                  style: TextStyle(color: tokens.muted, fontSize: 12),
+                ),
               ),
             ],
           ],
