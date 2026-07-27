@@ -326,6 +326,16 @@ class _PulsoSyncStatusState extends ConsumerState<PulsoSyncStatus> {
                       color: color,
                     ),
                   ),
+                  // El chip parecía un rótulo, no un mando. La marca de
+                  // «pulsable» se enseña **solo cuando hay algo que empujar**,
+                  // que es cuando hace falta: el chip vive en cabeceras con
+                  // poco sitio y ensancharlo siempre descolocaba la de
+                  // Contabilidad. Cuando todo está al día sigue pulsándose
+                  // igual, y lo dice el tooltip.
+                  if (puedeEmpujar && !_busy && status.hasPendingWork) ...[
+                    const SizedBox(width: 5),
+                    Icon(Icons.refresh, size: 12, color: color),
+                  ],
                 ],
               ),
             ),
