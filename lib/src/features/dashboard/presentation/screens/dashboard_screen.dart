@@ -23,6 +23,13 @@ import '../../../trainers/presentation/screens/trainers_pulso_view.dart';
 import '../../../payments/presentation/screens/payments_pulso_view.dart';
 import '../../../accounting/presentation/screens/accounting_view.dart';
 import '../../../settings/presentation/screens/appearance_pulso_view.dart';
+import '../../../retention/presentation/screens/dropout_reasons_pulso_view.dart';
+import '../../../statistics/presentation/screens/member_statistics_pulso_view.dart';
+import '../../../statistics/presentation/screens/plan_statistics_pulso_view.dart';
+import '../../../statistics/presentation/screens/trainer_statistics_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_rankings_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_ranking_explorer_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_segmentation_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_settings_pulso_view.dart';
 import '../../../clients/presentation/screens/client_discount_settings_pulso_view.dart';
@@ -139,6 +146,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       const ClientDiscountSettingsPulsoView(),
       // 26: Informe de revaluación cambiaria (R5.5).
       const ExchangeRevaluationPulsoView(),
+      // 27: Catálogo de motivos de baja (E0-b, PLAN_ESTADISTICAS.md §7-ter).
+      const DropoutReasonsPulsoView(),
+      // 28: Portada comparativa y rankings (R6, PLAN_ESTADISTICAS.md §5.1).
+      const StatisticsRankingsPulsoView(),
+      // 29: Perfil estadístico del entrenador (R6, PLAN_ESTADISTICAS.md §4.1).
+      const TrainerStatisticsPulsoView(showSelector: false),
+      // 30: Perfil estadístico del plan, con la matriz de movilidad
+      // (R6, PLAN_ESTADISTICAS.md §4.2).
+      const PlanStatisticsPulsoView(showSelector: false),
+      // 31: Perfil individual del socio. No tiene entrada duplicada en el menú:
+      // se abre desde Clientes, donde ya existe la búsqueda por nombre/carné.
+      const MemberStatisticsPulsoView(showSelector: false),
+      // 32: tabla paginada de una medida estadística. Se abre desde los Top 5
+      // y conserva período, moneda y destino de perfil.
+      const StatisticsRankingExplorerPulsoView(),
+      // 33: cruzador de segmentación (PLAN_ESTADISTICAS.md §5). Una vista con
+      // dimensión × medida en lugar de una pantalla por pregunta.
+      const StatisticsSegmentationPulsoView(),
     ];
     return _cachedViews!;
   }
@@ -279,6 +304,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 24: // Configuración de retención
       case 25: // Configuración de descuento de cliente
       case 26: // Revaluación cambiaria
+      case 27: // Motivos de baja
+      case 28: // Estadística del socio
+      case 29: // Estadística del entrenador
+      case 30: // Estadística del plan
+      case 31: // Perfil estadístico del socio desde Clientes
+      case 32: // Ranking estadístico completo
+      case 33: // Cruzador de segmentación
         return '';
       default:
         return '';

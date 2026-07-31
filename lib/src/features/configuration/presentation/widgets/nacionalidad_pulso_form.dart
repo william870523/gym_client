@@ -4,10 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
+import '../../../../core/widgets/flag_image.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 
 typedef NacionalidadPulsoSubmit =
@@ -62,7 +62,8 @@ class _NacionalidadPulsoFormState extends State<NacionalidadPulsoForm> {
     if (_busy) return;
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: FileType.custom,
+        allowedExtensions: const ['svg', 'png', 'jpg', 'jpeg', 'webp'],
         allowMultiple: false,
         withData: true,
       );
@@ -72,7 +73,7 @@ class _NacionalidadPulsoFormState extends State<NacionalidadPulsoForm> {
         _busy = true;
         _error = null;
       });
-      final compressed = await compute(_compressNacionalidadFlag, bytes);
+      final compressed = await compute(normalizeFlagImageBytes, bytes);
       if (!mounted) return;
       setState(() {
         _flagBytes = compressed;
@@ -315,7 +316,7 @@ class _FlagPicker extends StatelessWidget {
     final tokens = PulsoTokens.of(context);
     Widget image;
     if (bytes != null) {
-      image = Image.memory(bytes!, fit: BoxFit.contain, gaplessPlayback: true);
+      image = FlagBytesImage(bytes: bytes!, fit: BoxFit.contain);
     } else if (initialBase64?.isNotEmpty == true) {
       Uint8List? decoded;
       try {
@@ -325,7 +326,7 @@ class _FlagPicker extends StatelessWidget {
       }
       image = decoded == null
           ? _FlagFallback(isoCode: isoCode)
-          : Image.memory(decoded, fit: BoxFit.contain, gaplessPlayback: true);
+          : FlagBytesImage(bytes: decoded, fit: BoxFit.contain);
     } else {
       image = _FlagFallback(isoCode: isoCode);
     }
@@ -361,7 +362,7 @@ class _FlagPicker extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'PNG o JPG. La imagen se normaliza a un máximo de 512 px.',
+                'SVG, PNG o JPG. El SVG conserva calidad a cualquier escala.',
                 style: TextStyle(color: tokens.muted, fontSize: 12),
               ),
               const SizedBox(height: 12),
@@ -435,20 +436,4 @@ class _IsoFormatter extends TextInputFormatter {
 
 String? _required(String? value) {
   return value?.trim().isNotEmpty == true ? null : 'Campo obligatorio.';
-}
-
-Uint8List _compressNacionalidadFlag(Uint8List bytes) {
-  final image = img.decodeImage(bytes);
-  if (image == null) {
-    throw const FormatException('Formato de imagen no compatible.');
-  }
-  final resized = image.width > 512 || image.height > 512
-      ? img.copyResize(
-          image,
-          width: image.width > image.height ? 512 : null,
-          height: image.height >= image.width ? 512 : null,
-          maintainAspect: true,
-        )
-      : image;
-  return Uint8List.fromList(img.encodePng(resized));
 }

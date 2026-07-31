@@ -15,6 +15,28 @@ class SedeSessionNotifier extends Notifier<SedeSession?> {
   void set(SedeSession? session) => state = session;
 
   void clear() => state = null;
+
+  /// Cambia la sede activa (docs/MULTI_SEDE.md §3.4).
+  ///
+  /// Solo mueve el estado; **la invalidación la produce la cascada**:
+  /// `apiClientProvider` observa esta sede, cada repositorio observa el cliente
+  /// y cada vista observa su repositorio, así que al cambiarla se reconstruye
+  /// todo y no sobrevive nada de la sede anterior.
+  ///
+  /// No se comprueba aquí si la persona puede abrir esa sede: eso lo decide el
+  /// servidor en cada petición y responde `404` si no. El cliente solo declara
+  /// dónde cree estar.
+  void cambiarSede(String gymId) {
+    final actual = state;
+    if (actual == null || actual.gymId == gymId) return;
+    state = SedeSession(
+      userId: actual.userId,
+      gymId: gymId,
+      role: actual.role,
+      esPlataforma: actual.esPlataforma,
+      origen: actual.origen,
+    );
+  }
 }
 
 final sedeSessionProvider =

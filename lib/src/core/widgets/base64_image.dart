@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
+import 'flag_image.dart';
+
 class Base64Image extends StatefulWidget {
   final String base64String;
   final double? width;
@@ -67,25 +69,23 @@ class _Base64ImageState extends State<Base64Image> {
           );
     }
 
-    return Image.memory(
-      _bytes!,
+    return FlagBytesImage(
+      bytes: _bytes!,
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
       filterQuality: widget.filterQuality,
-      gaplessPlayback: true,
-      errorBuilder: (context, error, stackTrace) {
-        return widget.placeholder ??
-            SizedBox(
-              width: widget.width,
-              height: widget.height,
-              child: Icon(
-                Icons.error_outline,
-                size: 16,
-                color: Colors.red.shade200,
-              ),
-            );
-      },
+      placeholder:
+          widget.placeholder ??
+          SizedBox(
+            width: widget.width,
+            height: widget.height,
+            child: Icon(
+              Icons.error_outline,
+              size: 16,
+              color: Colors.red.shade200,
+            ),
+          ),
     );
   }
 }

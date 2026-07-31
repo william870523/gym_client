@@ -18,6 +18,8 @@ import '../../../schedules/data/models/horario_model.dart';
 import '../../../schedules/presentation/state/horario_notifier.dart';
 import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
+import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
+import '../../../statistics/presentation/state/statistics_providers.dart';
 import '../../data/models/client_model.dart';
 import '../../data/services/client_list_export_service.dart';
 import '../../domain/membership_vigencia.dart';
@@ -390,6 +392,11 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     ref.invalidate(clientPaymentHistoryProvider(client.id));
   }
 
+  void _showStatistics(ClientModel client) {
+    ref.read(selectedMemberProvider.notifier).select(client.id);
+    ref.read(dashboardNavProvider.notifier).setIndex(31);
+  }
+
   void _showDetail(
     ClientModel client,
     Map<String, String> plans,
@@ -422,6 +429,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
               },
               onWeight: () => _addWeight(client),
               onRecord: () => _showRecord(client),
+              onStatistics: () => _showStatistics(client),
               onPayment: client.planId == null
                   ? null
                   : () => _processPayment(client),
@@ -564,6 +572,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
                   onDelete: _confirmDelete,
                   onWeight: _addWeight,
                   onRecord: _showRecord,
+                  onStatistics: _showStatistics,
                   onPayment: _processPayment,
                 ),
         );
@@ -946,6 +955,7 @@ class _ClientWorkspace extends StatelessWidget {
     required this.onDelete,
     required this.onWeight,
     required this.onRecord,
+    required this.onStatistics,
     required this.onPayment,
   });
   final List<ClientModel> items;
@@ -962,6 +972,7 @@ class _ClientWorkspace extends StatelessWidget {
   final ValueChanged<ClientModel> onDelete;
   final ValueChanged<ClientModel> onWeight;
   final ValueChanged<ClientModel> onRecord;
+  final ValueChanged<ClientModel> onStatistics;
   final ValueChanged<ClientModel> onPayment;
 
   @override
@@ -1007,6 +1018,7 @@ class _ClientWorkspace extends StatelessWidget {
                       onDelete: () => onDelete(selected!),
                       onWeight: () => onWeight(selected!),
                       onRecord: () => onRecord(selected!),
+                      onStatistics: () => onStatistics(selected!),
                       onPayment: selected!.planId == null
                           ? null
                           : () => onPayment(selected!),
@@ -1391,6 +1403,7 @@ class _ClientInsight extends ConsumerWidget {
     required this.onDelete,
     required this.onWeight,
     required this.onRecord,
+    required this.onStatistics,
     required this.onPayment,
   });
   final ClientModel client;
@@ -1401,6 +1414,7 @@ class _ClientInsight extends ConsumerWidget {
   final VoidCallback onDelete;
   final VoidCallback onWeight;
   final VoidCallback onRecord;
+  final VoidCallback onStatistics;
   final VoidCallback? onPayment;
 
   @override
@@ -1572,6 +1586,12 @@ class _ClientInsight extends ConsumerWidget {
                   label: 'Expediente',
                   icon: Icons.folder_open_outlined,
                   onPressed: onRecord,
+                ),
+                PulsoSecondaryButton(
+                  key: const ValueKey('cliente-ver-estadistica'),
+                  label: 'Estadística',
+                  icon: Icons.insights_outlined,
+                  onPressed: onStatistics,
                 ),
                 PulsoSecondaryButton(
                   label: 'Peso',

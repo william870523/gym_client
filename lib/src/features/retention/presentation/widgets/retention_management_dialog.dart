@@ -40,9 +40,16 @@ class _RetentionManagementDialogState
   final _noteController = TextEditingController();
   String _result = 'CONTACTADO';
   String _channel = 'WHATSAPP';
+  String? _reasonId;
   DateTime? _promiseDate;
   DateTime? _nextDate;
   bool _saving = false;
+
+  /// El motivo no aplica cuando no hubo contacto: nadie pudo preguntarlo.
+  /// La regla vive en el servidor; aquí solo se refleja para no ofrecer un
+  /// campo que la petición rechazaría.
+  bool get _reasonApplies => _result != 'NO_LOCALIZADO';
+  bool get _reasonRequired => _result == 'NO_DESEA_RENOVAR';
 
   DateTime get _today {
     final parts = widget.businessDate.split('-').map(int.parse).toList();
@@ -65,6 +72,9 @@ class _RetentionManagementDialogState
       } else if (value == 'NO_LOCALIZADO' && _nextDate == null) {
         _nextDate = _today.add(const Duration(days: 1));
       }
+      // Sin contacto no hay motivo que registrar: se descarta el que hubiera
+      // quedado seleccionado antes de cambiar de resultado.
+      if (value == 'NO_LOCALIZADO') _reasonId = null;
     });
   }
 
@@ -94,9 +104,13 @@ class _RetentionManagementDialogState
       _message('Indica la fecha prometida de pago.');
       return;
     }
+    if (_reasonRequired && (_reasonId == null || _reasonId!.isEmpty)) {
+      _message('Selecciona el motivo por el que el socio no desea renovar.');
+      return;
+    }
     if (_result == 'NO_DESEA_RENOVAR' &&
         _noteController.text.trim().length < 5) {
-      _message('Registra una nota breve con el motivo.');
+      _message('Registra una nota breve que explique el motivo.');
       return;
     }
     setState(() => _saving = true);
@@ -110,6 +124,7 @@ class _RetentionManagementDialogState
             note: _noteController.text.trim().isEmpty
                 ? null
                 : _noteController.text.trim(),
+            reasonId: _reasonApplies ? _reasonId : null,
             promiseDate: _dateOnly(_promiseDate),
             nextManagementDate: _dateOnly(_nextDate),
           );
@@ -259,6 +274,72 @@ class _RetentionManagementDialogState
     ),
   );
 
+  /// Selector del motivo de baja (PLAN_ESTADISTICAS.md §7-ter).
+  ///
+  /// Obligatorio cuando el socio no desea renovar —sin él solo se sabría
+  /// cuántos se van, no por qué—; opcional en el resto, donde recoge el aviso
+  /// del socio que TODAVÍA no se ha ido.
+  Widget _reasonField(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final reasons = ref.watch(dropoutReasonsProvider(true));
+
+    return reasons.when(
+      loading: () => const _ReasonPlaceholder(text: 'Cargando motivos…'),
+      error: (error, _) => _ReasonPlaceholder(
+        text: 'No se pudo cargar el catálogo de motivos.',
+        warning: true,
+      ),
+      data: (list) {
+        if (list.isEmpty) {
+          return _ReasonPlaceholder(
+            text: _reasonRequired
+                ? 'No hay motivos activos en el catálogo. Actívalos en Ajustes '
+                      'antes de registrar una baja.'
+                : 'No hay motivos activos en el catálogo.',
+            warning: _reasonRequired,
+          );
+        }
+        // Si el motivo elegido se desactivó mientras el diálogo estaba abierto,
+        // se suelta en vez de mandar al servidor algo que va a rechazar.
+        final valid = list.any((reason) => reason.id == _reasonId);
+        final value = valid ? _reasonId : null;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              key: const ValueKey('retention-reason-field'),
+              initialValue: value,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: _reasonRequired
+                    ? 'Motivo de la baja (obligatorio)'
+                    : 'Motivo declarado (opcional)',
+              ),
+              items: list
+                  .map(
+                    (reason) => DropdownMenuItem(
+                      value: reason.id,
+                      child: Text(reason.name, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (selected) => setState(() => _reasonId = selected),
+            ),
+            if (!_reasonRequired) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Si el socio dio una razón sin llegar a irse, anótala: es un '
+                'aviso temprano, no una baja.',
+                style: TextStyle(fontSize: 11, height: 1.4, color: tokens.muted),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   Widget _form(BuildContext context) {
     final tokens = PulsoTokens.of(context);
     return Column(
@@ -299,6 +380,10 @@ class _RetentionManagementDialogState
             if (value != null) setState(() => _channel = value);
           },
         ),
+        if (_reasonApplies) ...[
+          const SizedBox(height: 12),
+          _reasonField(context),
+        ],
         if (_result == 'PROMESA_PAGO') ...[
           const SizedBox(height: 12),
           _DateField(
@@ -373,6 +458,46 @@ class _RetentionManagementDialogState
               itemBuilder: (_, index) =>
                   _HistoryLine(row: rows[index], timezone: widget.timezone),
             ),
+    );
+  }
+}
+
+/// Hueco del selector de motivo cuando no hay catálogo que ofrecer: cargando,
+/// error o vacío. Nunca un desplegable vacío que parezca que no hay motivos.
+class _ReasonPlaceholder extends StatelessWidget {
+  const _ReasonPlaceholder({required this.text, this.warning = false});
+
+  final String text;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: warning ? tokens.warning : tokens.line),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            warning ? Icons.warning_amber_rounded : Icons.hourglass_empty,
+            size: 14,
+            color: warning ? tokens.warning : tokens.muted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: warning ? tokens.warning : tokens.muted,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

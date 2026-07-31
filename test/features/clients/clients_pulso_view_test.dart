@@ -15,6 +15,8 @@ import 'package:gym_client/src/features/clients/presentation/screens/clients_pul
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
 import 'package:gym_client/src/features/clients/presentation/state/clients_scope_filter_provider.dart';
 import 'package:gym_client/src/features/clients/presentation/state/weight_history_notifier.dart';
+import 'package:gym_client/src/features/dashboard/presentation/state/dashboard_nav_provider.dart';
+import 'package:gym_client/src/features/statistics/presentation/state/statistics_providers.dart';
 import 'package:gym_client/src/features/configuration/data/models/nacionalidad_model.dart';
 import 'package:gym_client/src/features/configuration/data/models/referencia_model.dart';
 import 'package:gym_client/src/features/configuration/presentation/state/nacionalidad_notifier.dart';
@@ -86,6 +88,35 @@ void main() {
     expect(find.text('0 de 3 datos disponibles'), findsOneWidget);
     expect(find.text('Sin entrenador'), findsWidgets);
     expect(find.text('Sin horario'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('abre la estadística del socio elegido desde Clientes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ClientsPulsoView)),
+    );
+
+    await tester.tap(find.text('Ana Pérez'));
+    await tester.pump();
+    final statisticsButton = find.byKey(
+      const ValueKey('cliente-ver-estadistica'),
+    );
+    await tester.ensureVisible(statisticsButton);
+    await tester.pump();
+    await tester.tap(statisticsButton);
+    await tester.pump();
+
+    expect(container.read(selectedMemberProvider), '100');
+    expect(container.read(dashboardNavProvider), 31);
     expect(tester.takeException(), isNull);
   });
 
@@ -192,6 +223,112 @@ void main() {
     );
     expect(sex.initialValue, 'M');
     expect(find.text('Sexo · desde CI'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  // --- E0: fecha de nacimiento (docs/PLAN_ESTADISTICAS.md §7-bis) ---
+
+  testWidgets('con carné cubano la fecha se deriva y no se deja teclear', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    // Sin carné completo no se inventa una fecha.
+    expect(
+      find.byKey(const ValueKey('pulso-client-birthdate-derived')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Se calculará del carné'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-ci')),
+      '91021020015',
+    );
+    await tester.pump();
+
+    expect(find.textContaining('Derivada del carné'), findsOneWidget);
+    // No hay selector de fecha: el dato no se teclea con carné cubano.
+    expect(
+      find.byKey(const ValueKey('pulso-client-birthdate-picker')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('con pasaporte la fecha se captura en vez de derivarse', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('document-type-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pasaporte').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pulso-client-birthdate-picker')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pulso-client-birthdate-derived')),
+      findsNothing,
+    );
+    expect(find.text('Seleccionar fecha'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('avisa cuando el sexo declarado contradice al carné', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    // Este carné codifica femenino en su dígito 10.
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-ci')),
+      '91021020015',
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('pulso-client-sex-mismatch')),
+      findsNothing,
+    );
+
+    // Al forzar masculino, los dos datos se contradicen: se avisa, no se
+    // corrige — cuál está mal es una decisión humana.
+    await tester.tap(find.byKey(const ValueKey('pulso-client-sex')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Masculino').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pulso-client-sex-mismatch')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('dígito 10'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

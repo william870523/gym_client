@@ -459,6 +459,44 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),
                                     ),
+                                  // E0-b: catálogo de motivos de baja, junto a
+                                  // la configuración de retención de la que se
+                                  // alimenta (PLAN_ESTADISTICAS.md §7-ter).
+                                  // R6: portada comparativa. El perfil del
+                                  // socio vive dentro de Clientes.
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.insights_outlined,
+                                      'Resumen estadístico',
+                                      index: 28,
+                                      isActive: widget.selectedIndex == 28,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
+                                  // R6 §5: el cruzador. Vive junto al
+                                  // resumen porque responde las preguntas que
+                                  // la portada no puede anticipar.
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.grid_view_outlined,
+                                      'Cruzador',
+                                      index: 33,
+                                      isActive: widget.selectedIndex == 33,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.label_off_outlined,
+                                      'Motivos de baja',
+                                      index: 27,
+                                      isActive: widget.selectedIndex == 27,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
                                 ],
                               ),
                             ],

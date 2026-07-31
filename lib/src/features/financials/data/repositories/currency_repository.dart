@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/widgets/flag_image.dart';
 import '../models/currency_model.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -35,7 +36,10 @@ class CurrencyRepository {
         formData.files.add(
           MapEntry(
             'imagen_file',
-            MultipartFile.fromBytes(imageBytes, filename: 'flag.png'),
+            MultipartFile.fromBytes(
+              imageBytes,
+              filename: flagUploadFilename(imageBytes),
+            ),
           ),
         );
       }
@@ -60,7 +64,10 @@ class CurrencyRepository {
         formData.files.add(
           MapEntry(
             'imagen_file',
-            MultipartFile.fromBytes(imageBytes, filename: 'flag.png'),
+            MultipartFile.fromBytes(
+              imageBytes,
+              filename: flagUploadFilename(imageBytes),
+            ),
           ),
         );
       }

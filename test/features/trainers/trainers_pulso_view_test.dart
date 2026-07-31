@@ -10,6 +10,7 @@ import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
 import 'package:gym_client/src/features/clients/presentation/state/clients_scope_filter_provider.dart';
 import 'package:gym_client/src/features/dashboard/presentation/state/dashboard_nav_provider.dart';
+import 'package:gym_client/src/features/statistics/presentation/state/statistics_providers.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_model.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_offboarding_case.dart';
 import 'package:gym_client/src/features/trainers/data/models/trainer_offboarding_impact.dart';
@@ -77,6 +78,33 @@ void main() {
     expect(find.text('2 socios'), findsOneWidget);
     expect(find.text('sin socios'), findsOneWidget);
     expect(find.text('Mayor carga'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('abre la estadística desde la ficha del entrenador buscable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const PageStorageKey('pulso-trainers-list')),
+        matching: find.text('Ana Pérez'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('VER ESTADÍSTICA'));
+    await tester.pump();
+
+    expect(container.read(selectedTrainerProvider), 'tr-ana');
+    expect(container.read(dashboardNavProvider), 29);
     expect(tester.takeException(), isNull);
   });
 
@@ -158,6 +186,58 @@ void main() {
     expect(payload['tipo_documento'], 'DESCONOCIDO');
     expect(payload['activo_entrenador'], true);
     expect(find.text('EDITAR ENTRENADOR'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el sexo ofrece las mismas tres opciones que el de socios', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO ENTRENADOR'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('pulso-trainer-sexo')));
+    await tester.pumpAndSettle();
+
+    // Las mismas tres que ofrece el alta de socios. Faltaba «Otro».
+    for (final opcion in ['Masculino', 'Femenino', 'Otro']) {
+      expect(find.text(opcion), findsWidgets, reason: opcion);
+    }
+  });
+
+  testWidgets('«Otro» se guarda como «Otro», no como «Femenino»', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final trainerNotifier = _TrainerNotifier(_trainers());
+    await tester.pumpWidget(_harness(trainerNotifier: trainerNotifier));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Editar Ana Pérez'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('pulso-trainer-sexo')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Otro').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('GUARDAR CAMBIOS'));
+    await tester.pumpAndSettle();
+
+    // Antes el formulario solo distinguía dos valores: cualquier cosa que no
+    // fuera 'M' acababa guardada como «Femenino».
+    final (_, payload) = trainerNotifier.updates.single;
+    expect(payload['sexo_entrenador'], 'Otro');
     expect(tester.takeException(), isNull);
   });
 

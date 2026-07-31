@@ -10,7 +10,7 @@ import 'package:gym_client/src/features/payments/data/models/recargo_mora_quote.
 import 'package:uuid/uuid.dart';
 
 final paymentRepositoryProvider = Provider<PaymentRepository>((ref) {
-  return PaymentRepository(ref.read(apiClientProvider));
+  return PaymentRepository(ref.watch(apiClientProvider));
 });
 
 class PaymentRepository {

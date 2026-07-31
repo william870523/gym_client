@@ -13,6 +13,13 @@ class ClientModel {
   @JsonKey(name: 'tipo_documento')
   final String? documentType;
 
+  /// Fecha de nacimiento como día de calendario UTC. **La fija el servidor**
+  /// (docs/PLAN_ESTADISTICAS.md §7-bis): con carné cubano la deriva de los 11
+  /// dígitos y descarta lo que mande el cliente; con pasaporte u otro documento
+  /// se captura en el formulario. Nula solo en la historia anterior al corte.
+  @JsonKey(name: 'fecha_nacimiento')
+  final DateTime? birthDate;
+
   final String? nombres;
   final String? apellidos;
   final String? sexo;
@@ -76,6 +83,7 @@ class ClientModel {
   ClientModel({
     required this.id,
     this.documentType,
+    this.birthDate,
     this.nombres,
     this.apellidos,
     this.sexo,
@@ -120,6 +128,7 @@ class ClientModel {
     int? telefono,
     String? nacionalidadId,
     String? planId,
+    DateTime? birthDate,
     String? photoUrl,
     bool? activo,
     String? direccion,
@@ -144,6 +153,7 @@ class ClientModel {
     return ClientModel(
       id: id ?? this.id,
       documentType: documentType ?? this.documentType,
+      birthDate: birthDate ?? this.birthDate,
       nombres: nombres ?? this.nombres,
       apellidos: apellidos ?? this.apellidos,
       sexo: sexo ?? this.sexo,

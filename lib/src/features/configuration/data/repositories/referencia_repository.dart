@@ -4,7 +4,7 @@ import '../../../../core/network/api_client.dart';
 import '../models/referencia_model.dart';
 
 final referenciaRepositoryProvider = Provider<ReferenciaRepository>((ref) {
-  return ReferenciaRepository(ref.read(apiClientProvider));
+  return ReferenciaRepository(ref.watch(apiClientProvider));
 });
 
 class ReferenciaRepository {

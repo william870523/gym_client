@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 import 'base64_image.dart';
+import 'flag_image.dart';
 
 class AppFlag extends StatelessWidget {
   const AppFlag({
@@ -65,13 +66,13 @@ class AppFlag extends StatelessWidget {
 
   Widget _buildContent(BuildContext context) {
     if (bytes != null) {
-      return Image.memory(
-        bytes!,
+      return FlagBytesImage(
+        bytes: bytes!,
         width: width,
         height: height,
         fit: fit,
         filterQuality: filterQuality,
-        gaplessPlayback: true,
+        placeholder: fallback ?? _buildFallback(context),
       );
     }
 

@@ -15,6 +15,7 @@ import '../../../clients/presentation/state/client_notifier.dart';
 import '../../../clients/presentation/state/clients_scope_filter_provider.dart';
 import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
 import '../../../payments/presentation/state/payment_notifier.dart';
+import '../../../statistics/presentation/state/statistics_providers.dart';
 import '../../data/models/trainer_model.dart';
 import '../../data/models/trainer_offboarding_impact.dart';
 import '../../data/models/trainer_offboarding_case.dart';
@@ -486,6 +487,12 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
     ref.read(dashboardNavProvider.notifier).setIndex(_clientsViewIndex);
   }
 
+  void _showTrainerStatistics(TrainerModel trainer) {
+    if (trainer.id.isEmpty) return;
+    ref.read(selectedTrainerProvider.notifier).select(trainer.id);
+    ref.read(dashboardNavProvider.notifier).setIndex(29);
+  }
+
   void _showDetail(
     BuildContext context,
     TrainerModel trainer,
@@ -501,7 +508,7 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
           ),
           child: SizedBox(
             width: 340,
-            height: 560,
+            height: 620,
             child: _TrainerDetail(
               trainer: trainer,
               stats: stats,
@@ -516,6 +523,10 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
               onClients: () {
                 Navigator.of(dialogContext).pop();
                 _showTrainerClients(trainer);
+              },
+              onStatistics: () {
+                Navigator.of(dialogContext).pop();
+                _showTrainerStatistics(trainer);
               },
             ),
           ),
@@ -612,6 +623,7 @@ class _TrainersPulsoViewState extends ConsumerState<TrainersPulsoView> {
                   onEdit: _openForm,
                   onDelete: (trainer) => _confirmDelete(trainer, stats),
                   onClients: _showTrainerClients,
+                  onStatistics: _showTrainerStatistics,
                 ),
         );
         final page = Column(
@@ -901,6 +913,7 @@ class _TrainerWorkspace extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onClients,
+    required this.onStatistics,
   });
   final List<TrainerModel> items;
   final _TrainerStats stats;
@@ -912,6 +925,7 @@ class _TrainerWorkspace extends StatelessWidget {
   final ValueChanged<TrainerModel> onEdit;
   final ValueChanged<TrainerModel> onDelete;
   final ValueChanged<TrainerModel> onClients;
+  final ValueChanged<TrainerModel> onStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -942,9 +956,10 @@ class _TrainerWorkspace extends StatelessWidget {
                 stats: stats,
                 onEdit: selected == null ? null : () => onEdit(selected!),
                 onDelete: selected == null ? null : () => onDelete(selected!),
-                onClients: selected == null
+                onClients: selected == null ? null : () => onClients(selected!),
+                onStatistics: selected == null
                     ? null
-                    : () => onClients(selected!),
+                    : () => onStatistics(selected!),
               ),
             ),
           ],
@@ -1796,12 +1811,14 @@ class _TrainerDetail extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onClients,
+    required this.onStatistics,
   });
   final TrainerModel? trainer;
   final _TrainerStats stats;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onClients;
+  final VoidCallback? onStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -1818,87 +1835,95 @@ class _TrainerDetail extends StatelessWidget {
     final count = stats.of(selected);
     return PulsoPanel(
       padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const PulsoLabel('Detalle seleccionado'),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // El número grande es el enlace a la lista de esos socios: es lo
-              // primero que se mira al preguntarse «¿quiénes son?».
-              _DetailClientsLink(
-                key: const ValueKey('trainer-detail-clients'),
-                value: stats.ready ? '$count' : '—',
-                trainerName: _fullName(selected),
-                onTap: stats.ready && count > 0 ? onClients : null,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const PulsoLabel('Detalle seleccionado'),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // El número grande es el enlace a la lista de esos socios: es lo
+                // primero que se mira al preguntarse «¿quiénes son?».
+                _DetailClientsLink(
+                  key: const ValueKey('trainer-detail-clients'),
+                  value: stats.ready ? '$count' : '—',
+                  trainerName: _fullName(selected),
+                  onTap: stats.ready && count > 0 ? onClients : null,
+                ),
+                const Spacer(),
+                _TrainerAvatar(trainer: selected, size: 48),
+              ],
+            ),
+            const SizedBox(height: 4),
+            PulsoLabel(
+              stats.ready && count > 0
+                  ? 'Socios asignados · ver lista'
+                  : 'Socios asignados',
+            ),
+            const SizedBox(height: 9),
+            Text(
+              _fullName(selected),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              selected.activo ? 'ACTIVO' : 'INACTIVO',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: selected.activo ? tokens.success : tokens.warning,
               ),
-              const Spacer(),
-              _TrainerAvatar(trainer: selected, size: 48),
-            ],
-          ),
-          const SizedBox(height: 4),
-          PulsoLabel(
-            stats.ready && count > 0
-                ? 'Socios asignados · ver lista'
-                : 'Socios asignados',
-          ),
-          const SizedBox(height: 9),
-          Text(
-            _fullName(selected),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            selected.activo ? 'ACTIVO' : 'INACTIVO',
-            style: TextStyle(
-              fontFamily: PulsoFonts.mono,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: selected.activo ? tokens.success : tokens.warning,
             ),
-          ),
-          const SizedBox(height: 12),
-          _DetailLine(label: 'CI', value: selected.ci),
-          _DetailLine(
-            label: 'Teléfono',
-            value: selected.telefono?.toString() ?? '—',
-          ),
-          _DetailLine(
-            label: 'Correo',
-            value: selected.correo?.trim().isNotEmpty == true
-                ? selected.correo!.trim()
-                : '—',
-          ),
-          _DetailLine(label: 'Alta', value: _startDate(selected)),
-          const Spacer(),
-          PulsoPrimaryButton(
-            label: 'Editar entrenador',
-            icon: Icons.edit_outlined,
-            onPressed: onEdit,
-          ),
-          const SizedBox(height: 8),
-          PulsoSecondaryButton(
-            label: 'Preparar baja',
-            icon: Icons.delete_outline,
-            danger: true,
-            onPressed: onDelete,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            selected.id,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: PulsoFonts.mono,
-              fontSize: 9,
-              color: tokens.muted2,
+            const SizedBox(height: 12),
+            _DetailLine(label: 'CI', value: selected.ci),
+            _DetailLine(
+              label: 'Teléfono',
+              value: selected.telefono?.toString() ?? '—',
             ),
-          ),
-        ],
+            _DetailLine(
+              label: 'Correo',
+              value: selected.correo?.trim().isNotEmpty == true
+                  ? selected.correo!.trim()
+                  : '—',
+            ),
+            _DetailLine(label: 'Alta', value: _startDate(selected)),
+            const SizedBox(height: 18),
+            PulsoPrimaryButton(
+              label: 'Ver estadística',
+              icon: Icons.insights_outlined,
+              onPressed: onStatistics,
+            ),
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Editar entrenador',
+              icon: Icons.edit_outlined,
+              onPressed: onEdit,
+            ),
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Preparar baja',
+              icon: Icons.delete_outline,
+              danger: true,
+              onPressed: onDelete,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              selected.id,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 9,
+                color: tokens.muted2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

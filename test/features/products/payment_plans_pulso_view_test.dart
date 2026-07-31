@@ -16,6 +16,7 @@ import 'package:gym_client/src/features/financials/presentation/state/currency_n
 import 'package:gym_client/src/features/products/data/models/payment_plan_model.dart';
 import 'package:gym_client/src/features/products/presentation/screens/payment_plans_pulso_view.dart';
 import 'package:gym_client/src/features/products/presentation/state/payment_plan_notifier.dart';
+import 'package:gym_client/src/features/statistics/presentation/state/statistics_providers.dart';
 
 void main() {
   const sizes = <String, Size>{
@@ -87,6 +88,33 @@ void main() {
     await tester.pump();
     // 3 asociados × Bs 250 × 30/30 días.
     expect(find.text('Bs 750.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('abre la estadística desde la ficha del plan buscable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _container();
+    await tester.pumpWidget(_harness(container: container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const PageStorageKey('pulso-plans-list')),
+        matching: find.text('Mensual'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('VER ESTADÍSTICA'));
+    await tester.pump();
+
+    expect(container.read(selectedPlanProvider), 'plan-mensual');
+    expect(container.read(dashboardNavProvider), 30);
     expect(tester.takeException(), isNull);
   });
 

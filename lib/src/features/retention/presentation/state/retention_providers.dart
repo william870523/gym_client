@@ -49,3 +49,90 @@ final retentionManagementHistoryProvider = FutureProvider.autoDispose
           .watch(retentionRepositoryProvider)
           .getManagementHistory(membershipId);
     });
+
+/// Catálogo de motivos de baja (PLAN_ESTADISTICAS.md §7-ter).
+///
+/// El parámetro dice si se quieren solo los activos: el diálogo de gestión pide
+/// activos —no tiene sentido ofrecer un motivo retirado— y la vista de catálogo
+/// los pide todos, para poder reactivar los apagados.
+final dropoutReasonsProvider = FutureProvider.autoDispose
+    .family<List<DropoutReasonModel>, bool>((ref, onlyActive) {
+      return ref
+          .watch(retentionRepositoryProvider)
+          .getDropoutReasons(onlyActive: onlyActive);
+    });
+
+/// Catálogo administrable de motivos de baja, con sus escrituras.
+///
+/// Carga **todos** los motivos, incluidos los desactivados: la vista de
+/// catálogo tiene que poder reactivarlos. El diálogo de gestión usa en cambio
+/// [dropoutReasonsProvider] con `true`, que solo trae los que deben ofrecerse.
+class DropoutReasonCatalogNotifier
+    extends AsyncNotifier<List<DropoutReasonModel>> {
+  @override
+  Future<List<DropoutReasonModel>> build() => _fetch();
+
+  Future<List<DropoutReasonModel>> _fetch() {
+    return ref.read(retentionRepositoryProvider).getDropoutReasons();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_fetch);
+    // El desplegable de la gestión comparte catálogo: si aquí se desactiva un
+    // motivo, allí tiene que dejar de ofrecerse sin recargar la aplicación.
+    ref.invalidate(dropoutReasonsProvider);
+  }
+
+  Future<void> create({
+    required String name,
+    String? code,
+    int order = 0,
+    bool active = true,
+  }) async {
+    await ref
+        .read(retentionRepositoryProvider)
+        .createDropoutReason(
+          name: name,
+          code: code,
+          order: order,
+          active: active,
+        );
+    await refresh();
+  }
+
+  Future<void> edit({
+    required String id,
+    String? name,
+    String? code,
+    int? order,
+    bool? active,
+  }) async {
+    await ref
+        .read(retentionRepositoryProvider)
+        .updateDropoutReason(
+          id: id,
+          name: name,
+          code: code,
+          order: order,
+          active: active,
+        );
+    await refresh();
+  }
+
+  /// Desactivar es la salida cuando un motivo ya se usó: lo retira de gestiones
+  /// nuevas sin tocar la historia que lo menciona.
+  Future<void> setActive(DropoutReasonModel reason, bool active) {
+    return edit(id: reason.id, active: active);
+  }
+
+  Future<void> remove(String id) async {
+    await ref.read(retentionRepositoryProvider).deleteDropoutReason(id);
+    await refresh();
+  }
+}
+
+final dropoutReasonCatalogProvider =
+    AsyncNotifierProvider<DropoutReasonCatalogNotifier, List<DropoutReasonModel>>(
+      DropoutReasonCatalogNotifier.new,
+    );

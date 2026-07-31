@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/widgets/flag_image.dart';
 import '../models/nacionalidad_model.dart';
 
 class NacionalidadRepository {
@@ -49,7 +50,10 @@ class NacionalidadRepository {
         formData.files.add(
           MapEntry(
             'bandera_file',
-            MultipartFile.fromBytes(flagBytes, filename: 'flag.png'),
+            MultipartFile.fromBytes(
+              flagBytes,
+              filename: flagUploadFilename(flagBytes),
+            ),
           ),
         );
       }
@@ -75,7 +79,10 @@ class NacionalidadRepository {
         formData.files.add(
           MapEntry(
             'bandera_file',
-            MultipartFile.fromBytes(flagBytes, filename: 'flag.png'),
+            MultipartFile.fromBytes(
+              flagBytes,
+              filename: flagUploadFilename(flagBytes),
+            ),
           ),
         );
       }

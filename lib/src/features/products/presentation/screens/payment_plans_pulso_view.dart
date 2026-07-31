@@ -14,6 +14,7 @@ import '../../../clients/presentation/state/clients_scope_filter_provider.dart';
 import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
 import '../../../financials/data/models/currency_model.dart';
 import '../../../financials/presentation/state/currency_notifier.dart';
+import '../../../statistics/presentation/state/statistics_providers.dart';
 import '../../data/models/payment_plan_model.dart';
 import '../state/payment_plan_notifier.dart';
 import '../widgets/payment_plan_pulso_form.dart';
@@ -36,8 +37,7 @@ class _PlanStats {
   final bool ready;
   final Map<String, int> counts;
 
-  int of(PaymentPlanModel plan) =>
-      plan.id == null ? 0 : counts[plan.id] ?? 0;
+  int of(PaymentPlanModel plan) => plan.id == null ? 0 : counts[plan.id] ?? 0;
 
   int get assignedTotal =>
       counts.values.fold(0, (total, value) => total + value);
@@ -182,9 +182,9 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
       await ref.read(paymentPlanProvider.notifier).delete(plan.id!);
       if (!mounted) return;
       if (_selectedId == plan.id) setState(() => _selectedId = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('“${plan.nombre}” fue eliminado.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('“${plan.nombre}” fue eliminado.')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -227,6 +227,13 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
     ref.read(dashboardNavProvider.notifier).setIndex(_clientsViewIndex);
   }
 
+  void _showPlanStatistics(PaymentPlanModel plan) {
+    final planId = plan.id;
+    if (planId == null || planId.isEmpty) return;
+    ref.read(selectedPlanProvider.notifier).select(planId);
+    ref.read(dashboardNavProvider.notifier).setIndex(30);
+  }
+
   void _showDetail(
     BuildContext context,
     PaymentPlanModel plan,
@@ -243,7 +250,7 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
           ),
           child: SizedBox(
             width: 340,
-            height: 560,
+            height: 620,
             child: _PlanDetail(
               plan: plan,
               currency: currencyMap[plan.monedaId],
@@ -259,6 +266,10 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
               onAssociates: () {
                 Navigator.of(dialogContext).pop();
                 _showAssociates(plan);
+              },
+              onStatistics: () {
+                Navigator.of(dialogContext).pop();
+                _showPlanStatistics(plan);
               },
             ),
           ),
@@ -359,6 +370,7 @@ class _PaymentPlansPulsoViewState extends ConsumerState<PaymentPlansPulsoView> {
                   onEdit: _openForm,
                   onDelete: (plan) => _confirmDelete(plan, stats),
                   onAssociates: _showAssociates,
+                  onStatistics: _showPlanStatistics,
                 ),
         );
         final page = Column(
@@ -607,6 +619,7 @@ class _PlanWorkspace extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onAssociates,
+    required this.onStatistics,
   });
   final List<PaymentPlanModel> items;
   final Map<String, CurrencyModel> currencyMap;
@@ -619,6 +632,7 @@ class _PlanWorkspace extends StatelessWidget {
   final ValueChanged<PaymentPlanModel> onEdit;
   final ValueChanged<PaymentPlanModel> onDelete;
   final ValueChanged<PaymentPlanModel> onAssociates;
+  final ValueChanged<PaymentPlanModel> onStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -656,6 +670,9 @@ class _PlanWorkspace extends StatelessWidget {
                 onAssociates: selected == null
                     ? null
                     : () => onAssociates(selected!),
+                onStatistics: selected == null
+                    ? null
+                    : () => onStatistics(selected!),
               ),
             ),
           ],
@@ -868,7 +885,8 @@ class _PlanRow extends StatelessWidget {
     final tokens = PulsoTokens.of(context);
     final symbol = currency?.symbol ?? r'$';
     final code = currency?.code.toUpperCase() ?? '';
-    final price = '$symbol ${_moneyFmt.format(plan.importe)}'
+    final price =
+        '$symbol ${_moneyFmt.format(plan.importe)}'
         '${code.isEmpty ? '' : ' $code'}';
     final count = stats.of(plan);
     final membersLabel = !stats.ready
@@ -1075,6 +1093,7 @@ class _PlanDetail extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onAssociates,
+    required this.onStatistics,
   });
   final PaymentPlanModel? plan;
   final CurrencyModel? currency;
@@ -1082,6 +1101,7 @@ class _PlanDetail extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onAssociates;
+  final VoidCallback? onStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -1111,80 +1131,91 @@ class _PlanDetail extends StatelessWidget {
         : '$symbol ${_moneyFmt.format(selected.comisionEntrenadorValor ?? 0)}';
     return PulsoPanel(
       padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const PulsoLabel('Detalle seleccionado'),
-          const SizedBox(height: 12),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '$symbol ${_moneyFmt.format(selected.importe)}',
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: PulsoFonts.display,
-                fontSize: 48,
-                height: 0.9,
-                fontWeight: FontWeight.w800,
-                color: tokens.accent,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const PulsoLabel('Detalle seleccionado'),
+            const SizedBox(height: 12),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '$symbol ${_moneyFmt.format(selected.importe)}',
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: PulsoFonts.display,
+                  fontSize: 48,
+                  height: 0.9,
+                  fontWeight: FontWeight.w800,
+                  color: tokens.accent,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 9),
-          Text(selected.nombre, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            selected.activo ? 'ACTIVO' : 'INACTIVO',
-            style: TextStyle(
-              fontFamily: PulsoFonts.mono,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: selected.activo ? tokens.success : tokens.muted,
+            const SizedBox(height: 9),
+            Text(
+              selected.nombre,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          ),
-          const SizedBox(height: 12),
-          _DetailLine(
-            label: 'Duración',
-            value: '${selected.formattedDuration} · ${selected.duracion} d',
-          ),
-          _DetailLine(label: 'Por día', value: perDay),
-          // El número es el enlace: lleva a Clientes con este plan filtrado.
-          // Se prefiere aquí, y no un botón aparte, para no crecer el panel.
-          _DetailLine(
-            key: const ValueKey('plan-detail-associates'),
-            label: 'Asociados',
-            value: stats.ready ? '$count' : '—',
-            onTap: stats.ready && count > 0 ? onAssociates : null,
-            tooltip: 'Ver los asociados de ${selected.nombre} en Clientes',
-          ),
-          _DetailLine(label: 'Ingreso/mes est.', value: monthly),
-          _DetailLine(label: 'Comisión entrenador', value: trainer),
-          const Spacer(),
-          PulsoPrimaryButton(
-            label: 'Editar plan',
-            icon: Icons.edit_outlined,
-            onPressed: onEdit,
-          ),
-          const SizedBox(height: 8),
-          PulsoSecondaryButton(
-            label: 'Eliminar',
-            icon: Icons.delete_outline,
-            danger: true,
-            onPressed: onDelete,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            selected.id ?? '—',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: PulsoFonts.mono,
-              fontSize: 9,
-              color: tokens.muted2,
+            const SizedBox(height: 4),
+            Text(
+              selected.activo ? 'ACTIVO' : 'INACTIVO',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: selected.activo ? tokens.success : tokens.muted,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            _DetailLine(
+              label: 'Duración',
+              value: '${selected.formattedDuration} · ${selected.duracion} d',
+            ),
+            _DetailLine(label: 'Por día', value: perDay),
+            // El número es el enlace: lleva a Clientes con este plan filtrado.
+            // Se prefiere aquí, y no un botón aparte, para no crecer el panel.
+            _DetailLine(
+              key: const ValueKey('plan-detail-associates'),
+              label: 'Asociados',
+              value: stats.ready ? '$count' : '—',
+              onTap: stats.ready && count > 0 ? onAssociates : null,
+              tooltip: 'Ver los asociados de ${selected.nombre} en Clientes',
+            ),
+            _DetailLine(label: 'Ingreso/mes est.', value: monthly),
+            _DetailLine(label: 'Comisión entrenador', value: trainer),
+            const SizedBox(height: 18),
+            PulsoPrimaryButton(
+              label: 'Ver estadística',
+              icon: Icons.insights_outlined,
+              onPressed: onStatistics,
+            ),
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Editar plan',
+              icon: Icons.edit_outlined,
+              onPressed: onEdit,
+            ),
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Eliminar',
+              icon: Icons.delete_outline,
+              danger: true,
+              onPressed: onDelete,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              selected.id ?? '—',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 9,
+                color: tokens.muted2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

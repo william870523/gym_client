@@ -12,6 +12,14 @@ enum DocumentType {
   bool get validatesCubanCi => this == DocumentType.cubanCi;
   bool get isClassified => this != DocumentType.unknown;
 
+  /// E0 (docs/PLAN_ESTADISTICAS.md §7-bis): documentos cuya fecha de nacimiento
+  /// hay que teclear porque el número no la codifica.
+  ///
+  /// `unknown` queda fuera a propósito: el tipo significa que no se sabe qué
+  /// documento es, así que exigir ahí una fecha exacta se contradice.
+  bool get requiresCapturedBirthDate =>
+      this == DocumentType.passport || this == DocumentType.other;
+
   static DocumentType fromCode(String? value) {
     final normalized = value?.trim().toUpperCase();
     return DocumentType.values.firstWhere(

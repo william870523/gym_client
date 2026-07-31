@@ -17,6 +17,7 @@ import '../../../../core/widgets/document_type_selector.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/trainer_model.dart';
 import 'camera_selector_dialog.dart';
+import '../../../../core/domain/sexo.dart';
 
 typedef TrainerPulsoSubmit =
     Future<void> Function(Map<String, dynamic> payload);
@@ -79,8 +80,11 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
     );
     _correoController = TextEditingController(text: trainer?.correo);
     if (trainer != null) {
-      final rawSexo = (trainer.sexo ?? 'M').trim().toUpperCase();
-      _sexo = rawSexo.startsWith('F') ? 'F' : 'M';
+      _sexo = switch (Sexo.normalizar(trainer.sexo)) {
+        Sexo.femenino => 'F',
+        Sexo.otro => 'O',
+        _ => 'M',
+      };
       _sexoSeleccionadoManualmente = true;
       _activo = trainer.activo;
       _fechaInicio = trainer.fechaInicio;
@@ -207,7 +211,10 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
       'tipo_documento': _documentType.code,
       'nombres_entrenador': _nombresController.text.trim(),
       'apellidos_entrenador': _apellidosController.text.trim(),
-      'sexo_entrenador': _sexo == 'M' ? 'Masculino' : 'Femenino',
+      // Lo que se ve es lo que se guarda: el servidor normaliza igual.
+      'sexo_entrenador': _sexo == 'M'
+          ? Sexo.masculino
+          : (_sexo == 'F' ? Sexo.femenino : Sexo.otro),
       'direccion_entrenador': direccion.isNotEmpty ? direccion : null,
       'telefono_entrenador': int.tryParse(_telefonoController.text.trim()),
       'correo_entrenador': correo.isNotEmpty ? correo : null,
@@ -521,6 +528,7 @@ class _TrainerPulsoFormState extends State<TrainerPulsoForm> {
       items: const [
         DropdownMenuItem(value: 'M', child: Text('Masculino')),
         DropdownMenuItem(value: 'F', child: Text('Femenino')),
+        DropdownMenuItem(value: 'O', child: Text('Otro')),
       ],
       onChanged: _busy ? null : _selectSexoManually,
     );

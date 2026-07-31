@@ -6,6 +6,7 @@ import '../../../../core/localization/locale_provider.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../../core/widgets/sync_status_chip.dart';
+import '../../../gyms/presentation/widgets/sede_selector.dart';
 
 class DashboardHeader extends ConsumerWidget {
   final bool isDark;
@@ -117,6 +118,10 @@ class DashboardHeader extends ConsumerWidget {
             ),
             const SizedBox(width: 16),
           ],
+          // Sede activa (docs/MULTI_SEDE.md §3.4). Se esconde solo cuando hay
+          // una sola sede, así que no estorba en una instalación normal.
+          const SedeSelector(compact: true),
+
           // Divider
           Container(height: 24, width: 1, color: borderColor),
           const SizedBox(width: 16),

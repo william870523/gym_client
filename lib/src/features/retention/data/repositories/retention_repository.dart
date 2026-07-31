@@ -68,6 +68,7 @@ class RetentionRepository {
     required String result,
     required String channel,
     String? note,
+    String? reasonId,
     String? promiseDate,
     String? nextManagementDate,
   }) async {
@@ -79,6 +80,7 @@ class RetentionRepository {
         'resultado': result,
         'canal': channel,
         'nota': note,
+        'motivo_baja_id': reasonId,
         'promesa_fecha': promiseDate,
         'proxima_gestion_fecha': nextManagementDate,
       },
@@ -87,5 +89,69 @@ class RetentionRepository {
     return RetentionManagementRecord.fromJson(
       Map<String, dynamic>.from(body['management'] as Map),
     );
+  }
+
+  // --- Catálogo de motivos de baja (PLAN_ESTADISTICAS.md §7-ter) ---
+
+  /// [onlyActive] pide solo los que deben ofrecerse en gestiones nuevas; la
+  /// vista de catálogo los quiere todos, para poder reactivar los apagados.
+  Future<List<DropoutReasonModel>> getDropoutReasons({
+    bool onlyActive = false,
+  }) async {
+    final response = await _dio.get(
+      '/motivos-baja',
+      queryParameters: onlyActive ? const {'activos': 'true'} : null,
+    );
+    return (response.data as List? ?? const [])
+        .map(
+          (item) =>
+              DropoutReasonModel.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<DropoutReasonModel> createDropoutReason({
+    required String name,
+    String? code,
+    int order = 0,
+    bool active = true,
+  }) async {
+    final response = await _dio.post(
+      '/motivos-baja',
+      data: {
+        'nombre': name,
+        'codigo': code,
+        'orden': order,
+        'activo': active,
+      },
+    );
+    return DropoutReasonModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<DropoutReasonModel> updateDropoutReason({
+    required String id,
+    String? name,
+    String? code,
+    int? order,
+    bool? active,
+  }) async {
+    final response = await _dio.put(
+      '/motivos-baja/$id',
+      data: {
+        if (name != null) 'nombre': name,
+        if (code != null) 'codigo': code,
+        if (order != null) 'orden': order,
+        if (active != null) 'activo': active,
+      },
+    );
+    return DropoutReasonModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<void> deleteDropoutReason(String id) async {
+    await _dio.delete('/motivos-baja/$id');
   }
 }

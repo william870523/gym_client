@@ -86,6 +86,58 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // --- E0-b: motivo de baja codificado (PLAN_ESTADISTICAS.md §7-ter) ---
+
+  testWidgets('el motivo aparece y cambia de exigencia según el resultado', (
+    tester,
+  ) async {
+    await _pump(tester, const Size(1280, 900));
+    await tester.tap(find.byTooltip('Registrar gestión').first);
+    await tester.pumpAndSettle();
+
+    // Contactado: el motivo se ofrece como aviso temprano, no como baja.
+    expect(find.byKey(const ValueKey('retention-reason-field')), findsOneWidget);
+    expect(find.text('Motivo declarado (opcional)'), findsOneWidget);
+    expect(find.textContaining('aviso temprano, no una baja'), findsOneWidget);
+
+    // No desea renovar: pasa a ser obligatorio.
+    await tester.tap(find.byKey(const ValueKey('retention-result-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('No desea renovar').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Motivo de la baja (obligatorio)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sin contacto no se pide motivo: nadie pudo preguntarlo', (
+    tester,
+  ) async {
+    await _pump(tester, const Size(1280, 900));
+    await tester.tap(find.byTooltip('Registrar gestión').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('retention-result-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('No localizado').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('retention-reason-field')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un catálogo vacío avisa en vez de mostrar un desplegable mudo', (
+    tester,
+  ) async {
+    await _pump(tester, const Size(1280, 900), reasons: const []);
+    await tester.tap(find.byTooltip('Registrar gestión').first);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('retention-reason-field')), findsNothing);
+    expect(find.textContaining('No hay motivos activos'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('presenta cohortes, dimensiones y emisión del informe', (
     tester,
   ) async {
@@ -169,10 +221,33 @@ void main() {
   });
 }
 
+/// Catálogo mínimo de motivos para el diálogo de gestión (§7-ter).
+const _reasonsFixture = [
+  DropoutReasonModel(
+    id: 'mbaja-precio',
+    name: 'Precio',
+    code: 'PRECIO',
+    order: 1,
+    active: true,
+    isSystem: true,
+    managements: 3,
+  ),
+  DropoutReasonModel(
+    id: 'mbaja-horario',
+    name: 'Horario',
+    code: 'HORARIO',
+    order: 2,
+    active: true,
+    isSystem: true,
+    managements: 0,
+  ),
+];
+
 Future<void> _pump(
   WidgetTester tester,
   Size size, {
   RetentionDashboardModel? dashboard,
+  List<DropoutReasonModel> reasons = _reasonsFixture,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -189,6 +264,7 @@ Future<void> _pump(
         retentionManagementHistoryProvider.overrideWith(
           (ref, membershipId) async => const [],
         ),
+        dropoutReasonsProvider.overrideWith((ref, onlyActive) async => reasons),
       ],
       child: const MaterialApp(home: Scaffold(body: RetentionPulsoView())),
     ),

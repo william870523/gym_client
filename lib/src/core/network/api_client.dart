@@ -10,8 +10,24 @@ part 'api_client.g.dart';
 
 final _apiLogger = Logger(printer: SimplePrinter(colors: false));
 
+/// Cliente HTTP **atado a la sede activa**.
+///
+/// Observar aquí la sede no es un detalle: es la palanca que hace que cambiar
+/// de sede tire TODOS los datos cacheados (docs/MULTI_SEDE.md §3.4 y §7). Como
+/// cada repositorio observa este proveedor, y cada vista observa su repositorio,
+/// al cambiar la sede se reconstruye la cadena entera y no sobrevive nada de la
+/// sede anterior.
+///
+/// Por eso ningún repositorio debe usar `ref.read(apiClientProvider)`: leer sin
+/// observar rompe la cadena en silencio y esa vista seguiría enseñando los
+/// socios de la sede que se acaba de abandonar. Lo vigila
+/// `test/core/network/api_client_dependency_test.dart`.
 @Riverpod(keepAlive: true)
 Dio apiClient(Ref ref) {
+  // Sede activa (docs/MULTI_SEDE.md §3.3). El `gym_id` nunca viaja en el
+  // cuerpo: el servidor comprueba que esta cuenta pueda trabajar en la sede
+  // pedida y deriva de ahí el ámbito.
+  final gymId = ref.watch(sedeSessionProvider)?.gymId;
   final options = BaseOptions(
     baseUrl: Env.baseUrl,
     connectTimeout: const Duration(seconds: 60),
@@ -39,11 +55,10 @@ Dio apiClient(Ref ref) {
           options.headers['Authorization'] = 'Bearer $token';
         }
 
-        // Sede activa (docs/MULTI_SEDE.md §3.3). El `gym_id` nunca viaja en el
-        // cuerpo: el servidor comprueba que esta cuenta pueda trabajar en la
-        // sede pedida y deriva de ahí el ámbito. Sin cabecera se usa la sede
-        // por defecto, así que solo se manda cuando se conoce.
-        final gymId = ref.read(sedeSessionProvider)?.gymId;
+        // La sede se fija al construir el cliente, no por petición: así una
+        // respuesta en vuelo no puede aterrizar con la cabecera de la sede
+        // nueva sobre datos pedidos para la vieja. Sin sede conocida no se
+        // manda nada y el servidor usa la sede por defecto de la cuenta.
         if (gymId != null && gymId.isNotEmpty) {
           options.headers['X-Gym-Id'] = gymId;
         }

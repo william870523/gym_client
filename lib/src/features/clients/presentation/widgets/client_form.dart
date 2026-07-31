@@ -29,6 +29,7 @@ import '../../data/models/client_model.dart';
 import '../state/client_notifier.dart';
 import '../state/weight_history_notifier.dart';
 import 'add_weight_modal.dart';
+import '../../../../core/domain/sexo.dart';
 
 class ClientFormResult {
   const ClientFormResult({required this.client, required this.payNow});
@@ -106,6 +107,9 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         ? DocumentType.cubanCi
         : DocumentType.fromCode(c.documentType);
     _documentTypeManuallySelected = c != null && _documentType.isClassified;
+    // Solo se precarga para documentos que no son carné cubano: con carné la
+    // fecha se deriva y el campo capturado no interviene.
+    _birthDate = c?.birthDate;
     _emailController = TextEditingController(text: c?.correo ?? '');
     _phoneController = TextEditingController(
       text: c?.telefono?.toString() ?? '',
@@ -117,14 +121,11 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     _weightController = TextEditingController(text: c?.peso?.toString() ?? '');
     _objectiveController = TextEditingController(text: c?.objetivo ?? '');
 
-    final rawSex = c?.sexo?.trim() ?? 'M';
-    if (rawSex.toUpperCase().startsWith('M') || rawSex == 'Masculino') {
-      _sex = 'M';
-    } else if (rawSex.toUpperCase().startsWith('F') || rawSex == 'Femenino') {
-      _sex = 'F';
-    } else {
-      _sex = 'O';
-    }
+    _sex = switch (Sexo.normalizar(c?.sexo)) {
+      Sexo.femenino => 'F',
+      Sexo.otro => 'O',
+      _ => 'M',
+    };
     _sexManuallySelected = c != null;
     // R5.3: cargar categoría; si el cliente heredado no la tiene, queda null
     // y el dropdown obliga a elegir antes de guardar.
@@ -143,6 +144,38 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
     // Attempt to parse horarioId if present (Note: ClientModel might not support it yet, but UI should)
     // If ClientModel doesn't have horarioId, we just leave it null.
+  }
+
+  /// Fecha de nacimiento capturada a mano. Solo se usa cuando el documento NO
+  /// es un carné cubano: con carné la deriva el servidor del propio número
+  /// (docs/PLAN_ESTADISTICAS.md §7-bis) y este valor ni se muestra ni se envía.
+  DateTime? _birthDate;
+
+  /// Fecha derivada del CI que se teclea, para mostrarla mientras se escribe.
+  /// Es informativa: la autoridad sobre el dato guardado es el servidor.
+  DateTime? get _derivedBirthDate {
+    if (!_documentType.validatesCubanCi) return null;
+    final analysis = analizarCubaCi(
+      _ciController.text,
+      fechaReferencia: _ciReferenceDate,
+    );
+    return analysis.esValido ? analysis.fechaNacimiento : null;
+  }
+
+  /// El CI codifica el sexo en su dígito 10. Si el declarado no coincide, uno de
+  /// los dos está mal — y cuál es una decisión humana, así que solo se avisa.
+  bool get _sexContradictsCi {
+    if (!_documentType.validatesCubanCi) return false;
+    final analysis = analizarCubaCi(
+      _ciController.text,
+      fechaReferencia: _ciReferenceDate,
+    );
+    final coded = analysis.sexoCodificado;
+    if (!analysis.esValido || coded == null) return false;
+    final codedLetter = coded == CubaCiSexo.masculino ? 'M' : 'F';
+    // «Otro» no contradice: el CI solo distingue dos valores.
+    if (_sex != 'M' && _sex != 'F') return false;
+    return _sex != codedLetter;
   }
 
   void _handleCiAnalysis(CubaCiAnalisis analysis) {
@@ -331,6 +364,26 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         return;
       }
 
+      // E0 (§7-bis): con pasaporte u otro documento la fecha de nacimiento hay
+      // que capturarla al dar de alta; el carné cubano la lleva dentro y
+      // `DESCONOCIDO` significa que no se sabe, así que ahí no se exige.
+      if (widget.client == null &&
+          _documentType.requiresCapturedBirthDate &&
+          _birthDate == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Indique la fecha de nacimiento: este documento no la lleva '
+                'codificada.',
+              ),
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
       final plans = ref.read(paymentPlanProvider).value ?? const [];
       final selectedPlan = plans.where((p) => p.id == _planId).firstOrNull;
 
@@ -368,9 +421,16 @@ class _ClientFormState extends ConsumerState<ClientForm> {
       final client = ClientModel(
         id: _ciController.text.trim(),
         documentType: _documentType.code,
+        // Con carné cubano NO se manda: el servidor la deriva del número y
+        // descarta lo que llegue en el cuerpo (§7-bis). Mandarla sería sugerir
+        // que el formulario decide, y no decide.
+        birthDate: _documentType.validatesCubanCi ? null : _birthDate,
         nombres: _nameController.text.trim(),
         apellidos: _surnameController.text.trim(),
-        sexo: _sex == 'M' ? 'Masculino' : (_sex == 'F' ? 'Femenino' : 'Otro'),
+        // Lo que se ve es lo que se guarda (docs/PLAN_ESTADISTICAS.md §7).
+        sexo: _sex == 'M'
+            ? Sexo.masculino
+            : (_sex == 'F' ? Sexo.femenino : Sexo.otro),
         correo: email.isEmpty ? null : email,
         telefono: int.tryParse(_phoneController.text.trim()),
         planId: (_planId == null || _planId!.isEmpty) ? null : _planId,
@@ -1009,24 +1069,31 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             ),
           ),
           const SizedBox(height: 16),
-          SwitchListTile(
-            value: _isActive,
-            onChanged: (v) => setState(() => _isActive = v),
-            title: Text(
-              _isActive ? 'Activo' : 'Inactivo',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: _isActive ? palette.success : palette.danger,
+          // El contenedor de la sección pinta su propio fondo, así que el
+          // ListTile no encontraba un Material donde dibujar la onda y Flutter
+          // lo denunciaba en cada build. Un Material transparente le da ese
+          // ancestro sin cambiar nada de lo que se ve.
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              value: _isActive,
+              onChanged: (v) => setState(() => _isActive = v),
+              title: Text(
+                _isActive ? 'Activo' : 'Inactivo',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: _isActive ? palette.success : palette.danger,
+                ),
               ),
+              subtitle: Text(
+                'Permitir acceso al gimnasio',
+                style: TextStyle(fontSize: 12, color: muted),
+              ),
+              activeTrackColor: palette.success,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
             ),
-            subtitle: Text(
-              'Permitir acceso al gimnasio',
-              style: TextStyle(fontSize: 12, color: muted),
-            ),
-            activeTrackColor: palette.success,
-            contentPadding: EdgeInsets.zero,
-            dense: true,
           ),
         ],
       ),
@@ -1340,8 +1407,158 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _buildBirthDateField(),
+        if (_sexContradictsCi) ...[
+          const SizedBox(height: 10),
+          _buildSexMismatchNotice(),
+        ],
       ],
     );
+  }
+
+  /// Fecha de nacimiento (§7-bis). Con carné cubano se muestra derivada y no se
+  /// deja tocar: el número ya la contiene y el servidor la recalcula. Con
+  /// pasaporte u otro documento se captura. Con `DESCONOCIDO` es opcional.
+  Widget _buildBirthDateField() {
+    final palette = _ClientFormPalette.of(context);
+    final derived = _derivedBirthDate;
+
+    if (_documentType.validatesCubanCi) {
+      return _BirthDateReadout(
+        key: const ValueKey('pulso-client-birthdate-derived'),
+        label: 'Fecha de nacimiento',
+        value: derived == null ? null : _formatDate(derived),
+        hint: derived == null
+            ? 'Se calculará del carné cuando esté completo'
+            : 'Derivada del carné · ${_ageLabel(derived)}',
+        palette: palette,
+      );
+    }
+
+    final required = _documentType.requiresCapturedBirthDate;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: 'Fecha de nacimiento',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: palette.textSecondary,
+            ),
+            children: [
+              if (required)
+                TextSpan(text: ' *', style: TextStyle(color: palette.danger)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        InkWell(
+          key: const ValueKey('pulso-client-birthdate-picker'),
+          onTap: _isLoading ? null : _pickBirthDate,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: palette.surfaceAlt,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 14,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: palette.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: palette.border),
+              ),
+              suffixIcon: Icon(
+                Icons.calendar_today_outlined,
+                size: 16,
+                color: palette.textSecondary,
+              ),
+            ),
+            child: Text(
+              _birthDate == null
+                  ? 'Seleccionar fecha'
+                  : '${_formatDate(_birthDate!)} · ${_ageLabel(_birthDate!)}',
+              style: TextStyle(
+                fontSize: 14,
+                color: _birthDate == null
+                    ? palette.textSecondary
+                    : palette.textPrimary,
+              ),
+            ),
+          ),
+        ),
+        if (_documentType == DocumentType.unknown) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Opcional mientras el documento esté sin clasificar.',
+            style: TextStyle(fontSize: 11, color: palette.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Aviso, nunca corrección automática: cuál de los dos datos está mal —el
+  /// sexo declarado o el dígito 10 del carné— es una decisión humana.
+  Widget _buildSexMismatchNotice() {
+    final palette = _ClientFormPalette.of(context);
+    return Container(
+      key: const ValueKey('pulso-client-sex-mismatch'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: palette.warning),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 15, color: palette.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'El sexo declarado no coincide con el que codifica el dígito 10 '
+              'del carné. Revisa cuál de los dos es correcto.',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: palette.warning,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickBirthDate() async {
+    final today = _ciReferenceDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime.utc(today.year - 25, 1, 1),
+      firstDate: DateTime.utc(today.year - 100, 1, 1),
+      lastDate: today,
+      helpText: 'FECHA DE NACIMIENTO',
+    );
+    if (picked == null || !mounted) return;
+    setState(
+      () => _birthDate = DateTime.utc(picked.year, picked.month, picked.day),
+    );
+  }
+
+  String _ageLabel(DateTime birth) {
+    final today = _ciReferenceDate;
+    var age = today.year - birth.year;
+    final hadBirthday =
+        today.month > birth.month ||
+        (today.month == birth.month && today.day >= birth.day);
+    if (!hadBirthday) age -= 1;
+    return '$age años';
   }
 
   Widget _buildTextField({
@@ -2262,6 +2479,70 @@ class LayoutGrid extends StatelessWidget {
   }
 }
 
+/// Lectura de la fecha de nacimiento derivada del carné: se enseña, no se
+/// edita. Editarla sugeriría que el formulario decide, y decide el servidor.
+class _BirthDateReadout extends StatelessWidget {
+  const _BirthDateReadout({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.hint,
+    required this.palette,
+  });
+
+  final String label;
+  final String? value;
+  final String hint;
+  final _ClientFormPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: palette.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: palette.surfaceAlt,
+            border: Border.all(color: palette.border),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.lock_outline, size: 14, color: palette.textSecondary),
+              const SizedBox(width: 8),
+              Text(
+                value ?? '—',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: value == null
+                      ? palette.textSecondary
+                      : palette.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          hint,
+          style: TextStyle(fontSize: 11, color: palette.textSecondary),
+        ),
+      ],
+    );
+  }
+}
+
 class _ClientFormPalette {
   const _ClientFormPalette({
     required this.isDark,
@@ -2275,6 +2556,7 @@ class _ClientFormPalette {
     required this.accentInk,
     required this.accentSoft,
     required this.success,
+    required this.warning,
     required this.danger,
     required this.shadow,
   });
@@ -2293,6 +2575,7 @@ class _ClientFormPalette {
       accentInk: tokens.accentInk,
       accentSoft: tokens.accentSoft,
       success: tokens.success,
+      warning: tokens.warning,
       danger: tokens.danger,
       shadow: tokens.isDark
           ? Colors.black.withValues(alpha: 0.32)
@@ -2311,6 +2594,7 @@ class _ClientFormPalette {
   final Color accentInk;
   final Color accentSoft;
   final Color success;
+  final Color warning;
   final Color danger;
   final Color shadow;
 }

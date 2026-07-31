@@ -8,6 +8,7 @@ import '../models/trainer_offboarding_case.dart';
 import '../models/trainer_offboarding_financial.dart';
 import '../models/trainer_final_settlement.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/domain/sexo.dart';
 
 part 'trainer_repository.g.dart';
 
@@ -83,8 +84,10 @@ class TrainerRepository {
     final id = _asString(item['id_entrenador']).trim();
     if (id.isEmpty) return null;
 
-    final sexo = _asString(item['sexo_entrenador'], fallback: 'M').trim();
-    final sexoValue = sexo == 'F' || sexo == 'M' ? sexo : 'M';
+    // Antes esto convertía en 'M' TODO lo que no fuera exactamente 'M' o 'F',
+    // así que una entrenadora guardada como «Femenino» salía como hombre.
+    final sexoValue =
+        Sexo.normalizar(item['sexo_entrenador']) ?? Sexo.masculino;
 
     return TrainerModel(
       id: id,
@@ -113,8 +116,8 @@ class TrainerRepository {
         ? rawId
         : 'temp-${DateTime.now().millisecondsSinceEpoch}';
 
-    final sexo = _asString(payload['sexo_entrenador'], fallback: 'M').trim();
-    final sexoValue = sexo == 'F' || sexo == 'M' ? sexo : 'M';
+    final sexoValue =
+        Sexo.normalizar(payload['sexo_entrenador']) ?? Sexo.masculino;
 
     return TrainerModel(
       id: id,

@@ -505,6 +505,8 @@ class RetentionManagementRecord {
     required this.clientId,
     required this.result,
     required this.channel,
+    required this.reasonId,
+    required this.reasonName,
     required this.note,
     required this.promiseDate,
     required this.nextManagementDate,
@@ -519,6 +521,10 @@ class RetentionManagementRecord {
         clientId: json['ci']?.toString() ?? '',
         result: json['result']?.toString() ?? '',
         channel: json['channel']?.toString() ?? '',
+        reasonId: _nullableText(json['reason_id']),
+        // Nombre congelado al registrar: renombrar el motivo después no
+        // reescribe lo que decía esta gestión (PLAN_ESTADISTICAS.md §7-ter).
+        reasonName: _nullableText(json['reason_name']),
         note: _nullableText(json['note']),
         promiseDate: _nullableText(json['promise_date']),
         nextManagementDate: _nullableText(json['next_management_date']),
@@ -533,11 +539,52 @@ class RetentionManagementRecord {
   final String clientId;
   final String result;
   final String channel;
+  final String? reasonId;
+  final String? reasonName;
   final String? note;
   final String? promiseDate;
   final String? nextManagementDate;
   final String registeredBy;
   final DateTime registeredAtUtc;
+}
+
+/// Motivo de baja del catálogo administrable (`motivo_baja`).
+///
+/// `gestiones` es el uso real: decide si el motivo se puede borrar y alimenta
+/// la métrica de la vista de catálogo. `esSistema` marca los diez sembrados por
+/// la migración, que se desactivan pero no se borran.
+class DropoutReasonModel {
+  const DropoutReasonModel({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.order,
+    required this.active,
+    required this.isSystem,
+    required this.managements,
+  });
+
+  factory DropoutReasonModel.fromJson(Map<String, dynamic> json) =>
+      DropoutReasonModel(
+        id: json['motivo_baja_id']?.toString() ?? '',
+        name: json['nombre']?.toString() ?? '',
+        code: _nullableText(json['codigo']),
+        order: int.tryParse(json['orden']?.toString() ?? '') ?? 0,
+        active: json['activo'] == true,
+        isSystem: json['es_sistema'] == true,
+        managements: int.tryParse(json['gestiones']?.toString() ?? '') ?? 0,
+      );
+
+  final String id;
+  final String name;
+  final String? code;
+  final int order;
+  final bool active;
+  final bool isSystem;
+  final int managements;
+
+  /// Un motivo solo se puede borrar si nadie lo usó y no es de sistema.
+  bool get canDelete => !isSystem && managements == 0;
 }
 
 class RetentionPlanModel {

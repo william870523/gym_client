@@ -9,6 +9,9 @@ part of 'client_model.dart';
 ClientModel _$ClientModelFromJson(Map<String, dynamic> json) => ClientModel(
   id: json['ci'] as String,
   documentType: json['tipo_documento'] as String?,
+  birthDate: json['fecha_nacimiento'] == null
+      ? null
+      : DateTime.parse(json['fecha_nacimiento'] as String),
   nombres: json['nombres'] as String?,
   apellidos: json['apellidos'] as String?,
   sexo: json['sexo'] as String?,
@@ -47,6 +50,7 @@ Map<String, dynamic> _$ClientModelToJson(ClientModel instance) =>
     <String, dynamic>{
       'ci': instance.id,
       'tipo_documento': instance.documentType,
+      'fecha_nacimiento': instance.birthDate?.toIso8601String(),
       'nombres': instance.nombres,
       'apellidos': instance.apellidos,
       'sexo': instance.sexo,
