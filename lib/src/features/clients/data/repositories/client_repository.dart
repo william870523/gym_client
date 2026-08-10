@@ -220,12 +220,22 @@ class ClientRepository {
     }
   }
 
-  Future<ClientModel> updateClient(ClientModel client) async {
+  /// R5.3 — `motivoCategoria` acompaña al cambio de categoría, no al resto de
+  /// la edición: el servidor solo lo exige cuando la categoría cambia de
+  /// verdad, porque eso mueve el precio de todos los cobros futuros.
+  Future<ClientModel> updateClient(
+    ClientModel client, {
+    String? motivoCategoria,
+  }) async {
     if (client.id.isEmpty) {
       throw Exception('Client ID cannot be empty');
     }
     try {
       final data = clientWritePayload(client);
+      final motivo = motivoCategoria?.trim();
+      if (motivo != null && motivo.isNotEmpty) {
+        data['motivo_categoria'] = motivo;
+      }
       await _dio.put('/clientes/${client.id}', data: data);
       return getClient(client.id);
     } catch (e) {

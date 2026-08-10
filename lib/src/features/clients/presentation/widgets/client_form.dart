@@ -11,6 +11,7 @@ import 'package:gym_client/src/features/schedules/data/models/horario_model.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/identity/document_type.dart';
+import '../../../auth/presentation/state/auth_notifier.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/utils/cuba_ci.dart';
@@ -69,6 +70,30 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   bool _sexDerivedFromCi = false;
   // R5.3: categoría del cliente para el descuento. Sin default: obligatorio.
   String? _categoria;
+
+  /// R5.3 — categoría con la que se abrió el formulario, y motivo del cambio.
+  ///
+  /// Cambiar la categoría de un socio ya registrado es de administración y
+  /// exige motivo, porque mueve el precio de todos sus cobros futuros. Elegirla
+  /// **al dar de alta** sigue siendo libre: la persona está delante diciendo
+  /// que ya fue socio, y llamar a administración para eso solo estorba.
+  String? _categoriaOriginal;
+  final TextEditingController _motivoCategoriaController =
+      TextEditingController();
+
+  bool get _esAdmin {
+    final rol = ref.read(authProvider).value?.role.toLowerCase();
+    return rol == 'admin' || rol == 'administrador';
+  }
+
+  /// Editando y sin ser administración: el desplegable se ve, pero no se toca.
+  bool get _categoriaBloqueada => widget.client != null && !_esAdmin;
+
+  /// Hubo cambio real respecto a como se abrió el formulario.
+  bool get _categoriaCambiada =>
+      widget.client != null &&
+      _categoria != null &&
+      _categoria != _categoriaOriginal;
   String? _planId;
   String? _nacionalidadId;
   String? _horarioId; // NEW
@@ -131,6 +156,10 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     // y el dropdown obliga a elegir antes de guardar.
     final rawCat = c?.categoria?.trim().toUpperCase();
     _categoria = (rawCat == 'NUEVO' || rawCat == 'VIEJO') ? rawCat : 'NUEVO';
+    // R5.3 — se guarda la categoría con la que se abrió el formulario para
+    // saber si el operador la cambió de verdad. Sin esto habría que pedir
+    // motivo cada vez que se guarda, aunque no se haya tocado.
+    _categoriaOriginal = _categoria;
     _planId = c?.planId;
     _nacionalidadId = c?.nacionalidadId;
     _referenciaId = c?.referralId;
@@ -236,6 +265,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
 
   @override
   void dispose() {
+    _motivoCategoriaController.dispose();
     _nameController.dispose();
     _surnameController.dispose();
     _ciController.dispose();
@@ -403,6 +433,24 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         return;
       }
 
+      // R5.3: cambiar la categoría de un socio ya registrado exige motivo. Se
+      // comprueba aquí para no mandar al servidor una petición que ya sabemos
+      // que va a rechazar, y para decirlo donde el operador está mirando.
+      if (_categoriaCambiada && _motivoCategoriaController.text.trim().length < 5) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Escriba el motivo del cambio de categoría: mueve el precio de '
+                'los cobros futuros de este socio.',
+              ),
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
       // R5.3: la categoría de cliente es obligatoria (define el descuento).
       if (_categoria == null) {
         if (mounted) {
@@ -457,7 +505,12 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           ? await ref.read(clientNotifierProvider.notifier).createClient(client)
           : await ref
                 .read(clientNotifierProvider.notifier)
-                .updateClient(client);
+                .updateClient(
+                  client,
+                  motivoCategoria: _categoriaCambiada
+                      ? _motivoCategoriaController.text.trim()
+                      : null,
+                );
 
       if (mounted) {
         Navigator.of(context).pop(
@@ -703,7 +756,9 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             isNumber: true,
                                           ),
                                           _buildDropdown(
-                                            label: 'Categoría *',
+                                            label: _categoriaBloqueada
+                                                ? 'Categoría * (solo administración)'
+                                                : 'Categoría *',
                                             value: _categoria,
                                             items: const [
                                               DropdownMenuItem(
@@ -719,11 +774,42 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                                 ),
                                               ),
                                             ],
-                                            onChanged: (v) => setState(
-                                              () => _categoria = v as String?,
-                                            ),
+                                            // R5.3 — en una edición, solo
+                                            // administración puede cambiarla.
+                                            // En el alta la elige quien registre.
+                                            onChanged: _categoriaBloqueada
+                                                ? null
+                                                : (v) => setState(
+                                                    () =>
+                                                        _categoria = v as String?,
+                                                  ),
                                             placeholder: 'Seleccionar',
                                           ),
+                                          if (_categoriaBloqueada)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 12,
+                                              ),
+                                              child: Text(
+                                                'Cambiar la categoría de un socio ya '
+                                                'registrado es de administración: mueve '
+                                                'el precio de sus cobros futuros.',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: PulsoTokens.of(
+                                                    context,
+                                                  ).muted,
+                                                ),
+                                              ),
+                                            ),
+                                          if (_categoriaCambiada)
+                                            _buildTextField(
+                                              label: 'Motivo del cambio de categoría *',
+                                              controller:
+                                                  _motivoCategoriaController,
+                                              placeholder:
+                                                  'Ej: volvió tras el cierre de la sede del Vedado',
+                                            ),
                                           _buildSearchableNationality(
                                             nacionalidadOptions,
                                           ),
@@ -1675,7 +1761,8 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     required String label,
     required dynamic value,
     required List<DropdownMenuItem<Object>> items,
-    required Function(Object?) onChanged,
+    /// `null` deshabilita el desplegable: es como Material apaga un control.
+    required Function(Object?)? onChanged,
     Key? fieldKey,
     String? placeholder,
   }) {

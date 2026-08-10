@@ -34,11 +34,14 @@ class ClientNotifier extends AsyncNotifier<List<ClientModel>> {
     }
   }
 
-  Future<ClientModel> updateClient(ClientModel client) async {
+  Future<ClientModel> updateClient(
+    ClientModel client, {
+    String? motivoCategoria,
+  }) async {
     try {
       final updated = await ref
           .read(clientRepositoryProvider)
-          .updateClient(client);
+          .updateClient(client, motivoCategoria: motivoCategoria);
       await refresh();
       return updated;
     } catch (e) {

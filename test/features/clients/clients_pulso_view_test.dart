@@ -776,9 +776,17 @@ class _ClientNotifier extends ClientNotifier {
   @override
   Future<List<ClientModel>> build() async => items;
 
+  /// R5.3 — el motivo del cambio de categoría se recoge para poder afirmar en
+  /// las pruebas que la vista lo manda solo cuando la categoría cambia.
+  final List<String?> motivosCategoria = [];
+
   @override
-  Future<ClientModel> updateClient(ClientModel client) async {
+  Future<ClientModel> updateClient(
+    ClientModel client, {
+    String? motivoCategoria,
+  }) async {
     updates.add(client);
+    motivosCategoria.add(motivoCategoria);
     return client;
   }
 }
