@@ -8,12 +8,49 @@ part of 'api_client.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// Cliente HTTP **atado a la sede activa**.
+///
+/// Observar aquí la sede no es un detalle: es la palanca que hace que cambiar
+/// de sede tire TODOS los datos cacheados (docs/MULTI_SEDE.md §3.4 y §7). Como
+/// cada repositorio observa este proveedor, y cada vista observa su repositorio,
+/// al cambiar la sede se reconstruye la cadena entera y no sobrevive nada de la
+/// sede anterior.
+///
+/// Por eso ningún repositorio debe usar `ref.read(apiClientProvider)`: leer sin
+/// observar rompe la cadena en silencio y esa vista seguiría enseñando los
+/// socios de la sede que se acaba de abandonar. Lo vigila
+/// `test/core/network/api_client_dependency_test.dart`.
 
 @ProviderFor(apiClient)
 const apiClientProvider = ApiClientProvider._();
 
+/// Cliente HTTP **atado a la sede activa**.
+///
+/// Observar aquí la sede no es un detalle: es la palanca que hace que cambiar
+/// de sede tire TODOS los datos cacheados (docs/MULTI_SEDE.md §3.4 y §7). Como
+/// cada repositorio observa este proveedor, y cada vista observa su repositorio,
+/// al cambiar la sede se reconstruye la cadena entera y no sobrevive nada de la
+/// sede anterior.
+///
+/// Por eso ningún repositorio debe usar `ref.read(apiClientProvider)`: leer sin
+/// observar rompe la cadena en silencio y esa vista seguiría enseñando los
+/// socios de la sede que se acaba de abandonar. Lo vigila
+/// `test/core/network/api_client_dependency_test.dart`.
+
 final class ApiClientProvider extends $FunctionalProvider<Dio, Dio, Dio>
     with $Provider<Dio> {
+  /// Cliente HTTP **atado a la sede activa**.
+  ///
+  /// Observar aquí la sede no es un detalle: es la palanca que hace que cambiar
+  /// de sede tire TODOS los datos cacheados (docs/MULTI_SEDE.md §3.4 y §7). Como
+  /// cada repositorio observa este proveedor, y cada vista observa su repositorio,
+  /// al cambiar la sede se reconstruye la cadena entera y no sobrevive nada de la
+  /// sede anterior.
+  ///
+  /// Por eso ningún repositorio debe usar `ref.read(apiClientProvider)`: leer sin
+  /// observar rompe la cadena en silencio y esa vista seguiría enseñando los
+  /// socios de la sede que se acaba de abandonar. Lo vigila
+  /// `test/core/network/api_client_dependency_test.dart`.
   const ApiClientProvider._()
     : super(
         from: null,
@@ -47,4 +84,4 @@ final class ApiClientProvider extends $FunctionalProvider<Dio, Dio, Dio>
   }
 }
 
-String _$apiClientHash() => r'bf9edfa1f8e11983c3c1d78a1610767857533325';
+String _$apiClientHash() => r'f871254c6d6b4b8c3eb1087784d19338e7a3578e';

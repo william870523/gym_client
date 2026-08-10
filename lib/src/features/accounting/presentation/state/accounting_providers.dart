@@ -10,6 +10,7 @@ import '../../data/models/operational_annual_results_models.dart';
 import '../../data/models/operational_results_models.dart';
 import '../../data/models/recurring_expense_models.dart';
 import '../../data/models/trainer_service_cost_models.dart';
+import '../../data/models/treasury_period_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 
 final accountingSummaryProvider =
@@ -82,6 +83,20 @@ final treasuryMonthlySummaryProvider = FutureProvider.autoDispose
       return ref
           .watch(accountingRepositoryProvider)
           .getTreasuryMonthlySummary(month: month);
+    });
+
+final treasuryPeriodSummaryProvider = FutureProvider.autoDispose
+    .family<TreasuryPeriodSummaryModel, TreasuryPeriodRequest>((ref, request) {
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getTreasuryPeriodSummary(request);
+    });
+
+final treasuryPeriodClosesProvider = FutureProvider.autoDispose
+    .family<TreasuryPeriodCyclesModel, TreasuryPeriodRequest>((ref, request) {
+      return ref
+          .watch(accountingRepositoryProvider)
+          .getTreasuryPeriodCloses(from: request.from, to: request.to);
     });
 
 final operationalResultsProvider = FutureProvider.autoDispose

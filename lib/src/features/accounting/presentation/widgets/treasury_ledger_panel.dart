@@ -14,6 +14,7 @@ import '../../data/repositories/accounting_repository.dart';
 import '../../data/services/treasury_daily_close_report_service.dart';
 import '../state/accounting_providers.dart';
 import 'treasury_monthly_panel.dart';
+import 'treasury_period_close_panel.dart';
 
 final _treasuryMoney = NumberFormat('#,##0.00');
 
@@ -35,7 +36,7 @@ const double _collectorsLineHeight = 70;
 const double _collectorsLineCompactHeight = 96;
 const double _collectorsDetailHeight = 176;
 
-enum _TreasuryRange { daily, monthly }
+enum _TreasuryRange { daily, monthly, period }
 
 String _treasuryError(Object error) {
   if (error is DioException && error.response?.data is Map) {
@@ -136,30 +137,47 @@ class _TreasuryRangeSelector extends StatelessWidget {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) => Align(
-        alignment: Alignment.centerRight,
-        child: SizedBox(
-          width: constraints.maxWidth < 440 ? constraints.maxWidth : 440,
-          child: Row(
-            children: [
-              option(
-                key: const Key('treasury-range-daily'),
-                range: _TreasuryRange.daily,
-                label: 'LIBRO DIARIO',
-                icon: Icons.today_outlined,
-              ),
-              const SizedBox(width: 6),
-              option(
-                key: const Key('treasury-range-monthly'),
-                range: _TreasuryRange.monthly,
-                label: 'RESUMEN MENSUAL',
-                icon: Icons.query_stats_outlined,
-              ),
-            ],
-          ),
+    Widget options() => Row(
+      children: [
+        option(
+          key: const Key('treasury-range-daily'),
+          range: _TreasuryRange.daily,
+          label: 'LIBRO DIARIO',
+          icon: Icons.today_outlined,
         ),
-      ),
+        const SizedBox(width: 6),
+        option(
+          key: const Key('treasury-range-monthly'),
+          range: _TreasuryRange.monthly,
+          label: 'RESUMEN MENSUAL',
+          icon: Icons.query_stats_outlined,
+        ),
+        const SizedBox(width: 6),
+        option(
+          key: const Key('treasury-range-period'),
+          range: _TreasuryRange.period,
+          label: 'CIERRE POR PERÍODO',
+          icon: Icons.date_range_outlined,
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return SingleChildScrollView(
+            key: const Key('treasury-range-scroll'),
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(width: 620, child: options()),
+          );
+        }
+        return Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            width: constraints.maxWidth < 700 ? constraints.maxWidth : 700,
+            child: options(),
+          ),
+        );
+      },
     );
   }
 }
@@ -255,6 +273,8 @@ class _TreasuryLedgerPanelState extends ConsumerState<TreasuryLedgerPanel> {
           Expanded(
             child: _range == _TreasuryRange.monthly
                 ? TreasuryMonthlyPanel(onChanged: widget.onChanged)
+                : _range == _TreasuryRange.period
+                ? TreasuryPeriodClosePanel(onChanged: widget.onChanged)
                 : state.when(
                     loading: () => const PulsoPanel(
                       child: PulsoStateView(
@@ -2823,7 +2843,9 @@ class _MovementRow extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: movement.hasCollector ? tokens.chalkDim : tokens.muted2,
+                  color: movement.hasCollector
+                      ? tokens.chalkDim
+                      : tokens.muted2,
                   fontFamily: PulsoFonts.mono,
                   fontSize: 8,
                 ),

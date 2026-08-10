@@ -12,6 +12,7 @@ import '../models/operational_annual_results_models.dart';
 import '../models/operational_results_models.dart';
 import '../models/recurring_expense_models.dart';
 import '../models/trainer_service_cost_models.dart';
+import '../models/treasury_period_models.dart';
 
 final accountingRepositoryProvider = Provider<AccountingRepository>((ref) {
   return AccountingRepository(ref.watch(apiClientProvider));
@@ -302,6 +303,75 @@ class AccountingRepository {
     );
     return TreasuryMonthlySummaryModel.fromJson(
       Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TreasuryPeriodSummaryModel> getTreasuryPeriodSummary(
+    TreasuryPeriodRequest request,
+  ) async {
+    final response = await _dio.get(
+      '/contabilidad/treasury-period-summary',
+      queryParameters: {
+        'desde': request.from,
+        'hasta': request.to,
+        'tipo': request.type,
+        if (request.currencyId?.isNotEmpty == true)
+          'moneda_id': request.currencyId,
+        if (request.accountId?.isNotEmpty == true)
+          'cuenta_id': request.accountId,
+      },
+    );
+    return TreasuryPeriodSummaryModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TreasuryPeriodCyclesModel> getTreasuryPeriodCloses({
+    required String from,
+    required String to,
+  }) async {
+    final response = await _dio.get(
+      '/contabilidad/treasury-period-closes',
+      queryParameters: {'desde': from, 'hasta': to},
+    );
+    return TreasuryPeriodCyclesModel.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TreasuryPeriodCycleModel> closeTreasuryPeriod({
+    required TreasuryPeriodRequest request,
+    required String operationId,
+    required String reason,
+  }) async {
+    final response = await _dio.post(
+      '/contabilidad/treasury-period-closes',
+      data: {
+        'desde': request.from,
+        'hasta': request.to,
+        'tipo': request.type,
+        'operacion_id': operationId,
+        'motivo': reason,
+      },
+    );
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return TreasuryPeriodCycleModel.fromJson(
+      Map<String, dynamic>.from(data['cierre'] as Map),
+    );
+  }
+
+  Future<TreasuryPeriodCycleModel> reopenTreasuryPeriod({
+    required String closeId,
+    required String operationId,
+    required String reason,
+  }) async {
+    final response = await _dio.post(
+      '/contabilidad/treasury-period-closes/$closeId/reopen',
+      data: {'operacion_id': operationId, 'motivo': reason},
+    );
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return TreasuryPeriodCycleModel.fromJson(
+      Map<String, dynamic>.from(data['cierre'] as Map),
     );
   }
 

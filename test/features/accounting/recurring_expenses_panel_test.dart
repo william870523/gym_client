@@ -12,6 +12,16 @@ import 'package:gym_client/src/features/accounting/presentation/widgets/recurrin
 
 class _FakeAccountingRepository extends AccountingRepository {
   _FakeAccountingRepository() : super(Dio());
+
+  Map<String, dynamic>? creada;
+
+  @override
+  Future<RecurringExpenseModel> createRecurringExpense(
+    Map<String, dynamic> body,
+  ) async {
+    creada = body;
+    return _templates().first;
+  }
 }
 
 RecurringExpensePlanModel _plan({
@@ -99,11 +109,11 @@ List<RecurringExpenseModel> _templates() => [
   }),
 ];
 
-Widget _harness(RecurringExpensePlanModel plan) {
+Widget _harness(RecurringExpensePlanModel plan, [AccountingRepository? repo]) {
   return ProviderScope(
     overrides: [
       accountingRepositoryProvider.overrideWithValue(
-        _FakeAccountingRepository(),
+        repo ?? _FakeAccountingRepository(),
       ),
       recurringExpensePlanProvider.overrideWith((ref, month) async => plan),
       recurringExpensesProvider.overrideWith((ref) async => _templates()),
@@ -120,6 +130,7 @@ Widget _harness(RecurringExpensePlanModel plan) {
 }
 
 void main() {
+  _pruebasDeAlta();
   testWidgets('el plan muestra qué se generará y qué se salta con su motivo', (
     tester,
   ) async {
@@ -198,6 +209,46 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.textContaining('no duplica nada'), findsOneWidget);
     expect(find.text('GENERAR'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// R4.7 · Unidad 09 — el panel tiene que poder **crear** una plantilla.
+///
+/// `createRecurringExpense` existía en el repositorio desde siempre, pero
+/// ninguna vista lo llamaba: el panel sabía pausar y generar, no dar de alta.
+/// Se descubrió en el recorrido de operador del 02-08-2026, cuando no hubo
+/// forma de crear la plantilla ni en escritorio ni en web.
+void _pruebasDeAlta() {
+  testWidgets('el panel ofrece crear una plantilla y envía lo que se escribe', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = _FakeAccountingRepository();
+
+    await tester.pumpWidget(_harness(_plan(), repo));
+    await tester.pumpAndSettle();
+
+    final boton = find.byKey(const Key('recurring-expenses-create'));
+    expect(boton, findsOneWidget, reason: 'sin este botón R4.7 no se puede operar');
+    await tester.tap(boton);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('recurring-expenses-create-dialog')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('recurring-create-description')), 'Plantilla de prueba');
+    await tester.enterText(find.byKey(const Key('recurring-create-amount')), '80.00');
+    await tester.pumpAndSettle();
+
+    // Sin categoría ni moneda el botón sigue deshabilitado: el servidor las
+    // exige y pedirlas aquí evita un 400 que el operador no entendería.
+    final enviar = tester.widget<FilledButton>(
+      find.byKey(const Key('recurring-create-submit')));
+    expect(enviar.onPressed, isNull);
     expect(tester.takeException(), isNull);
   });
 }

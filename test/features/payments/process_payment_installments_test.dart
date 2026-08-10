@@ -25,6 +25,21 @@ import 'package:gym_client/src/features/products/data/repositories/payment_plan_
 import 'package:gym_client/src/features/products/presentation/state/payment_plan_notifier.dart';
 
 void main() {
+  testWidgets('el resumen del cobro no se desborda a 360 px', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('payment-progress-summary')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'el cobro ofrece PRIMERA CUOTA y al elegirla el objetivo baja a la cuota 1',
     (tester) async {

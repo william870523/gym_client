@@ -9,6 +9,8 @@ void main() {
     final record = ClientRecordModel.fromJson(source);
 
     expect(record.client.fullName, 'Ana Pérez');
+    // H1: categoría del cliente llega al expediente.
+    expect(record.client.categoria, 'VIEJO');
     expect(record.memberships.single.price, 50);
     expect(record.memberships.single.startDate.isUtc, isTrue);
     expect(record.memberships.single.pauses.single.remainingDays, 23);
@@ -19,6 +21,18 @@ void main() {
       'Recepción',
     );
     expect(record.memberships.single.payments.single.appliedAmount, 50);
+    // H1/H3/H5 (regresión corte 2): snapshots de descuento, código+sufijo y
+    // cobrador llegan al pago del expediente.
+    final pago = record.memberships.single.payments.single;
+    expect(pago.listPrice, 60);
+    expect(pago.discountPct, '16.67');
+    expect(pago.discountAmount, 10);
+    expect(pago.clientCategory, 'VIEJO');
+    expect(pago.planCode, 'MEC');
+    expect(pago.installmentSuffix, '/1');
+    expect(pago.collectorName, 'Ana Recepción');
+    expect(pago.collectorRole, 'reception');
+    expect(pago.collectorOrigin, 'SYNCED_USER');
     expect(
       record.memberships.single.payments.single.details.single.paymentTypeName,
       'Efectivo',
@@ -51,7 +65,7 @@ void main() {
 
 const _fixture = r'''
 {
-  "cliente": {"ci":"100","nombres":"Ana","apellidos":"Pérez"},
+  "cliente": {"ci":"100","nombres":"Ana","apellidos":"Pérez","categoria":"VIEJO"},
   "membresias": [{
     "membresia_id":"membership-1",
     "id_planes_pago":"plan-1",
@@ -122,6 +136,16 @@ const _fixture = r'''
       "id_entrenador":"trainer-1",
       "aplicacion_id":"application-1",
       "monto_aplicado":"50.00",
+      "precio_lista_snapshot":"60.00",
+      "descuento_pct_snapshot":"16.67",
+      "descuento_monto_snapshot":"10.00",
+      "categoria_cliente_snapshot":"VIEJO",
+      "plan_codigo_snapshot":"MEC",
+      "cuota_sufijo_snapshot":"/1",
+      "cobrado_por_user_id":"user-ana",
+      "cobrado_por_nombre_snapshot":"Ana Recepción",
+      "cobrado_por_rol_snapshot":"reception",
+      "cobrado_por_origen":"SYNCED_USER",
       "detalles":[{
         "detalle_pago_id":"detail-1",
         "tipo_pago_id":"cash",

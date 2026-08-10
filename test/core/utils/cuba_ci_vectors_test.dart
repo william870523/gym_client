@@ -20,7 +20,7 @@ void main() {
   final vectores = (tabla['vectores'] as List).cast<Map<String, dynamic>>();
 
   String? diaIso(DateTime? fecha) =>
-      fecha == null ? null : fecha.toIso8601String().substring(0, 10);
+      fecha?.toIso8601String().substring(0, 10);
 
   String? nombreSexo(CubaCiSexo? sexo) => switch (sexo) {
     CubaCiSexo.masculino => 'masculino',

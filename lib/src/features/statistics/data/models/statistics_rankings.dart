@@ -278,6 +278,7 @@ class StatisticsAlert {
     required this.rule,
     this.comparison,
     this.sample,
+    this.magnitude,
     this.currencyId,
     this.target,
   });
@@ -294,6 +295,7 @@ class StatisticsAlert {
             ? null
             : StatisticsMetricComparison.fromJson(json['comparacion'] as Map),
         sample: StatisticsAlertSample.fromJson(json['muestra'] as Map?),
+        magnitude: (json['magnitud'] as num?)?.toDouble(),
         currencyId: json['monedaId']?.toString(),
         target: StatisticsAlertTarget.fromJson(json['destino'] as Map?),
       );
@@ -306,19 +308,34 @@ class StatisticsAlert {
   final String rule;
   final StatisticsMetricComparison? comparison;
   final StatisticsAlertSample? sample;
+
+  /// Cuánto se pasó del umbral, en la unidad de su regla. No todas las reglas
+  /// comparan contra un período anterior: el churn se compara contra el propio
+  /// gimnasio, y sin este campo su gravedad no se podría ordenar.
+  final double? magnitude;
   final String? currencyId;
   final StatisticsAlertTarget? target;
 }
 
 class StatisticsAlertRule {
-  const StatisticsAlertRule({required this.family, required this.text});
+  const StatisticsAlertRule({
+    required this.family,
+    required this.text,
+    this.evaluated = true,
+  });
   factory StatisticsAlertRule.fromJson(Map<dynamic, dynamic> json) =>
       StatisticsAlertRule(
         family: _text(json, 'familia'),
         text: _text(json, 'texto'),
+        // Ausente = evaluada, para no romper con un servidor anterior al campo.
+        evaluated: json['evaluada'] != false,
       );
   final String family;
   final String text;
+
+  /// `false` cuando la regla no llegó a mirarse por faltarle su fuente. No es
+  /// lo mismo que «todo en orden», y la vista tiene que distinguirlo.
+  final bool evaluated;
 }
 
 class StatisticsRankings {

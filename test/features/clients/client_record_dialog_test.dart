@@ -41,6 +41,8 @@ void main() {
       );
       expect(find.text('PULSO · EXPEDIENTE DEL SOCIO'), findsOneWidget);
       expect(find.text('ANA PÉREZ'), findsOneWidget);
+      // H1: la categoría del socio aparece en la cabecera, junto al CI.
+      expect(find.textContaining('CI 100 · VIEJO ·'), findsOneWidget);
       expect(find.text('Mensual'), findsOneWidget);
       expect(
         find.text('Coach Uno · 12/07/2026 → actual · ACTIVA'),
@@ -85,6 +87,34 @@ void main() {
     expect(find.text('PAGO CONFIRMADO'), findsOneWidget);
     expect(find.text('Efectivo'), findsOneWidget);
     expect(find.text('Caja USD · misma moneda · tasa 1:1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el recibo apila etiqueta y valor en 360 px', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    final payment = find.byKey(const ValueKey('record-payment-payment-1'));
+    await tester.ensureVisible(payment);
+    await tester.tap(payment);
+    await tester.pumpAndSettle();
+
+    const labelKey = ValueKey('receipt-fact-label-FECHA DEL GIMNASIO');
+    const valueKey = ValueKey('receipt-fact-value-FECHA DEL GIMNASIO');
+    final label = find.byKey(labelKey);
+    final value = find.byKey(valueKey);
+
+    expect(label, findsOneWidget);
+    expect(value, findsOneWidget);
+    expect(
+      tester.getBottomLeft(label).dy,
+      lessThan(tester.getTopLeft(value).dy),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -237,6 +267,7 @@ ClientRecordModel _record() => ClientRecordModel(
     id: '100',
     firstName: 'Ana',
     lastName: 'Pérez',
+    categoria: 'VIEJO',
   ),
   memberships: [
     ClientMembershipRecord(

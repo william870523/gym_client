@@ -108,6 +108,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('el recibo muestra el snapshot R5.3 sin recalcularlo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('payment-discount-snapshot')),
+      findsOneWidget,
+    );
+    expect(find.text('PMV'), findsOneWidget);
+    expect(find.text('VIEJO'), findsOneWidget);
+    final snapshot = find.byKey(const ValueKey('payment-discount-snapshot'));
+    expect(
+      find.descendant(of: snapshot, matching: find.textContaining('12')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: snapshot, matching: find.textContaining('-€')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: snapshot, matching: find.textContaining('10')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filtra pagos anulados', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
@@ -130,6 +163,23 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('recibo anulado separa cobrador y anulador', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lucía Roque'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ana Recepción · reception'), findsOneWidget);
+    expect(find.text('Carla Supervisión'), findsOneWidget);
+    expect(find.text('Pago duplicado'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 List<PaymentModel> _payments() => [
@@ -140,6 +190,10 @@ List<PaymentModel> _payments() => [
     amount: 1,
     planId: 'plan-daily',
     currencyId: 'eur',
+    listPriceSnapshot: 12,
+    discountAmountSnapshot: 2,
+    clientCategorySnapshot: 'VIEJO',
+    planCodeSnapshot: 'PMV',
     details: [
       PaymentDetailModel(
         id: 'detail-1',
@@ -161,6 +215,11 @@ List<PaymentModel> _payments() => [
     currencyId: 'eur',
     clientName: 'Lucía Roque',
     isDeleted: true,
+    collectorName: 'Ana Recepción',
+    collectorRole: 'reception',
+    voidedByUserId: 'carla',
+    voidedByName: 'Carla Supervisión',
+    voidReason: 'Pago duplicado',
   ),
 ];
 

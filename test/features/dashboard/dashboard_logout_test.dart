@@ -7,6 +7,7 @@ import 'package:gym_client/src/core/sync/sync_status_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
+import 'package:gym_client/src/core/theme/pulso/pulso_theme.dart';
 import 'package:gym_client/src/features/attendance/data/models/attendance_model.dart';
 import 'package:gym_client/src/features/attendance/presentation/state/attendance_notifier.dart';
 import 'package:gym_client/src/features/auth/domain/models/sede_session.dart';
@@ -20,12 +21,30 @@ import 'package:gym_client/src/features/clients/presentation/state/client_notifi
 import 'package:gym_client/src/features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'package:gym_client/src/features/dashboard/presentation/state/dashboard_nav_provider.dart';
 import 'package:gym_client/src/features/financials/data/models/currency_model.dart';
+import 'package:gym_client/src/features/gyms/domain/models/gym.dart';
+import 'package:gym_client/src/features/gyms/presentation/gyms_provider.dart';
 import 'package:gym_client/src/features/financials/presentation/state/currency_notifier.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
 import 'package:gym_client/src/features/payments/presentation/state/payment_notifier.dart';
 import 'package:gym_client/src/l10n/app_localizations.dart';
 
 void main() {
+  testWidgets('la cabecera del dashboard no se desborda a 360 px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness(_BlockingAuthRepository()));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+    expect(find.byIcon(Icons.logout), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final entry in const {
     'cabecera': 'Salir',
     'barra lateral': 'CERRAR SESIÓN',
@@ -49,8 +68,19 @@ void main() {
         expect(container.read(dashboardNavProvider), 2);
 
         await tester.tap(find.text(entry.value));
-        await repository.logoutStarted.future;
         await tester.pump();
+
+        // Esperar el Completer a secas colgaba la batería ENTERA: si el tap no
+        // llega al botón —pasó cuando el SedeSelector entró en la cabecera y
+        // esta dejó de construirse—, `logout()` no se llama, nadie completa el
+        // Completer y no hay tiempo de espera que rescate la suite. Que falle
+        // aquí, con el motivo escrito.
+        expect(
+          repository.logoutStarted.isCompleted,
+          isTrue,
+          reason:
+              'El tap sobre "${entry.value}" no llegó al botón de cierre de sesión.',
+        );
 
         expect(repository.logoutCalls, 1);
         expect(find.byType(DashboardScreen), findsOneWidget);
@@ -76,6 +106,10 @@ Widget _harness(_BlockingAuthRepository repository) {
   return ProviderScope(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
+      // El SedeSelector de la cabecera pide las sedes al arrancar. Sin este
+      // corte la prueba salía a la API local de verdad: pasaba o fallaba
+      // según hubiera un servidor escuchando en el 8080.
+      gymsListProvider.overrideWith((ref) async => const <Gym>[]),
       authRepositoryProvider.overrideWithValue(repository),
       authProvider.overrideWith(_LoggedInAuthNotifier.new),
       dashboardNavProvider.overrideWith(_SelectedDashboardNavNotifier.new),
@@ -97,7 +131,10 @@ Widget _harness(_BlockingAuthRepository repository) {
     child: NeumorphicApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: const DashboardScreen(),
+      // La cabecera monta el SedeSelector, que exige los tokens PULSO. Sin
+      // este scope la cabecera no llega a construirse y el botón de salir
+      // queda inalcanzable.
+      home: const PulsoThemeScope(child: DashboardScreen()),
     ),
   );
 }

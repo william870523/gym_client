@@ -1027,16 +1027,22 @@ class _ScopeChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        size: 18,
-        color: selected ? tokens.accent : tokens.muted,
+    // El panel PULSO que lo contiene pinta su propio fondo, así que el tile
+    // necesita su Material transparente: sin él, Flutter avisa de que la tinta
+    // quedaría oculta y la aserción tumba la prueba. No cambia el aspecto.
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+          size: 18,
+          color: selected ? tokens.accent : tokens.muted,
+        ),
+        title: Text(label),
+        onTap: onTap,
       ),
-      title: Text(label),
-      onTap: onTap,
     );
   }
 }

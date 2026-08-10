@@ -435,7 +435,50 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
                                 color: tokens.muted,
                               ),
                             ),
+                            if (payment.isDeleted) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                color: tokens.warningSoft,
+                                child: Text(
+                                  'PAGO ANULADO',
+                                  style: TextStyle(
+                                    fontFamily: PulsoFonts.mono,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.warning,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _DetailLine(
+                              label: 'Cobrado por',
+                              value: payment.collectorName == null
+                                  ? 'Sin atribuir · histórico'
+                                  : '${payment.collectorName}'
+                                        '${payment.collectorRole == null ? '' : ' · ${payment.collectorRole}'}',
+                            ),
+                            if (payment.isDeleted) ...[
+                              _DetailLine(
+                                label: 'Anulado por',
+                                value:
+                                    payment.voidedByName ??
+                                    'Sin identidad disponible',
+                              ),
+                              _DetailLine(
+                                label: 'Motivo',
+                                value: payment.voidReason ?? 'Sin motivo',
+                                multiline: true,
+                              ),
+                            ],
                             const SizedBox(height: 18),
+                            if (payment.listPriceSnapshot != null) ...[
+                              _PaymentDiscountSnapshot(
+                                payment: payment,
+                                currencySymbol: data.currency?.symbol ?? r'$',
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             Flexible(
                               child: SingleChildScrollView(
                                 child: Column(
@@ -599,8 +642,13 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
         ? null
         : visible.firstWhere((payment) => payment.id == selectedId);
 
-    final paidCount = payments.where((payment) => !payment.isDeleted).length;
-    final voidCount = payments.length - paidCount;
+    // H6: los totales los cuenta el servidor (no la página cargada). Antes,
+    // `payments.length` se calcaba como «total» y, con paginación, enseñaba
+    // una cifra falsa (p. ej. «500 Pagos» habiendo 631).
+    final totals = ref.read(paymentNotifierProvider.notifier);
+    final totalCount = totals.total;
+    final voidCount = totals.totalVoided;
+    final paidCount = totalCount - voidCount;
     final foreignCount = payments.where((payment) {
       return (payment.details ?? const <PaymentDetailModel>[]).any(
         (detail) => detail.currencyId != payment.currencyId,
@@ -731,7 +779,7 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
             PulsoMetricStrip(
               metrics: [
                 PulsoMetricData(
-                  value: '${payments.length}',
+                  value: '$totalCount',
                   label: 'Pagos',
                   note: 'asientos del libro',
                   emphasis: true,
@@ -1602,7 +1650,17 @@ class _PaymentReceiptPanel extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _DetailLine(label: 'Concepto', value: data.planName),
+                  _DetailLine(
+                    label: 'Concepto',
+                    value:
+                        '${payment.planCodeSnapshot ?? data.planName}'
+                        '${payment.installmentSuffixSnapshot ?? ''}',
+                  ),
+                  if (payment.clientCategorySnapshot != null)
+                    _DetailLine(
+                      label: 'Categoría al cobrar',
+                      value: payment.clientCategorySnapshot!,
+                    ),
                   _DetailLine(
                     label: 'Moneda',
                     value: data.currency?.code ?? payment.currencyId,
@@ -1616,7 +1674,34 @@ class _PaymentReceiptPanel extends StatelessWidget {
                     value: trainerName.isEmpty ? '—' : trainerName,
                   ),
                   _DetailLine(label: 'CI', value: payment.ci),
+                  // H5: quién cobró (R5.6). Los cobros anteriores al corte no
+                  // tienen cobrador: se enseña «histórico».
+                  _DetailLine(
+                    label: 'Cobrado por',
+                    value: payment.collectorName == null
+                        ? 'Sin atribuir · histórico'
+                        : '${payment.collectorName}'
+                              '${payment.collectorRole == null ? '' : ' · ${payment.collectorRole}'}',
+                  ),
+                  if (payment.isDeleted) ...[
+                    _DetailLine(
+                      label: 'Anulado por',
+                      value: payment.voidedByName ?? 'Sin identidad disponible',
+                    ),
+                    _DetailLine(
+                      label: 'Motivo',
+                      value: payment.voidReason ?? 'Sin motivo',
+                      multiline: true,
+                    ),
+                  ],
                   const SizedBox(height: 14),
+                  if (payment.listPriceSnapshot != null) ...[
+                    _PaymentDiscountSnapshot(
+                      payment: payment,
+                      currencySymbol: data.currency?.symbol ?? r'$',
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   const PulsoLabel('Desglose del cobro'),
                   const SizedBox(height: 4),
                   if (details.isEmpty)
@@ -1709,32 +1794,85 @@ class _PaymentReceiptPanel extends StatelessWidget {
 }
 
 class _DetailLine extends StatelessWidget {
-  const _DetailLine({required this.label, required this.value});
+  const _DetailLine({
+    required this.label,
+    required this.value,
+    this.multiline = false,
+  });
   final String label;
   final String value;
+  final bool multiline;
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
+    final labelWidget = PulsoLabel(label);
+    final valueWidget = Text(
+      value,
+      maxLines: multiline ? null : 1,
+      overflow: multiline ? TextOverflow.visible : TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: PulsoFonts.mono,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: tokens.chalkDim,
+      ),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: tokens.line)),
       ),
-      child: Row(
-        children: [
-          Expanded(child: PulsoLabel(label)),
-          Flexible(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: PulsoFonts.mono,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: tokens.chalkDim,
-              ),
+      child: MediaQuery.sizeOf(context).width < 500
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [labelWidget, const SizedBox(height: 4), valueWidget],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: labelWidget),
+                Flexible(child: valueWidget),
+              ],
             ),
+    );
+  }
+}
+
+class _PaymentDiscountSnapshot extends StatelessWidget {
+  const _PaymentDiscountSnapshot({
+    required this.payment,
+    required this.currencySymbol,
+  });
+
+  final PaymentModel payment;
+  final String currencySymbol;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final list = payment.listPriceSnapshot ?? payment.amount;
+    final discount = payment.discountAmountSnapshot ?? 0;
+    final pct = payment.discountPctSnapshot;
+    return Container(
+      key: const ValueKey('payment-discount-snapshot'),
+      padding: const EdgeInsets.all(12),
+      color: discount > 0 ? tokens.successSoft : tokens.raised2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const PulsoLabel('Precio congelado al cobrar'),
+          const SizedBox(height: 7),
+          _DetailLine(
+            label: 'Precio de lista',
+            value: '$currencySymbol${_money.format(list)}',
+          ),
+          _DetailLine(
+            label: pct == null ? 'Descuento' : 'Descuento ($pct%)',
+            value: '-$currencySymbol${_money.format(discount)}',
+          ),
+          _DetailLine(
+            label: 'Precio del plan',
+            value: '$currencySymbol${_money.format(list - discount)}',
           ),
         ],
       ),

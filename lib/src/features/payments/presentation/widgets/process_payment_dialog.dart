@@ -7,13 +7,12 @@ import 'package:uuid/uuid.dart';
 
 import '../../data/models/payment_model.dart';
 import '../../data/models/recargo_mora_quote.dart';
+import '../../data/models/client_discount_quote.dart';
 import '../../data/repositories/payment_repository.dart';
 
 import '../../../financials/data/models/account_model.dart';
 import '../../../configuration/data/models/payment_type_model.dart';
 import '../../../clients/data/models/client_model.dart';
-import '../../../clients/domain/client_discount.dart';
-import '../../../clients/presentation/state/client_discount_providers.dart';
 import '../../../products/data/repositories/payment_plan_repository.dart';
 import '../../../products/presentation/state/payment_plan_notifier.dart';
 import '../../../products/data/models/payment_plan_model.dart';
@@ -63,6 +62,9 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
   RecargoMoraQuote? _recargoQuote;
   bool _recargoQuoteLoading = false;
   String? _recargoQuoteError;
+  ClientDiscountQuote? _discountQuote;
+  bool _discountQuoteLoading = false;
+  String? _discountQuoteError;
   // Condonación del recargo (docs/RECARGO_MORA.md §6-bis): el recargo se cobra
   // por política; perdonarlo es la excepción y exige motivo.
   bool _condonarRecargoMora = false;
@@ -105,9 +107,8 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       (widget.client.membershipStatus ?? '').trim().toUpperCase() ==
           'PENDIENTE_PAGO';
 
-  double? get _cuota1Importe => _scheme.isEmpty
-      ? null
-      : double.tryParse('${_scheme.first['importe']}');
+  double? get _cuota1Importe =>
+      _scheme.isEmpty ? null : double.tryParse('${_scheme.first['importe']}');
 
   int get _cuota1Dias => _scheme.isEmpty
       ? 0
@@ -130,6 +131,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     }
     // El recargo se cotiza al abrir: si hay atraso, la casilla llega marcada.
     _loadRecargoMoraQuote();
+    _loadClientDiscountQuote();
   }
 
   Future<void> _loadInstallmentContext() async {
@@ -271,27 +273,31 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
           accountId: account.id,
           amount: (row['amount'] as num).toDouble(),
           exchangeRateId: row['exchangeRateId'] as String?,
+          methodSurchargeBase: (row['baseAmount'] as num).toStringAsFixed(2),
+          methodSurchargeRateVersion: row['exchangeRateVersion'] as int?,
         );
       }).toList();
 
-      await ref.read(paymentRepositoryProvider).createPayment(
-        payment,
-        details,
-        extra: {
-          if (_cuotaFija) ...{
-            'modo_cuotas': true,
-            'numero_cuota': _numeroCuotaEnCurso,
-          } else if (_porCuotas)
-            'modo_cuotas': true,
-          // El servidor recalcula el importe; aquí solo viaja la decisión de
-          // condonar y su motivo (docs/RECARGO_MORA.md §6-bis).
-          if (_condonarRecargoMora) ...{
-            'condonar_recargo_mora': true,
-            'motivo_condonacion_recargo':
-                _motivoCondonacionController.text.trim(),
-          },
-        },
-      );
+      await ref
+          .read(paymentRepositoryProvider)
+          .createPayment(
+            payment,
+            details,
+            extra: {
+              if (_cuotaFija) ...{
+                'modo_cuotas': true,
+                'numero_cuota': _numeroCuotaEnCurso,
+              } else if (_porCuotas)
+                'modo_cuotas': true,
+              // El servidor recalcula el importe; aquí solo viaja la decisión de
+              // condonar y su motivo (docs/RECARGO_MORA.md §6-bis).
+              if (_condonarRecargoMora) ...{
+                'condonar_recargo_mora': true,
+                'motivo_condonacion_recargo': _motivoCondonacionController.text
+                    .trim(),
+              },
+            },
+          );
       await ref
           .read(paymentRefreshCoordinatorProvider)
           .afterSuccessfulPayment(widget.client.id);
@@ -326,6 +332,15 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       if (equivalent != null && equivalent is num) {
         total += equivalent.toDouble();
       }
+    }
+    return total;
+  }
+
+  double get _totalCollected {
+    double total = 0;
+    for (final row in _paymentRows) {
+      final collected = row['collectedEquivalent'] ?? row['equivalent'];
+      if (collected is num) total += collected.toDouble();
     }
     return total;
   }
@@ -504,9 +519,8 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                 activeColor: t.danger,
                 onChanged: _isLoading
                     ? null
-                    : (value) => setState(
-                          () => _condonarRecargoMora = value ?? false,
-                        ),
+                    : (value) =>
+                          setState(() => _condonarRecargoMora = value ?? false),
               ),
               Expanded(
                 child: Text(
@@ -564,14 +578,18 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       if (sur != null && sur is num && sur > 0) {
         final pctLabel = pct != null ? ' ($pct%)' : '';
         final typeName = type?.name ?? 'Método con recargo';
-        final currCode = account != null && account.currencyId.length <= 5
-            ? account.currencyId.toUpperCase()
-            : '';
+        // Un importe de recargo sin moneda al lado es exactamente lo que la
+        // regla «nunca sumar monedas distintas» quiere evitar. La condición
+        // anterior era `currencyId.length <= 5`, que con un UUID no se cumple
+        // nunca: el recargo se enseñaba desnudo.
+        final currCode = account?.currencyLabel ?? '';
         final currSuffix = currCode.isNotEmpty ? ' $currCode' : '';
         final planSuffix = surPlan != null && surPlan is num && surPlan > 0
             ? ' (+$planSymbol${surPlan.toDouble().toStringAsFixed(2)})'
             : '';
-        details.add('$typeName$pctLabel: +${sur.toDouble().toStringAsFixed(2)}$currSuffix$planSuffix');
+        details.add(
+          '$typeName$pctLabel: +${sur.toDouble().toStringAsFixed(2)}$currSuffix$planSuffix',
+        );
       }
     }
 
@@ -624,11 +642,17 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       final account = row['account'] as AccountModel?;
       final rate = row['rate'];
       final rateOp = row['rateOperation'];
-      if (account != null && rate != null && rate is num && rate > 0 && rate != 1.0) {
+      if (account != null &&
+          rate != null &&
+          rate is num &&
+          rate > 0 &&
+          rate != 1.0) {
         final r = rate.toDouble();
-        final currencyCode = account.currencyId.length > 5
-            ? account.currencyId.substring(0, 5).toUpperCase()
-            : account.currencyId.toUpperCase();
+        // El código de la moneda, no un trozo de su identificador. Antes esto
+        // recortaba `currencyId` a cinco caracteres y el operador leía
+        // «Saldo restante: ₽34.00 (~0.08 1DBC5)» —los cinco primeros dígitos
+        // del UUID de la cuenta EUR—, justo en la línea que dice cuánto falta.
+        final currencyCode = account.currencyLabel;
         final equiv = rateOp == 'divide' ? remaining * r : remaining / r;
         return '$text (~${equiv.toStringAsFixed(2)} $currencyCode)';
       }
@@ -658,10 +682,7 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              mensaje,
-              style: TextStyle(fontSize: 11, color: color),
-            ),
+            child: Text(mensaje, style: TextStyle(fontSize: 11, color: color)),
           ),
         ],
       ),
@@ -813,28 +834,6 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     );
   }
 
-  /// R5.3 — Desglose de descuento vigente para el plan/cliente actuales.
-  /// Las cuotas individuales NO se descuentan aquí (su importe ya nació del
-  /// esquema del plan); solo se descuenta el precio de lista en cobro completo.
-  ClientDiscountBreakdown _currentDiscount(PaymentPlanModel plan) {
-    final settingsSnapshot = ref.read(clientDiscountSettingsProvider);
-    final pct = settingsSnapshot.maybeWhen(
-      data: (s) => s.clienteViejoPct,
-      orElse: () => '16.67',
-    );
-    final listPrice = (_cuotaFija || _porCuotas)
-        ? (_importeCuotaEnCurso ?? _cuota1Importe ?? plan.importe)
-        : plan.importe;
-    return clientDiscountBreakdown(
-      listPrice: listPrice,
-      category: widget.client.categoria.toClientCategory,
-      discountPct: pct,
-      planFixedOldPrice: _cuotaFija || _porCuotas
-          ? null
-          : plan.precioViejoExcepcion,
-    );
-  }
-
   double _amountDueFor(PaymentPlanModel plan) {
     // El recargo por mora se suma al final: es ingreso aparte, no parte del
     // precio del plan (docs/RECARGO_MORA.md). El importe viene del servidor.
@@ -847,23 +846,42 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
     if (_cuotaFija) return _importeCuotaEnCurso ?? plan.importe;
     // Contratación por cuotas: se cobra la cuota 1; el resto queda programado.
     if (_porCuotas && _cuota1Importe != null) return _cuota1Importe!;
-    final balance = widget.client.membershipBalanceDue;
-    // R5.3: aplicar descuento de cliente VIEJO sobre el precio de lista.
-    final discount = _currentDiscount(plan);
-    if (widget.client.membershipId != null && balance != null && balance > 0) {
-      // El saldo pendiente ya refleja cobros previos; el descuento aplica al
-      // precio de lista completo, así que se descuenta del balance.
-      return math.max(0.0, balance - discount.descuento);
+    // R5.3: Flutter no calcula. Solo presenta el precio final firmado por la
+    // API; sin cotización el botón de confirmación permanece deshabilitado.
+    // Mientras carga se conserva el precio de lista que ya vino del catálogo
+    // del servidor; confirmar sigue bloqueado hasta recibir la cotización.
+    return _discountQuote?.finalPrice ?? plan.importe;
+  }
+
+  Future<void> _loadClientDiscountQuote() async {
+    if (widget.planId.isEmpty) return;
+    setState(() => _discountQuoteLoading = true);
+    try {
+      final quote = await ref
+          .read(paymentRepositoryProvider)
+          .getClientDiscountQuote(ci: widget.client.id, planId: widget.planId);
+      if (!mounted) return;
+      setState(() {
+        _discountQuote = quote;
+        _discountQuoteError = null;
+        _discountQuoteLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _discountQuote = null;
+        _discountQuoteError = _shortError(error);
+        _discountQuoteLoading = false;
+      });
     }
-    return discount.precioFinal;
   }
 
   /// Recargo que se está cobrando ahora mismo. Se cobra siempre que
   /// corresponda; solo baja a 0 si el recepcionista lo condona.
   double get _recargoMoraAplicado =>
       !_condonarRecargoMora && (_recargoQuote?.aplicado ?? false)
-          ? _recargoQuote!.recargoValor
-          : 0.0;
+      ? _recargoQuote!.recargoValor
+      : 0.0;
 
   /// Pide al servidor la cotización del recargo por mora. Si falla, se guarda
   /// el aviso y el cobro sigue disponible sin recargo.
@@ -899,6 +917,8 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
   }
 
   String get _planLabel {
+    final quoted = _discountQuote?.planCode.trim();
+    if (quoted != null && quoted.isNotEmpty) return quoted;
     if (widget.planId.isEmpty) return 'sin asignar';
     final shortId = widget.planId.length > 8
         ? widget.planId.substring(0, 8)
@@ -1136,103 +1156,161 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compactSummary = constraints.maxWidth < 360;
+              return Flex(
+                direction: compactSummary ? Axis.vertical : Axis.horizontal,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: compactSummary
+                    ? CrossAxisAlignment.stretch
+                    : CrossAxisAlignment.start,
                 children: [
-                  const PulsoLabel('Total por cobrar'),
-                  plansAsync.when(
-                    data: (plans) {
-                      final plan = plans.firstWhere(
-                        (p) => p.id == widget.planId,
-                        orElse: () => PaymentPlanModel(
-                          nombre: 'Unknown',
-                          importe: 0,
-                          duracion: 0,
-                          monedaId: '',
-                        ),
-                      );
-                      return currenciesAsync.when(
-                        data: (currencies) {
-                          final currency = currencies.firstWhere(
-                            (c) => c.id == plan.monedaId,
-                            orElse: () => const CurrencyModel(
-                              id: '',
-                              name: '',
-                              code: 'USD',
-                              symbol: r'$',
-                            ),
-                          );
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  if (currency.flagImage != null) ...[
-                                    AppFlag(
-                                      base64String: currency.flagImage!,
-                                      fallbackCode: currency.code,
-                                      width: 16,
-                                      height: 12,
-                                      borderRadius: 0,
-                                    ),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  Text(
-                                    currency.code,
-                                    style: TextStyle(
-                                      fontFamily: PulsoFonts.mono,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: t.chalkDim,
-                                    ),
+                  Flexible(
+                    fit: compactSummary ? FlexFit.loose : FlexFit.tight,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const PulsoLabel('Total por cobrar'),
+                        plansAsync.when(
+                          data: (plans) {
+                            final plan = plans.firstWhere(
+                              (p) => p.id == widget.planId,
+                              orElse: () => PaymentPlanModel(
+                                nombre: 'Unknown',
+                                importe: 0,
+                                duracion: 0,
+                                monedaId: '',
+                              ),
+                            );
+                            return currenciesAsync.when(
+                              data: (currencies) {
+                                final currency = currencies.firstWhere(
+                                  (c) => c.id == plan.monedaId,
+                                  orElse: () => const CurrencyModel(
+                                    id: '',
+                                    name: '',
+                                    code: 'USD',
+                                    symbol: r'$',
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${currency.symbol} ${_amountDueFor(plan).toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontFamily: PulsoFonts.display,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w800,
-                                  color: t.chalk,
-                                  height: 1.0,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                        loading: () => const SizedBox.shrink(),
-                        error: (error, stackTrace) => const SizedBox.shrink(),
-                      );
-                    },
-                    loading: () => const SizedBox.shrink(),
-                    error: (error, stackTrace) => const SizedBox.shrink(),
+                                );
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (currency.flagImage != null) ...[
+                                          AppFlag(
+                                            base64String: currency.flagImage!,
+                                            fallbackCode: currency.code,
+                                            width: 16,
+                                            height: 12,
+                                            borderRadius: 0,
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
+                                        Text(
+                                          currency.code,
+                                          style: TextStyle(
+                                            fontFamily: PulsoFonts.mono,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: t.chalkDim,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${currency.symbol} ${_amountDueFor(plan).toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontFamily: PulsoFonts.display,
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w800,
+                                        color: t.chalk,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                    if (!_cuotaFija && !_porCuotas) ...[
+                                      const SizedBox(height: 6),
+                                      if (_discountQuoteLoading)
+                                        Text(
+                                          'Cotizando descuento en el servidor…',
+                                          style: TextStyle(
+                                            fontFamily: PulsoFonts.mono,
+                                            fontSize: 9,
+                                            color: t.muted,
+                                          ),
+                                        )
+                                      else if (_discountQuoteError != null)
+                                        Text(
+                                          'No disponible: $_discountQuoteError',
+                                          style: TextStyle(
+                                            fontFamily: PulsoFonts.mono,
+                                            fontSize: 9,
+                                            color: t.danger,
+                                          ),
+                                        )
+                                      else if (_discountQuote != null)
+                                        Text(
+                                          'LISTA ${currency.symbol}${_discountQuote!.listPrice.toStringAsFixed(2)}'
+                                          '  −  DESCUENTO ${currency.symbol}${_discountQuote!.discount.toStringAsFixed(2)}'
+                                          '  ·  ${_discountQuote!.clientCategory}',
+                                          key: const ValueKey(
+                                            'server-discount-breakdown',
+                                          ),
+                                          style: TextStyle(
+                                            fontFamily: PulsoFonts.mono,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w600,
+                                            color: _discountQuote!.discount > 0
+                                                ? t.success
+                                                : t.muted,
+                                          ),
+                                        ),
+                                    ],
+                                  ],
+                                );
+                              },
+                              loading: () => const SizedBox.shrink(),
+                              error: (error, stackTrace) =>
+                                  const SizedBox.shrink(),
+                            );
+                          },
+                          loading: () => const SizedBox.shrink(),
+                          error: (error, stackTrace) => const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const PulsoLabel('Pagado'),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$planSymbol${_totalPaid.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontFamily: PulsoFonts.display,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: t.success,
-                      height: 1.0,
+                  SizedBox(
+                    width: compactSummary ? 0 : 12,
+                    height: compactSummary ? 12 : 0,
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const PulsoLabel('Aplicado al plan'),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$planSymbol${_totalPaid.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontFamily: PulsoFonts.display,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: t.success,
+                            height: 1.0,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 12),
           plansAsync.when(
@@ -1273,18 +1351,17 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final progressLabel = Text(
                         'Progreso: ${(progress * 100).toStringAsFixed(0)}%',
                         style: TextStyle(
                           fontFamily: PulsoFonts.mono,
                           fontSize: 11,
                           color: t.muted,
                         ),
-                      ),
-                      Container(
+                      );
+                      final remainingBadge = Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 6,
                           vertical: 2,
@@ -1305,8 +1382,31 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                             color: remaining > 0 ? t.danger : t.success,
                           ),
                         ),
-                      ),
-                    ],
+                      );
+
+                      // En ventanas angostas ambos textos no caben en una fila.
+                      // Apilarlos mantiene visible el saldo sin RenderFlex.
+                      if (constraints.maxWidth < 360) {
+                        return Column(
+                          key: const ValueKey('payment-progress-summary'),
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            progressLabel,
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: remainingBadge,
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        key: const ValueKey('payment-progress-summary'),
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [progressLabel, remainingBadge],
+                      );
+                    },
                   ),
                   _buildRecargoMoraBanner(t, planSymbol),
                   _buildSurchargeBanner(t, planSymbol),
@@ -1471,11 +1571,11 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                     const SizedBox(width: 8),
                     _colHeader('CUENTA', 3),
                     const SizedBox(width: 8),
-                    _colHeader('CANTIDAD', 2),
+                    _colHeader('TOTAL RECIBIDO', 2),
                     const SizedBox(width: 8),
                     _colHeader('INFO / TASA', 3),
                     const SizedBox(width: 8),
-                    _colHeader('EQUIVALENTE', 2, align: TextAlign.right),
+                    _colHeader('COBRADO / AL PLAN', 2, align: TextAlign.right),
                     const SizedBox(width: 48), // Action space
                   ],
                 ),
@@ -1567,14 +1667,22 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            const PulsoLabel('Total acumulado'),
+                            const PulsoLabel('Total cobrado'),
                             Text(
-                              '$symbol${_totalPaid.toStringAsFixed(2)}',
+                              '$symbol${_totalCollected.toStringAsFixed(2)}',
                               style: TextStyle(
                                 fontFamily: PulsoFonts.display,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,
                                 color: t.chalk,
+                              ),
+                            ),
+                            Text(
+                              'Al plan: $symbol${_totalPaid.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontFamily: PulsoFonts.mono,
+                                fontSize: 10,
+                                color: t.muted,
                               ),
                             ),
                             if (isOverpaid)
@@ -1710,9 +1818,11 @@ class _ProcessPaymentDialogState extends ConsumerState<ProcessPaymentDialog> {
           // Condonar sin motivo no puede confirmarse (docs/RECARGO_MORA.md §6-bis).
           final condonacionValida =
               !_condonarRecargoMora || _motivoCondonacionValido;
-          final isComplete = rawRemaining <= 0.001 &&
+          final isComplete =
+              rawRemaining <= 0.001 &&
               _paymentRows.isNotEmpty &&
-              condonacionValida;
+              condonacionValida &&
+              (_cuotaFija || _porCuotas || _discountQuote != null);
           final status = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

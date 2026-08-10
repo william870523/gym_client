@@ -10,6 +10,8 @@ import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
 import 'package:gym_client/src/core/theme/pulso/pulso_tokens.dart';
 import 'package:gym_client/src/core/time/app_clock.dart';
 import 'package:gym_client/src/core/utils/datetime_zone.dart';
+import 'package:gym_client/src/features/auth/domain/models/user.dart';
+import 'package:gym_client/src/features/auth/presentation/state/auth_notifier.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
 import 'package:gym_client/src/features/clients/presentation/screens/clients_pulso_view.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_notifier.dart';
@@ -572,6 +574,26 @@ void main() {
     expect(find.text('Vigente'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Recepción no ve el acceso a avisos administrativos', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(role: 'reception'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('admin-notices-action')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Administración sí ve el acceso a avisos administrativos', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(role: 'admin'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('admin-notices-action')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 void _expectOriginalFormGeometry(WidgetTester tester) {
@@ -668,17 +690,20 @@ Widget _harness({
   _ClientNotifier? notifier,
   Widget? view,
   ProviderContainer? container,
+  String? role,
 }) {
   return UncontrolledProviderScope(
-    container: container ?? _container(notifier: notifier),
+    container: container ?? _container(notifier: notifier, role: role),
     child: MaterialApp(home: Scaffold(body: view ?? const ClientsPulsoView())),
   );
 }
 
-ProviderContainer _container({_ClientNotifier? notifier}) {
+ProviderContainer _container({_ClientNotifier? notifier, String? role}) {
   final clients = _clients();
   final container = ProviderContainer(
     overrides: [
+      if (role != null)
+        authProvider.overrideWith(() => _AuthenticatedNotifier(role)),
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       syncStatusProvider.overrideWith(
         (ref) => Stream.value(
@@ -756,6 +781,20 @@ class _ClientNotifier extends ClientNotifier {
     updates.add(client);
     return client;
   }
+}
+
+class _AuthenticatedNotifier extends AuthNotifier {
+  _AuthenticatedNotifier(this.role);
+
+  final String role;
+
+  @override
+  Future<User?> build() async => User(
+    id: 'user-$role',
+    name: role == 'admin' ? 'Carla Administradora' : 'Ana Recepción',
+    email: '$role@gym.test',
+    role: role,
+  );
 }
 
 class _RefreshClientNotifier extends _ClientNotifier {

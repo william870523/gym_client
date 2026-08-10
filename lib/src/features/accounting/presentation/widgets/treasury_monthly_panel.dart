@@ -382,27 +382,34 @@ class _TreasuryMonthlyPanelState extends ConsumerState<TreasuryMonthlyPanel> {
                                 alignLabelWithHint: true,
                               ),
                             ),
-                            CheckboxListTile(
-                              key: Key(
-                                reopen
-                                    ? 'treasury-monthly-reopen-confirm'
-                                    : 'treasury-monthly-close-confirm',
-                              ),
-                              value: confirmed,
-                              contentPadding: EdgeInsets.zero,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              title: Text(
-                                reopen
-                                    ? 'Confirmo que esta excepción debe quedar registrada.'
-                                    : 'Confirmo que revisé los cierres, incidencias y saldos.',
-                                style: TextStyle(
-                                  color: tokens.chalk,
-                                  fontFamily: PulsoFonts.body,
-                                  fontSize: 12,
+                            // El panel del diálogo pinta su propio fondo: sin
+                            // este Material transparente Flutter avisa de que
+                            // la tinta del tile quedaría oculta. Sin cambio
+                            // visual.
+                            Material(
+                              type: MaterialType.transparency,
+                              child: CheckboxListTile(
+                                key: Key(
+                                  reopen
+                                      ? 'treasury-monthly-reopen-confirm'
+                                      : 'treasury-monthly-close-confirm',
                                 ),
-                              ),
-                              onChanged: (value) => setDialogState(
-                                () => confirmed = value ?? false,
+                                value: confirmed,
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                title: Text(
+                                  reopen
+                                      ? 'Confirmo que esta excepción debe quedar registrada.'
+                                      : 'Confirmo que revisé los cierres, incidencias y saldos.',
+                                  style: TextStyle(
+                                    color: tokens.chalk,
+                                    fontFamily: PulsoFonts.body,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                onChanged: (value) => setDialogState(
+                                  () => confirmed = value ?? false,
+                                ),
                               ),
                             ),
                           ],
@@ -1396,7 +1403,10 @@ class _ExportScopeCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          child,
+          // La tarjeta pinta fondo propio; los tiles que recibe necesitan su
+          // Material transparente o Flutter avisa de que su tinta quedaría
+          // oculta y la aserción tumba la prueba. No cambia el aspecto.
+          Material(type: MaterialType.transparency, child: child),
         ],
       ),
     );

@@ -43,11 +43,14 @@ class ClientRecordIdentity {
     required this.id,
     required this.firstName,
     required this.lastName,
+    this.categoria,
   });
 
   final String id;
   final String firstName;
   final String lastName;
+  // H1: categoría del cliente (NUEVO/VIEJO). Llega del expediente (corte 1).
+  final String? categoria;
 
   String get fullName => '$firstName $lastName'.trim();
 
@@ -56,12 +59,14 @@ class ClientRecordIdentity {
         id: _requiredString(json, 'ci'),
         firstName: '${json['nombres'] ?? ''}',
         lastName: '${json['apellidos'] ?? ''}',
+        categoria: _nullableString(json['categoria']),
       );
 
   Map<String, dynamic> toJson() => {
     'ci': id,
     'nombres': firstName,
     'apellidos': lastName,
+    if (categoria != null) 'categoria': categoria,
   };
 }
 
@@ -403,6 +408,19 @@ class ClientRecordPayment {
     this.isVoided = false,
     this.voidedAt,
     this.details = const [],
+    // H1: instantánea de descuento congelada al cobrar.
+    this.listPrice,
+    this.discountPct,
+    this.discountAmount,
+    this.clientCategory,
+    // H3: código de plan + sufijo de cuota.
+    this.planCode,
+    this.installmentSuffix,
+    // H5: cobrador congelado (R5.6).
+    this.collectorUserId,
+    this.collectorName,
+    this.collectorRole,
+    this.collectorOrigin,
   });
 
   final String id;
@@ -418,6 +436,19 @@ class ClientRecordPayment {
   final bool isVoided;
   final DateTime? voidedAt;
   final List<ClientRecordPaymentDetail> details;
+  // H1: instantánea de descuento congelada al cobrar.
+  final double? listPrice;
+  final String? discountPct;
+  final double? discountAmount;
+  final String? clientCategory;
+  // H3: código de plan + sufijo de cuota.
+  final String? planCode;
+  final String? installmentSuffix;
+  // H5: cobrador congelado (R5.6).
+  final String? collectorUserId;
+  final String? collectorName;
+  final String? collectorRole;
+  final String? collectorOrigin;
 
   factory ClientRecordPayment.fromJson(Map<String, dynamic> json) =>
       ClientRecordPayment(
@@ -438,6 +469,23 @@ class ClientRecordPayment {
         details: _list(json['detalles'])
             .map((item) => ClientRecordPaymentDetail.fromJson(_map(item)))
             .toList(),
+        // H1: snapshots de descuento.
+        listPrice: json['precio_lista_snapshot'] == null
+            ? null
+            : _double(json['precio_lista_snapshot']),
+        discountPct: _nullableString(json['descuento_pct_snapshot']),
+        discountAmount: json['descuento_monto_snapshot'] == null
+            ? null
+            : _double(json['descuento_monto_snapshot']),
+        clientCategory: _nullableString(json['categoria_cliente_snapshot']),
+        // H3: código + sufijo.
+        planCode: _nullableString(json['plan_codigo_snapshot']),
+        installmentSuffix: _nullableString(json['cuota_sufijo_snapshot']),
+        // H5: cobrador.
+        collectorUserId: _nullableString(json['cobrado_por_user_id']),
+        collectorName: _nullableString(json['cobrado_por_nombre_snapshot']),
+        collectorRole: _nullableString(json['cobrado_por_rol_snapshot']),
+        collectorOrigin: _nullableString(json['cobrado_por_origen']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -454,6 +502,16 @@ class ClientRecordPayment {
     'is_deleted': isVoided,
     'deleted_at': voidedAt?.toUtc().toIso8601String(),
     'detalles': details.map((item) => item.toJson()).toList(),
+    'precio_lista_snapshot': listPrice?.toStringAsFixed(2),
+    'descuento_pct_snapshot': discountPct,
+    'descuento_monto_snapshot': discountAmount?.toStringAsFixed(2),
+    'categoria_cliente_snapshot': clientCategory,
+    'plan_codigo_snapshot': planCode,
+    'cuota_sufijo_snapshot': installmentSuffix,
+    'cobrado_por_user_id': collectorUserId,
+    'cobrado_por_nombre_snapshot': collectorName,
+    'cobrado_por_rol_snapshot': collectorRole,
+    'cobrado_por_origen': collectorOrigin,
   };
 }
 

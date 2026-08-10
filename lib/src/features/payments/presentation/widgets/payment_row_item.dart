@@ -16,6 +16,8 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/widgets/app_flag.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../data/models/method_surcharge_quote.dart';
+import '../../data/repositories/payment_repository.dart';
 
 // Mismo formato que la vista de tasas: entero para 450, decimales solo si la
 // tasa los tiene (una tasa inversa como 0.0022 no se puede redondear).
@@ -53,11 +55,11 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
   bool _rateFound = false;
   bool _divideByRate = false;
 
-  /// R5.1 — recargos por método congelados en la tasa resuelta
-  /// (`tipo_pago_id → %`). Vacío en 1:1 o sin tasa.
-  Map<String, String> _rateSurcharges = const {};
-
   double? _lastEmittedAmount;
+  MethodSurchargeQuote? _methodQuote;
+  bool _quoteLoading = false;
+  String? _quoteError;
+  int _quoteSequence = 0;
 
   @override
   void initState() {
@@ -81,9 +83,11 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
   void _updateStateFromData(Map<String, dynamic>? data) {
     if (data == null) return;
 
-    if (data['amount'] != null) {
-      final amountVal = data['amount'] is num
-          ? (data['amount'] as num).toDouble()
+    final restoredReceived =
+        data['inputReceived'] ?? data['inputBase'] ?? data['amount'];
+    if (restoredReceived != null) {
+      final amountVal = restoredReceived is num
+          ? restoredReceived.toDouble()
           : 0.0;
 
       // Prevent overwriting if the value matches what we last sent (Anti-Loop)
@@ -135,43 +139,79 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
   }
 
   void _notifyChanged() {
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
-    final breakdown = _calculateSurchargeBreakdown(amount);
-    final baseInPayment = breakdown['baseInPayment']!;
-    final surchargeInPayment = breakdown['surchargeInPayment']!;
+    final received = double.tryParse(_amountController.text) ?? 0.0;
+    _lastEmittedAmount = received;
+    _methodQuote = null;
+    _quoteError = null;
+    _emitRow(received);
+    if (_selectedType != null &&
+        _selectedAccount != null &&
+        _rateFound &&
+        received > 0) {
+      _loadMethodQuote(received);
+    }
+  }
 
-    final equivalent = _rateFound && _currentRate > 0
-        ? (_divideByRate
-            ? baseInPayment / _currentRate
-            : baseInPayment * _currentRate)
-        : 0.0;
-
-    final surchargePlanCurrency = _rateFound && _currentRate > 0
-        ? (_divideByRate
-            ? surchargeInPayment / _currentRate
-            : surchargeInPayment * _currentRate)
-        : 0.0;
-
-    _lastEmittedAmount = amount; // Track what we sent
-
+  void _emitRow(double inputReceived) {
+    final quote = _methodQuote;
     widget.onChanged({
       'type': _selectedType,
       'account': _selectedAccount,
-      'amount': amount,
+      'inputReceived': inputReceived,
+      'amount': quote?.totalValue ?? inputReceived,
       'rate': _currentRate,
       'rateOperation': _divideByRate ? 'divide' : 'multiply',
       'exchangeRateId': _currentRateId,
-      'surchargePct': _surchargePct,
-      'surchargeAmount': surchargeInPayment,
-      'surchargePlanCurrency': surchargePlanCurrency,
-      'baseAmount': baseInPayment,
-      'equivalent': equivalent,
+      'exchangeRateVersion': quote?.exchangeRateVersion,
+      'surchargePct': quote?.percentageValue ?? 0.0,
+      'surchargeAmount': quote?.surchargeValue ?? 0.0,
+      'baseAmount': quote?.baseValue ?? inputReceived,
+      'equivalent': quote?.planEquivalentValue ?? 0.0,
+      'collectedEquivalent': quote?.totalPlanEquivalentValue ?? 0.0,
       'isValid':
           _selectedType != null &&
           _selectedAccount != null &&
           _rateFound &&
-          amount > 0,
+          inputReceived > 0 &&
+          quote != null &&
+          !_quoteLoading &&
+          _quoteError == null,
     });
+  }
+
+  Future<void> _loadMethodQuote(double totalReceived) async {
+    final sequence = ++_quoteSequence;
+    setState(() {
+      _quoteLoading = true;
+      _quoteError = null;
+    });
+    _emitRow(totalReceived);
+    try {
+      final quote = await ref
+          .read(paymentRepositoryProvider)
+          .getMethodSurchargeQuote(
+            totalReceived: totalReceived,
+            paymentTypeId: _selectedType!.id,
+            accountId: _selectedAccount!.id,
+            paymentCurrencyId: _selectedAccount!.currencyId,
+            planCurrencyId: widget.planCurrencyId,
+            exchangeRateId: _currentRateId,
+          );
+      if (!mounted || sequence != _quoteSequence) return;
+      setState(() {
+        _methodQuote = quote;
+        _quoteLoading = false;
+      });
+      _emitRow(totalReceived);
+    } catch (error) {
+      if (!mounted || sequence != _quoteSequence) return;
+      setState(() {
+        _methodQuote = null;
+        _quoteLoading = false;
+        _quoteError = error.toString().replaceFirst('Exception: ', '');
+      });
+      _emitRow(totalReceived);
+    }
   }
 
   void _onTypeChanged(PaymentTypeModel? type) {
@@ -183,6 +223,9 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       _divideByRate = false;
       _currentRate = 0.0;
       _currentRateId = null;
+      _methodQuote = null;
+      _quoteError = null;
+      _quoteSequence++;
     });
     _notifyChanged();
   }
@@ -195,6 +238,9 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       _divideByRate = false;
       _currentRate = 0.0;
       _currentRateId = null;
+      _methodQuote = null;
+      _quoteError = null;
+      _quoteSequence++;
     });
 
     if (account != null) {
@@ -228,21 +274,23 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
           found: true,
           rate: direct.exchangeRate,
           rateId: direct.id,
-          surcharges: direct.recargos,
         );
         return;
       }
 
       // Par al revés —plan en euros cobrado en CUP con esa misma tasa, o una
       // tasa dada como «1 CUP = 0.0022 EUR»—: entonces toca dividir.
-      final inverse = _pickCurrentRate(rates, planCurrencyId, accountCurrencyId);
+      final inverse = _pickCurrentRate(
+        rates,
+        planCurrencyId,
+        accountCurrencyId,
+      );
       if (inverse != null) {
         _applyRateState(
           found: true,
           rate: inverse.exchangeRate,
           rateId: inverse.id,
           divideByRate: true,
-          surcharges: inverse.recargos,
         );
         return;
       }
@@ -287,7 +335,6 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
     required double rate,
     String? rateId,
     bool divideByRate = false,
-    Map<String, String> surcharges = const {},
   }) {
     if (!mounted) return;
 
@@ -296,46 +343,8 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       _currentRate = rate;
       _currentRateId = rateId;
       _divideByRate = found && divideByRate;
-      _rateSurcharges = found ? surcharges : const {};
     });
     _notifyChanged();
-  }
-
-  /// % de recargo del método seleccionado en la tasa resuelta (0 si no hay).
-  double get _surchargePct {
-    final typeId = _selectedType?.id;
-    if (typeId == null) return 0.0;
-    return double.tryParse(_rateSurcharges[typeId] ?? '') ?? 0.0;
-  }
-
-  Map<String, double> _calculateSurchargeBreakdown(double paymentAmount) {
-    final pct = _surchargePct;
-    if (pct <= 0 || paymentAmount <= 0) {
-      return {
-        'baseInPayment': paymentAmount,
-        'surchargeInPayment': 0.0,
-        'pct': 0.0,
-      };
-    }
-    // R5.1: El recargo se calcula en la moneda de pago (ej. CUP) como un entero
-    // redondeado al entero superior (ceil).
-    final rawSurcharge = paymentAmount * (pct / (100.0 + pct));
-    final surchargeInPayment = rawSurcharge.ceilToDouble();
-    final baseInPayment = paymentAmount - surchargeInPayment;
-    return {
-      'baseInPayment': baseInPayment,
-      'surchargeInPayment': surchargeInPayment,
-      'pct': pct,
-    };
-  }
-
-  double _calculateEquivalent(double amount) {
-    if (!_rateFound || _currentRate <= 0) return 0.0;
-    final breakdown = _calculateSurchargeBreakdown(amount);
-    final baseInPayment = breakdown['baseInPayment']!;
-    return _divideByRate
-        ? baseInPayment / _currentRate
-        : baseInPayment * _currentRate;
   }
 
   bool _isSameCurrencyId(String a, String b) {
@@ -570,296 +579,403 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: tokens.line)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Tipo de Pago (Searchable)
-          Expanded(
-            flex: 2,
-            child: typesAsync.when(
-              data: (types) {
-                final activeTypes = types.where((t) => t.active).toList();
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    return DropdownMenu<PaymentTypeModel>(
-                      width: constraints.maxWidth,
-                      controller: _typeInputController,
-                      enableFilter: true,
-                      requestFocusOnTap: true,
-                      hintText: 'Tipo',
-                      initialSelection: _selectedType,
-                      textStyle: TextStyle(
-                        fontSize: 13,
-                        color: tokens.chalk,
-                      ),
-                      inputDecorationTheme: _dropdownInputTheme(tokens),
-                      menuStyle: _menuStyle(tokens),
-                      dropdownMenuEntries: activeTypes.map((type) {
-                        return DropdownMenuEntry<PaymentTypeModel>(
-                          value: type,
-                          label: type.name,
-                          leadingIcon: Icon(
-                            _getTypeIcon(type.name),
-                            size: 18,
-                            color: tokens.muted,
-                          ),
-                          style: ButtonStyle(
-                            textStyle: WidgetStatePropertyAll(
-                              TextStyle(fontSize: 13, color: tokens.chalk),
-                            ),
-                            foregroundColor: WidgetStatePropertyAll(
-                              tokens.chalk,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onSelected: _onTypeChanged,
-                      leadingIcon: _selectedType != null
-                          ? Icon(
-                              _getTypeIcon(_selectedType!.name),
-                              size: 18,
-                              color: tokens.muted,
-                            )
-                          : Icon(Icons.payment, size: 18, color: tokens.muted),
-                    );
-                  },
-                );
-              },
-              loading: () => const SizedBox(),
-              error: (error, stackTrace) => Icon(
-                Icons.error_outline,
-                size: 16,
-                color: tokens.danger,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // 2. Cuenta (Filtered & Searchable)
-          Expanded(
-            flex: 3,
-            child: _selectedType == null
-                ? _disabledCell('Seleccione Tipo')
-                : accountsAsync.when(
-                    data: (accounts) {
-                      final filtered = accounts
-                          .where(
-                            (a) =>
-                                !a.isDeleted &&
-                                a.paymentTypeId == _selectedType!.id,
-                          )
-                          .toList();
-                      if (filtered.isEmpty) return _errorCell('Sin cuentas');
-                      return LayoutBuilder(
-                        builder: (context, constraints) {
-                          return DropdownMenu<AccountModel>(
-                            width: constraints.maxWidth,
-                            controller: _accountInputController,
-                            enableFilter: true,
-                            requestFocusOnTap: true,
-                            hintText: 'Cuenta',
-                            initialSelection: _selectedAccount,
-                            textStyle: TextStyle(
-                              fontSize: 13,
-                              color: tokens.chalk,
-                            ),
-                            inputDecorationTheme: _dropdownInputTheme(tokens),
-                            menuStyle: _menuStyle(tokens),
-                            dropdownMenuEntries: filtered.map((account) {
-                              return DropdownMenuEntry<AccountModel>(
-                                value: account,
-                                label: account.name,
-                                leadingIcon: account.currencyImage != null
-                                    ? AppFlag(
-                                        bytes: account.currencyImage,
-                                        fallbackCode: account.currencyCode,
-                                        width: 20,
-                                        height: 15,
-                                        borderRadius: 0,
-                                      )
-                                    : Icon(
-                                        Icons.account_balance_wallet,
-                                        size: 16,
-                                        color: tokens.muted,
-                                      ),
-                                style: ButtonStyle(
-                                  textStyle: WidgetStatePropertyAll(
-                                    TextStyle(
-                                      fontSize: 13,
-                                      color: tokens.chalk,
-                                    ),
-                                  ),
-                                  foregroundColor: WidgetStatePropertyAll(
-                                    tokens.chalk,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                            onSelected: _onAccountSelected,
-                            leadingIcon: _selectedAccount?.currencyImage != null
-                                ? Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: AppFlag(
-                                      bytes: _selectedAccount!.currencyImage,
-                                      fallbackCode:
-                                          _selectedAccount!.currencyCode,
-                                      width: 20,
-                                      height: 15,
-                                      borderRadius: 0,
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.account_balance_wallet,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // La fila necesita 760 px para que sus cinco columnas se lean; por
+          // debajo de eso se conserva ese ancho y se desplaza en horizontal.
+          //
+          // El umbral era 600 y dejaba una franja muerta: entre 600 y 760 la
+          // fila se estrujaba sin activar el desplazamiento, y la columna
+          // **TIPO** se quedaba en unos 85 px —icono, flecha y ni una letra del
+          // método elegido—. Se vio a 768 px en el navegador, pero no es un
+          // problema solo de web: el escritorio arranca en 800 px lógicos y con
+          // el diálogo abierto cae de lleno en esa franja.
+          const anchoComodo = 760.0;
+          final rowWidth = constraints.maxWidth < anchoComodo
+              ? anchoComodo
+              : constraints.maxWidth;
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: rowWidth,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Tipo de Pago (Searchable)
+                  Expanded(
+                    flex: 2,
+                    child: typesAsync.when(
+                      data: (types) {
+                        final activeTypes = types
+                            .where((t) => t.active)
+                            .toList();
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            return DropdownMenu<PaymentTypeModel>(
+                              width: constraints.maxWidth,
+                              controller: _typeInputController,
+                              enableFilter: true,
+                              requestFocusOnTap: true,
+                              hintText: 'Tipo',
+                              initialSelection: _selectedType,
+                              textStyle: TextStyle(
+                                fontSize: 13,
+                                color: tokens.chalk,
+                              ),
+                              inputDecorationTheme: _dropdownInputTheme(tokens),
+                              menuStyle: _menuStyle(tokens),
+                              dropdownMenuEntries: activeTypes.map((type) {
+                                return DropdownMenuEntry<PaymentTypeModel>(
+                                  value: type,
+                                  label: type.name,
+                                  leadingIcon: Icon(
+                                    _getTypeIcon(type.name),
                                     size: 18,
                                     color: tokens.muted,
                                   ),
-                          );
-                        },
-                      );
-                    },
-                    loading: () => const SizedBox(),
-                    error: (error, stackTrace) => Icon(
-                      Icons.error_outline,
-                      size: 16,
-                      color: tokens.danger,
+                                  style: ButtonStyle(
+                                    textStyle: WidgetStatePropertyAll(
+                                      TextStyle(
+                                        fontSize: 13,
+                                        color: tokens.chalk,
+                                      ),
+                                    ),
+                                    foregroundColor: WidgetStatePropertyAll(
+                                      tokens.chalk,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onSelected: _onTypeChanged,
+                              leadingIcon: _selectedType != null
+                                  ? Icon(
+                                      _getTypeIcon(_selectedType!.name),
+                                      size: 18,
+                                      color: tokens.muted,
+                                    )
+                                  : Icon(
+                                      Icons.payment,
+                                      size: 18,
+                                      color: tokens.muted,
+                                    ),
+                            );
+                          },
+                        );
+                      },
+                      loading: () => const SizedBox(),
+                      error: (error, stackTrace) => Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: tokens.danger,
+                      ),
                     ),
                   ),
-          ),
-          const SizedBox(width: 8),
+                  const SizedBox(width: 8),
 
-          // 3. Cantidad
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 48, // Standardize height with DropdownMenu default (~48)
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: tokens.raised,
-                border: Border.all(color: tokens.line),
-              ),
-              child: TextField(
-                controller: _amountController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: TextStyle(
-                  fontFamily: PulsoFonts.mono,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.chalk,
-                ),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  filled: false,
-                  hintText: '0.00',
-                  hintStyle: TextStyle(color: tokens.muted2),
-                  contentPadding: const EdgeInsets.only(
-                    bottom: 4,
-                  ), // Align text
-                  isDense: true,
-                ),
-                onChanged: (_) => _notifyChanged(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
+                  // 2. Cuenta (Filtered & Searchable)
+                  Expanded(
+                    flex: 3,
+                    child: _selectedType == null
+                        ? _disabledCell('Seleccione Tipo')
+                        : accountsAsync.when(
+                            data: (accounts) {
+                              final filtered = accounts
+                                  .where(
+                                    (a) =>
+                                        !a.isDeleted &&
+                                        a.paymentTypeId == _selectedType!.id,
+                                  )
+                                  .toList();
+                              if (filtered.isEmpty) {
+                                return _errorCell('Sin cuentas');
+                              }
+                              return LayoutBuilder(
+                                builder: (context, constraints) {
+                                  return DropdownMenu<AccountModel>(
+                                    width: constraints.maxWidth,
+                                    controller: _accountInputController,
+                                    enableFilter: true,
+                                    requestFocusOnTap: true,
+                                    hintText: 'Cuenta',
+                                    initialSelection: _selectedAccount,
+                                    textStyle: TextStyle(
+                                      fontSize: 13,
+                                      color: tokens.chalk,
+                                    ),
+                                    inputDecorationTheme: _dropdownInputTheme(
+                                      tokens,
+                                    ),
+                                    menuStyle: _menuStyle(tokens),
+                                    dropdownMenuEntries: filtered.map((
+                                      account,
+                                    ) {
+                                      return DropdownMenuEntry<AccountModel>(
+                                        value: account,
+                                        label: account.name,
+                                        leadingIcon:
+                                            account.currencyImage != null
+                                            ? AppFlag(
+                                                bytes: account.currencyImage,
+                                                fallbackCode:
+                                                    account.currencyCode,
+                                                width: 20,
+                                                height: 15,
+                                                borderRadius: 0,
+                                              )
+                                            : Icon(
+                                                Icons.account_balance_wallet,
+                                                size: 16,
+                                                color: tokens.muted,
+                                              ),
+                                        style: ButtonStyle(
+                                          textStyle: WidgetStatePropertyAll(
+                                            TextStyle(
+                                              fontSize: 13,
+                                              color: tokens.chalk,
+                                            ),
+                                          ),
+                                          foregroundColor:
+                                              WidgetStatePropertyAll(
+                                                tokens.chalk,
+                                              ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onSelected: _onAccountSelected,
+                                    leadingIcon:
+                                        _selectedAccount?.currencyImage != null
+                                        ? Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: AppFlag(
+                                              bytes: _selectedAccount!
+                                                  .currencyImage,
+                                              fallbackCode: _selectedAccount!
+                                                  .currencyCode,
+                                              width: 20,
+                                              height: 15,
+                                              borderRadius: 0,
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.account_balance_wallet,
+                                            size: 18,
+                                            color: tokens.muted,
+                                          ),
+                                  );
+                                },
+                              );
+                            },
+                            loading: () => const SizedBox(),
+                            error: (error, stackTrace) => Icon(
+                              Icons.error_outline,
+                              size: 16,
+                              color: tokens.danger,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
 
-          // 4. Info (Tasa)
-          Expanded(
-            flex: 3,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 48),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              alignment: Alignment.centerLeft,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_selectedAccount != null)
-                    Text(
-                      _selectedAccount!.currencyCode ?? '',
-                      style: TextStyle(
-                        fontFamily: PulsoFonts.mono,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.chalk,
+                  // 3. Total realmente recibido del cliente.
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      height:
+                          48, // Standardize height with DropdownMenu default (~48)
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: tokens.raised,
+                        border: Border.all(color: tokens.line),
                       ),
-                    ),
-                  if (_rateFound) ...[
-                    Text(
-                      _rateLabel(planCurrencyLabel),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: PulsoFonts.mono,
-                        fontSize: 10,
-                        color: tokens.muted,
-                      ),
-                    ),
-                    // R5.1: el método paga un poco más; la diferencia es
-                    // ganancia del gimnasio y no cubre plan.
-                    if (_surchargePct > 0)
-                      Text(
-                        key: const ValueKey('payment-row-surcharge'),
-                        '+${_surchargePct.toStringAsFixed(2)} % RECARGO',
+                      child: TextField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         style: TextStyle(
                           fontFamily: PulsoFonts.mono,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: tokens.warning,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.chalk,
                         ),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          filled: false,
+                          hintText: '0.00',
+                          hintStyle: TextStyle(color: tokens.muted2),
+                          contentPadding: const EdgeInsets.only(
+                            bottom: 4,
+                          ), // Align text
+                          isDense: true,
+                        ),
+                        onChanged: (_) => _notifyChanged(),
                       ),
-                  ] else if (_selectedAccount != null)
-                    _missingRateAction(tokens, planCurrencyLabel),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 4. Info (Tasa)
+                  Expanded(
+                    flex: 3,
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_selectedAccount != null)
+                            Text(
+                              _selectedAccount!.currencyCode ?? '',
+                              style: TextStyle(
+                                fontFamily: PulsoFonts.mono,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: tokens.chalk,
+                              ),
+                            ),
+                          if (_rateFound) ...[
+                            Text(
+                              _rateLabel(planCurrencyLabel),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: PulsoFonts.mono,
+                                fontSize: 10,
+                                color: tokens.muted,
+                              ),
+                            ),
+                            // R5.1: el método paga un poco más; la diferencia es
+                            // ganancia del gimnasio y no cubre plan.
+                            if (_quoteLoading)
+                              Text(
+                                'COTIZANDO…',
+                                key: const ValueKey(
+                                  'payment-row-quote-loading',
+                                ),
+                                style: TextStyle(
+                                  fontFamily: PulsoFonts.mono,
+                                  fontSize: 9,
+                                  color: tokens.muted,
+                                ),
+                              )
+                            else if (_quoteError != null)
+                              // El motivo del rechazo se lee entero. Con
+                              // `maxLines: 1` el operador veía «El total
+                              // recibido no admite un desglos…» y se quedaba
+                              // sin saber por qué no puede confirmar: la regla
+                              // del recorrido es que nada se bloquee sin
+                              // explicación, y aquí la explicación existía y la
+                              // tapaba la vista. El tooltip cubre el caso
+                              // extremo en que ni así quepa.
+                              Tooltip(
+                                message: _quoteError!,
+                                child: Text(
+                                  _quoteError!,
+                                  key: const ValueKey(
+                                    'payment-row-quote-error',
+                                  ),
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: PulsoFonts.mono,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.danger,
+                                  ),
+                                ),
+                              )
+                            else if ((_methodQuote?.percentageValue ?? 0) > 0)
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final compact = constraints.maxWidth < 110;
+                                  return Text(
+                                    key: const ValueKey(
+                                      'payment-row-surcharge',
+                                    ),
+                                    compact
+                                        ? '+${_methodQuote!.surcharge}\n'
+                                              '=${_methodQuote!.total}'
+                                        : 'BASE ${_methodQuote!.base} + RECARGO '
+                                              '${_methodQuote!.percentage} % '
+                                              '(${_methodQuote!.surcharge}) = '
+                                              '${_methodQuote!.total}',
+                                    maxLines: compact ? 2 : 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: PulsoFonts.mono,
+                                      fontSize: compact ? 8 : 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: tokens.warning,
+                                    ),
+                                  );
+                                },
+                              ),
+                          ] else if (_selectedAccount != null)
+                            _missingRateAction(tokens, planCurrencyLabel),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // 5. Total cobrado y parte que realmente cubre el plan.
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 60),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: tokens.raised,
+                        border: Border.all(color: tokens.line),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _methodQuote?.totalPlanEquivalent ?? '0.00',
+                            style: TextStyle(
+                              fontFamily: PulsoFonts.mono,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: tokens.chalk,
+                            ),
+                          ),
+                          if ((_methodQuote?.surchargeValue ?? 0) > 0)
+                            Text(
+                              'AL PLAN ${_methodQuote!.planEquivalent}',
+                              style: TextStyle(
+                                fontFamily: PulsoFonts.mono,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                color: tokens.muted,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 6. Delete
+                  SizedBox(
+                    height: 48,
+                    child: Center(
+                      child: PulsoIconButton(
+                        icon: Icons.delete_outline,
+                        tooltip: 'Quitar forma de pago',
+                        danger: true,
+                        onPressed: widget.onDelete,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-
-          // 5. Equivalent
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 48,
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: tokens.raised,
-                border: Border.all(color: tokens.line),
-              ),
-              child: Text(
-                (_rateFound && _amountController.text.isNotEmpty)
-                    ? (double.tryParse(_amountController.text) != null
-                          ? _calculateEquivalent(
-                              double.parse(_amountController.text),
-                            ).toStringAsFixed(2)
-                          : '0.00')
-                    : '0.00',
-                style: TextStyle(
-                  fontFamily: PulsoFonts.mono,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: tokens.chalk,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // 6. Delete
-          SizedBox(
-            height: 48,
-            child: Center(
-              child: PulsoIconButton(
-                icon: Icons.delete_outline,
-                tooltip: 'Quitar forma de pago',
-                danger: true,
-                onPressed: widget.onDelete,
-              ),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -958,10 +1074,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
         color: tokens.raised,
         border: Border.all(color: tokens.line),
       ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 12, color: tokens.muted),
-      ),
+      child: Text(text, style: TextStyle(fontSize: 12, color: tokens.muted)),
     );
   }
 
@@ -975,10 +1088,7 @@ class _PaymentRowItemState extends ConsumerState<PaymentRowItem> {
         color: tokens.dangerSoft,
         border: Border.all(color: tokens.danger.withValues(alpha: 0.4)),
       ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 12, color: tokens.danger),
-      ),
+      child: Text(text, style: TextStyle(fontSize: 12, color: tokens.danger)),
     );
   }
 

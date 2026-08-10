@@ -11,6 +11,9 @@ import '../models/statistics_ranking_csv.dart';
 import '../models/statistics_rankings.dart';
 import '../models/statistics_ranking_page.dart';
 import '../models/statistics_segmentation.dart';
+import '../models/statistics_cohorts.dart';
+import '../models/accounting_statistics.dart';
+import '../models/statistics_forecast.dart';
 
 final statisticsRepositoryProvider = Provider<StatisticsRepository>((ref) {
   return StatisticsRepository(ref.watch(apiClientProvider));
@@ -22,6 +25,26 @@ class StatisticsRepository {
   const StatisticsRepository(this._dio);
 
   final Dio _dio;
+
+  Future<StatisticsForecast> getForecast(StatisticsForecastQuery query) async {
+    final response = await _dio.get(
+      '/estadisticas/pronostico',
+      queryParameters: {
+        'historia': query.historyDays,
+        'horizonte': query.horizonDays,
+      },
+    );
+    return StatisticsForecast.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<AccountingStatistics> getAccountingStatistics() async {
+    final respuesta = await _dio.get('/estadisticas/contabilidad');
+    return AccountingStatistics.fromJson(
+      Map<String, dynamic>.from(respuesta.data as Map),
+    );
+  }
 
   Future<MemberStatistics> getMemberStatistics(String ci) async {
     final respuesta = await _dio.get('/estadisticas/socio/$ci');
@@ -70,6 +93,42 @@ class StatisticsRepository {
       },
     );
     return StatisticsRankingPage.fromJson(
+      Map<String, dynamic>.from(respuesta.data as Map),
+    );
+  }
+
+  /// Cohortes de alta con retención a 30/60/90 días (§4.3).
+  Future<CohortsReport> getCohorts({
+    required int days,
+    required String granularity,
+  }) async {
+    final respuesta = await _dio.get(
+      '/estadisticas/cohortes',
+      queryParameters: {'dias': days, 'granularidad': granularity},
+    );
+    return CohortsReport.fromJson(
+      Map<String, dynamic>.from(respuesta.data as Map),
+    );
+  }
+
+  /// Mapa de demanda observada día × hora (§5.2).
+  Future<DemandReport> getDemand(int days) async {
+    final respuesta = await _dio.get(
+      '/estadisticas/demanda',
+      queryParameters: {'dias': days},
+    );
+    return DemandReport.fromJson(
+      Map<String, dynamic>.from(respuesta.data as Map),
+    );
+  }
+
+  /// Panel de calidad de datos (§5.3).
+  Future<QualityReport> getQuality(int days) async {
+    final respuesta = await _dio.get(
+      '/estadisticas/calidad',
+      queryParameters: {'dias': days},
+    );
+    return QualityReport.fromJson(
       Map<String, dynamic>.from(respuesta.data as Map),
     );
   }

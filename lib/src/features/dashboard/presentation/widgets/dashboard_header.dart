@@ -60,27 +60,54 @@ class DashboardHeader extends ConsumerWidget {
         children: [
           // Title / Breadcrumb
           Expanded(
-            child: Row(
-              children: [
-                if (onMenuPressed != null)
-                  IconButton(
-                    icon: Icon(
-                      Icons.menu,
-                      color: isDark ? Colors.white70 : const Color(0xFF475569),
-                    ),
-                    onPressed: onMenuPressed,
-                  ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    color: isDark ? Colors.white : const Color(0xFF0F172A),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900, // font-black equivalent
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final hasMenu = onMenuPressed != null;
+                final showTitle =
+                    title.isNotEmpty &&
+                    (!hasMenu || constraints.maxWidth >= 120);
+                return Row(
+                  children: [
+                    if (hasMenu)
+                      SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 40,
+                            height: 40,
+                          ),
+                          icon: Icon(
+                            Icons.menu,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF475569),
+                          ),
+                          onPressed: onMenuPressed,
+                        ),
+                      ),
+                    if (showTitle) ...[
+                      if (hasMenu) const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF0F172A),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
 

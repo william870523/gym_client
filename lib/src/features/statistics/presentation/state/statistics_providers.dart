@@ -6,6 +6,9 @@ import '../../data/models/trainer_statistics.dart';
 import '../../data/models/statistics_rankings.dart';
 import '../../data/models/statistics_ranking_page.dart';
 import '../../data/models/statistics_segmentation.dart';
+import '../../data/models/statistics_cohorts.dart';
+import '../../data/models/accounting_statistics.dart';
+import '../../data/models/statistics_forecast.dart';
 import '../../../../core/theme/pulso/appearance_provider.dart';
 import '../../data/repositories/statistics_repository.dart';
 import '../../data/services/segmentation_saved_views_store.dart';
@@ -122,6 +125,90 @@ final statisticsRankingPageProvider = FutureProvider.autoDispose
       return ref.watch(statisticsRepositoryProvider).getRankingPage(query);
     });
 
+/// Fase E3-b: cohortes de alta, mapa de demanda y calidad de datos.
+///
+/// Los tres comparten un solo selector de período y de granularidad, porque se
+/// leen juntos: la cohorte dice cuántos se quedaron, la demanda cuándo vienen y
+/// la calidad qué parte de las dos conclusiones es confiable.
+class CohortsQuery {
+  const CohortsQuery({this.days = 365, this.granularity = 'mes'});
+
+  final int days;
+  final String granularity;
+
+  CohortsQuery copyWith({int? days, String? granularity}) => CohortsQuery(
+    days: days ?? this.days,
+    granularity: granularity ?? this.granularity,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CohortsQuery &&
+      other.days == days &&
+      other.granularity == granularity;
+
+  @override
+  int get hashCode => Object.hash(days, granularity);
+}
+
+class CohortsQueryNotifier extends Notifier<CohortsQuery> {
+  @override
+  CohortsQuery build() => const CohortsQuery();
+
+  void setDays(int days) => state = state.copyWith(days: days);
+
+  void setGranularity(String granularity) =>
+      state = state.copyWith(granularity: granularity);
+}
+
+final cohortsQueryProvider =
+    NotifierProvider<CohortsQueryNotifier, CohortsQuery>(
+      CohortsQueryNotifier.new,
+    );
+
+final cohortsProvider = FutureProvider.autoDispose
+    .family<CohortsReport, CohortsQuery>((ref, query) {
+      return ref
+          .watch(statisticsRepositoryProvider)
+          .getCohorts(days: query.days, granularity: query.granularity);
+    });
+
+final demandProvider = FutureProvider.autoDispose.family<DemandReport, int>((
+  ref,
+  days,
+) {
+  return ref.watch(statisticsRepositoryProvider).getDemand(days);
+});
+
+final dataQualityProvider = FutureProvider.autoDispose
+    .family<QualityReport, int>((ref, days) {
+      return ref.watch(statisticsRepositoryProvider).getQuality(days);
+    });
+
+final accountingStatisticsProvider =
+    FutureProvider.autoDispose<AccountingStatistics>((ref) {
+      return ref.watch(statisticsRepositoryProvider).getAccountingStatistics();
+    });
+
+class StatisticsForecastQueryNotifier
+    extends Notifier<StatisticsForecastQuery> {
+  @override
+  StatisticsForecastQuery build() => const StatisticsForecastQuery();
+
+  void setHistoryDays(int days) => state = state.copyWith(historyDays: days);
+  void setHorizonDays(int days) => state = state.copyWith(horizonDays: days);
+}
+
+final statisticsForecastQueryProvider =
+    NotifierProvider<StatisticsForecastQueryNotifier, StatisticsForecastQuery>(
+      StatisticsForecastQueryNotifier.new,
+    );
+
+final statisticsForecastProvider = FutureProvider.autoDispose
+    .family<StatisticsForecast, StatisticsForecastQuery>((ref, query) {
+      return ref.watch(statisticsRepositoryProvider).getForecast(query);
+    });
+
 /// Cruzador de segmentación (docs/PLAN_ESTADISTICAS.md §5).
 ///
 /// El catálogo lo manda el servidor: dimensiones, medidas y la definición de
@@ -187,9 +274,7 @@ class SegmentationSavedViewsNotifier
     final siguientes = [
       ...actuales.where((vista) => !vista.sameName(limpio)),
       SegmentationSavedView(name: limpio, query: consulta),
-    ]..sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     state = AsyncData(siguientes);
     await ref
         .read(segmentationSavedViewsStoreProvider)

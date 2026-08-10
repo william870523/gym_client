@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -162,7 +164,16 @@ class _RecordBody extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          'CI ${record.client.id} · historial contractual y financiero',
+                          // H1: la categoría del socio (NUEVO/VIEJO) va en la
+                          // cabecera, junto al CI, para que se vea al abrir el
+                          // expediente sin entrar a Editar Cliente.
+                          [
+                            'CI ${record.client.id}',
+                            if (record.client.categoria != null &&
+                                record.client.categoria!.isNotEmpty)
+                              record.client.categoria,
+                            'historial contractual y financiero',
+                          ].join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -699,8 +710,21 @@ class _Summary extends StatelessWidget {
           (count, item) => count + item.payments.length,
         ) +
         record.unlinkedPayments.length;
+    // H2: «Activas» mide vigencia, no estado del contrato. Una membresía que
+    // venció pero no se anuló seguía `status == ACTIVA` y sumaba, contradiciendo
+    // el sello «VENCIDA HACE POCO» que la propia fila pinta. Se reutiliza la
+    // misma fuente de verdad que el sello (resolveMembershipVigencia + coversToday).
+    final today = todayInZone(appClock.gymTimezone);
     final active = record.memberships
-        .where((item) => item.status == 'ACTIVA')
+        .where(
+          (item) => coversToday(
+            resolveMembershipVigencia(
+              status: item.status,
+              endDate: item.endDate,
+              today: today,
+            ),
+          ),
+        )
         .length;
     final voided =
         record.memberships.fold<int>(
@@ -1026,7 +1050,8 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
       MembershipVigencia.pendingPayment ||
       MembershipVigencia.paused ||
       MembershipVigencia.recentlyExpired => tokens.warning,
-      MembershipVigencia.expired || MembershipVigencia.cancelled => tokens.danger,
+      MembershipVigencia.expired ||
+      MembershipVigencia.cancelled => tokens.danger,
       MembershipVigencia.none => tokens.muted,
     };
     final currency = membership.currencyCode ?? membership.currencyId;
@@ -1150,7 +1175,9 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: PulsoSecondaryButton(
-                      key: ValueKey('membership-change-trainer-${membership.id}'),
+                      key: ValueKey(
+                        'membership-change-trainer-${membership.id}',
+                      ),
                       label: 'Cambiar entrenador',
                       icon: Icons.swap_horiz_outlined,
                       onPressed: _busy ? null : _changeTrainer,
@@ -1206,9 +1233,33 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                   const PulsoLabel('ENTRENADOR ASIGNADO'),
                   const SizedBox(height: 5),
                   for (final trainer in membership.trainers)
-                    Text(
-                      '${trainer.trainerName ?? trainer.trainerId} · ${_date(trainer.startDate)}${trainer.endDate == null ? ' → actual' : ' → ${_date(trainer.endDate!)}'} · ${trainer.status}',
-                      style: TextStyle(color: tokens.chalkDim, fontSize: 11.5),
+                    Column(
+                      key: ValueKey('membership-trainer-${trainer.id}'),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${trainer.trainerName ?? trainer.trainerId} · ${_date(trainer.startDate)}${trainer.endDate == null ? ' → actual' : ' → ${_date(trainer.endDate!)}'} · ${trainer.status}',
+                          style: TextStyle(
+                            color: tokens.chalkDim,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                        // R5.4 — el motivo de cierre es lo que distingue un
+                        // cambio pedido por el socio de una reasignación por
+                        // baja del entrenador. Sin enseñarlo, el expediente no
+                        // dice por qué dejó de atenderle.
+                        if (trainer.closeReason?.trim().isNotEmpty == true)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 10, bottom: 3),
+                            child: Text(
+                              '↳ ${trainer.closeReason!.trim()}',
+                              style: TextStyle(
+                                color: tokens.muted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   const SizedBox(height: 12),
                 ],
@@ -1256,11 +1307,7 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
 /// Regla PULSO: **la tabla scrollea, no la vista**. Un socio con muchos cobros
 /// alargaba el expediente hasta empujar los filtros fuera de la pantalla.
 class _ListaAcotada extends StatefulWidget {
-  const _ListaAcotada({
-    super.key,
-    required this.filas,
-    required this.children,
-  });
+  const _ListaAcotada({super.key, required this.filas, required this.children});
 
   final int filas;
   final List<Widget> children;
@@ -1327,95 +1374,200 @@ class _ChangeTrainerDialog extends ConsumerStatefulWidget {
 
 class _ChangeTrainerDialogState extends ConsumerState<_ChangeTrainerDialog> {
   final _reasonController = TextEditingController();
+  final _scroll = ScrollController();
   String? _trainerId;
   bool _sinEntrenador = false;
+
+  /// Efecto financiero que devuelve el servidor. Aquí no se calcula dinero:
+  /// solo se presenta lo que el endpoint de previsualización responde.
+  Map<String, dynamic>? _efecto;
+  String? _efectoError;
+  bool _calculando = false;
+  int _peticion = 0;
 
   @override
   void dispose() {
     _reasonController.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Pide al servidor el reparto que produciría la elección actual.
+  ///
+  /// Se numera cada petición porque el operador puede cambiar de entrenador
+  /// dos veces seguidas: sin el contador, una respuesta lenta de la primera
+  /// elección podía pisar a la segunda y enseñar cifras de otro entrenador.
+  Future<void> _calcularEfecto() async {
+    if (!_sinEntrenador && _trainerId == null) {
+      setState(() {
+        _efecto = null;
+        _efectoError = null;
+      });
+      return;
+    }
+    final marca = ++_peticion;
+    setState(() {
+      _calculando = true;
+      _efectoError = null;
+    });
+    try {
+      final resultado = await ref
+          .read(clientRepositoryProvider)
+          .previewMembershipTrainerChange(
+            membershipId: widget.membership.id,
+            newTrainerId: _sinEntrenador ? null : _trainerId,
+          );
+      if (!mounted || marca != _peticion) return;
+      setState(() {
+        _efecto = resultado;
+        _calculando = false;
+      });
+    } catch (error) {
+      if (!mounted || marca != _peticion) return;
+      setState(() {
+        _efecto = null;
+        _efectoError = error.toString().replaceFirst('Exception: ', '');
+        _calculando = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
     final trainersAsync = ref.watch(trainerProvider);
-    final currentTrainerId = widget.membership.trainers
+    final actual = widget.membership.trainers
         .where((item) => item.endDate == null)
-        .map((item) => item.trainerId)
         .firstOrNull;
+    final currentTrainerId = actual?.trainerId;
+    // Ancho adaptable: el fijo de 420 se desbordaba en compacto (360 px).
+    final ancho = math.min(420.0, MediaQuery.sizeOf(context).width - 64);
     return AlertDialog(
       title: const Text('CAMBIAR ENTRENADOR'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Recepción ejecuta el cambio sin aprobación previa; '
-              'administración recibe un aviso automático. Lo ya ganado queda '
-              'con el entrenador saliente.',
-              style: TextStyle(color: tokens.muted, fontSize: 12),
-            ),
-            const SizedBox(height: 14),
-            trainersAsync.when(
-              loading: () => const LinearProgressIndicator(minHeight: 2),
-              error: (error, _) => Text(
-                'No se pudo cargar el catálogo de entrenadores: $error',
-                style: TextStyle(color: tokens.danger, fontSize: 12),
-              ),
-              data: (trainers) => DropdownButtonFormField<String>(
-                key: const ValueKey('change-trainer-target'),
-                initialValue: _trainerId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nuevo entrenador',
-                  isDense: true,
+      content: ConstrainedBox(
+        // Alto acotado y **barra de scroll siempre visible**: sin ella, el
+        // contenido que queda debajo —el motivo, entre otros— no se anuncia, y
+        // el operador da por hecho que el diálogo no lo pide. Pasó en el
+        // recorrido del 02-08-2026.
+        constraints: BoxConstraints(
+          maxWidth: ancho > 0 ? ancho : double.infinity,
+          maxHeight: math.max(260.0, MediaQuery.sizeOf(context).height - 260),
+        ),
+        child: Scrollbar(
+          key: const ValueKey('change-trainer-scroll'),
+          controller: _scroll,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _scroll,
+            padding: const EdgeInsets.only(right: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Recepción ejecuta el cambio sin aprobación previa; '
+                  'administración recibe un aviso automático. Lo ya ganado queda '
+                  'con el entrenador saliente.',
+                  style: TextStyle(color: tokens.muted, fontSize: 12),
                 ),
-                items: [
-                  for (final trainer in trainers)
-                    if (trainer.activo && trainer.id != currentTrainerId)
-                      DropdownMenuItem(
-                        value: trainer.id,
+                const SizedBox(height: 12),
+                // Entrenador actual: sin esto el operador elige a ciegas.
+                Container(
+                  key: const ValueKey('change-trainer-current'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: tokens.raised,
+                    border: Border.all(color: tokens.line),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline, size: 16, color: tokens.muted),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: Text(
-                          '${trainer.nombres ?? ''} ${trainer.apellidos ?? ''}'
-                              .trim(),
+                          'Entrenador actual: '
+                          '${actual?.trainerName ?? 'sin entrenador'}',
+                          style: TextStyle(color: tokens.chalk, fontSize: 12),
                         ),
                       ),
-                ],
-                onChanged: _sinEntrenador
-                    ? null
-                    : (value) => setState(() => _trainerId = value),
-              ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                trainersAsync.when(
+                  loading: () => const LinearProgressIndicator(minHeight: 2),
+                  error: (error, _) => Text(
+                    'No se pudo cargar el catálogo de entrenadores: $error',
+                    style: TextStyle(color: tokens.danger, fontSize: 12),
+                  ),
+                  data: (trainers) => DropdownButtonFormField<String>(
+                    key: const ValueKey('change-trainer-target'),
+                    initialValue: _trainerId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Nuevo entrenador',
+                      isDense: true,
+                    ),
+                    items: [
+                      for (final trainer in trainers)
+                        if (trainer.activo && trainer.id != currentTrainerId)
+                          DropdownMenuItem(
+                            value: trainer.id,
+                            child: Text(
+                              '${trainer.nombres ?? ''} ${trainer.apellidos ?? ''}'
+                                  .trim(),
+                            ),
+                          ),
+                    ],
+                    onChanged: _sinEntrenador
+                        ? null
+                        : (value) {
+                            setState(() => _trainerId = value);
+                            _calcularEfecto();
+                          },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  key: const ValueKey('change-trainer-none'),
+                  value: _sinEntrenador,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('El cliente continúa sin entrenador'),
+                  subtitle: Text(
+                    'Los tramos futuros de comisión se anulan.',
+                    style: TextStyle(color: tokens.muted, fontSize: 11),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _sinEntrenador = value ?? false;
+                      if (_sinEntrenador) _trainerId = null;
+                    });
+                    _calcularEfecto();
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('change-trainer-reason'),
+                  controller: _reasonController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo (opcional, llega a administración)',
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _EfectoDelCambio(
+                  efecto: _efecto,
+                  error: _efectoError,
+                  calculando: _calculando,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            CheckboxListTile(
-              key: const ValueKey('change-trainer-none'),
-              value: _sinEntrenador,
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: const Text('El cliente continúa sin entrenador'),
-              subtitle: Text(
-                'Los tramos futuros de comisión se anulan.',
-                style: TextStyle(color: tokens.muted, fontSize: 11),
-              ),
-              onChanged: (value) => setState(() {
-                _sinEntrenador = value ?? false;
-                if (_sinEntrenador) _trainerId = null;
-              }),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              key: const ValueKey('change-trainer-reason'),
-              controller: _reasonController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo (opcional, llega a administración)',
-                isDense: true,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
       actions: [
@@ -1438,6 +1590,122 @@ class _ChangeTrainerDialogState extends ConsumerState<_ChangeTrainerDialog> {
       ],
     );
   }
+}
+
+/// R5.4 — efecto financiero del cambio, tal como lo devuelve el servidor.
+///
+/// **No hace aritmética de dinero.** Recibe las cifras ya calculadas por
+/// `/cambiar-entrenador/previsualizacion` y las presenta; la regla del proyecto
+/// es que el servidor calcula y Flutter enseña. Si alguien añade aquí una suma,
+/// habrá creado una segunda fórmula del reparto.
+class _EfectoDelCambio extends StatelessWidget {
+  const _EfectoDelCambio({
+    required this.efecto,
+    required this.error,
+    required this.calculando,
+  });
+
+  final Map<String, dynamic>? efecto;
+  final String? error;
+  final bool calculando;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+
+    if (calculando) {
+      return const Padding(
+        key: ValueKey('change-trainer-preview-loading'),
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (error != null) {
+      return Container(
+        key: const ValueKey('change-trainer-preview-error'),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: tokens.danger.withValues(alpha: 0.08),
+          border: Border.all(color: tokens.danger.withValues(alpha: 0.45)),
+        ),
+        child: Text(
+          error!,
+          style: TextStyle(color: tokens.chalk, fontSize: 12, height: 1.35),
+        ),
+      );
+    }
+    final datos = efecto;
+    if (datos == null) {
+      return Text(
+        'Elige el destino para ver el reparto de la comisión.',
+        key: const ValueKey('change-trainer-preview-empty'),
+        style: TextStyle(color: tokens.muted, fontSize: 11),
+      );
+    }
+
+    final sinEntrenador = datos['sin_entrenador'] == true;
+    final credito = datos['credito_liberado']?.toString() ?? '0.00';
+    return Container(
+      key: const ValueKey('change-trainer-preview'),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: tokens.raised,
+        border: Border.all(color: tokens.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const PulsoLabel('EFECTO DEL CAMBIO'),
+          const SizedBox(height: 6),
+          _linea(
+            tokens,
+            'Tramo ya ganado (queda con el saliente)',
+            datos['tramo_ganado']?.toString() ?? '0.00',
+          ),
+          _linea(
+            tokens,
+            sinEntrenador
+                ? 'Tramo futuro (se anula)'
+                : 'Tramo futuro (pasa al entrante)',
+            datos['tramo_futuro']?.toString() ?? '0.00',
+          ),
+          if (sinEntrenador && credito != '0.00')
+            _linea(tokens, 'Crédito liberado al socio', credito),
+          const SizedBox(height: 6),
+          Text(
+            'Efectivo desde ${datos['fecha_efectiva'] ?? '—'} · '
+            '${datos['cuotas_transferibles'] ?? 0} cuota(s) a transferir · '
+            '${datos['cuotas_anulables'] ?? 0} a anular.',
+            style: TextStyle(color: tokens.muted, fontSize: 11, height: 1.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linea(PulsoTokens tokens, String etiqueta, String importe) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            etiqueta,
+            style: TextStyle(color: tokens.muted, fontSize: 11),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          importe,
+          style: TextStyle(
+            color: tokens.chalk,
+            fontFamily: PulsoFonts.mono,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _MembershipPauseLine extends StatelessWidget {
@@ -1988,8 +2256,18 @@ class _ClientPaymentReceiptDialog extends StatelessWidget {
       'RECIBO · ${payment.id}',
       client.fullName,
       'CI ${client.id}',
-      planName,
+      // H3: concepto con código + sufijo.
+      '${payment.planCode ?? planName}${payment.installmentSuffix ?? ''}',
       DateFormat('dd/MM/yyyy HH:mm').format(when),
+      // H5: cobrador.
+      if (payment.collectorName != null)
+        'Cobrado por: ${payment.collectorName}'
+            '${payment.collectorRole == null ? '' : ' · ${payment.collectorRole}'}',
+      // H1: descuento congelado.
+      if (payment.listPrice != null)
+        'Lista − descuento: ${payment.listPrice!.toStringAsFixed(2)} − '
+            '${(payment.discountAmount ?? 0).toStringAsFixed(2)}'
+            '${payment.discountPct == null ? '' : ' (${payment.discountPct}%)'}',
       'Estado: ${payment.isVoided ? 'ANULADO' : 'PAGADO'}',
       'Total: ${payment.total.toStringAsFixed(2)} '
           '${payment.currencyCode ?? payment.currencyId}',
@@ -2087,13 +2365,40 @@ class _ClientPaymentReceiptDialog extends StatelessWidget {
                           const SizedBox(height: 18),
                           _ReceiptFact(label: 'SOCIO', value: client.fullName),
                           _ReceiptFact(label: 'CI', value: client.id),
-                          _ReceiptFact(label: 'CONCEPTO', value: planName),
+                          // H3: el concepto lleva código de plan + sufijo de
+                          // cuota, igual que en el panel de pagos. Antes solo
+                          // mostraba el nombre del plan.
+                          _ReceiptFact(
+                            label: 'CONCEPTO',
+                            value:
+                                '${payment.planCode ?? planName}'
+                                '${payment.installmentSuffix ?? ''}',
+                          ),
                           _ReceiptFact(
                             label: 'FECHA DEL GIMNASIO',
                             value: DateFormat(
                               'dd/MM/yyyy · HH:mm',
                             ).format(when),
                           ),
+                          // H5: quién cobró (R5.6). Los cobros anteriores al
+                          // corte no tienen cobrador: se enseña «histórico».
+                          _ReceiptFact(
+                            label: 'COBRADO POR',
+                            value: payment.collectorName == null
+                                ? 'Sin atribuir · histórico'
+                                : '${payment.collectorName}'
+                                      '${payment.collectorRole == null ? '' : ' · ${payment.collectorRole}'}',
+                          ),
+                          // H1: desglose del descuento congelado al cobrar. Se
+                          // muestra la instantánea, nunca la política de hoy.
+                          if (payment.listPrice != null)
+                            _ReceiptFact(
+                              label: 'LISTA − DESCUENTO',
+                              value:
+                                  '${payment.currencySymbol ?? ''}${payment.listPrice!.toStringAsFixed(2)}'
+                                  ' − ${payment.currencySymbol ?? ''}${(payment.discountAmount ?? 0).toStringAsFixed(2)}'
+                                  '${payment.discountPct == null ? '' : ' (${payment.discountPct}%)'}',
+                            ),
                           const SizedBox(height: 18),
                           const PulsoLabel('DESGLOSE DEL COBRO'),
                           const SizedBox(height: 6),
@@ -2169,29 +2474,41 @@ class _ReceiptFact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
+    final labelWidget = PulsoLabel(
+      label,
+      key: ValueKey('receipt-fact-label-$label'),
+    );
+    final valueWidget = Text(
+      value,
+      key: ValueKey('receipt-fact-value-$label'),
+      textAlign: TextAlign.right,
+      style: TextStyle(
+        color: tokens.chalkDim,
+        fontFamily: PulsoFonts.mono,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+      ),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: tokens.line)),
       ),
-      child: Row(
-        children: [
-          Expanded(child: PulsoLabel(label)),
-          Flexible(
-            flex: 2,
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: tokens.chalkDim,
-                fontFamily: PulsoFonts.mono,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
+      child: MediaQuery.sizeOf(context).width < 500
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                labelWidget,
+                const SizedBox(height: 5),
+                Align(alignment: Alignment.centerLeft, child: valueWidget),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: labelWidget),
+                Flexible(flex: 2, child: valueWidget),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

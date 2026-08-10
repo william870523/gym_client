@@ -344,6 +344,16 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFF8B5CF6),
                                     ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.stacked_bar_chart_outlined,
+                                      'Contabilidad gráfica',
+                                      index: 35,
+                                      isActive: widget.selectedIndex == 35,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFF8B5CF6),
+                                    ),
                                   _buildSubNavItem(
                                     Icons.attach_money,
                                     'Monedas',
@@ -483,6 +493,31 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       'Cruzador',
                                       index: 33,
                                       isActive: widget.selectedIndex == 33,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
+                                  // R6 §4.3/§5.2/§5.3: permanencia. Vive junto
+                                  // al cruzador porque responde la otra mitad
+                                  // de la pregunta: no quién es cada corte,
+                                  // sino cuántos siguen y de qué datos nos
+                                  // podemos fiar.
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.timeline_outlined,
+                                      'Permanencia',
+                                      index: 34,
+                                      isActive: widget.selectedIndex == 34,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFFD9481C),
+                                    ),
+                                  if (isAdmin)
+                                    _buildSubNavItem(
+                                      Icons.online_prediction_outlined,
+                                      'Pronóstico',
+                                      index: 36,
+                                      isActive: widget.selectedIndex == 36,
                                       textMain: primary,
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),

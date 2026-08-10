@@ -151,3 +151,28 @@ class AccountModel {
         version.hashCode;
   }
 }
+
+/// Cómo se nombra la moneda de una cuenta **delante de una persona**.
+///
+/// El `moneda_id` es un UUID y no significa nada para quien cobra. Se separó
+/// aquí porque el diálogo de cobro lo estaba resolviendo por su cuenta y mal:
+/// recortaba el identificador a cinco caracteres, así que el operador leía
+/// «Saldo restante: ₽34.00 (~0.08 1DBC5)» —los cinco primeros dígitos del UUID
+/// de la cuenta en euros— justo en la línea que dice cuánto falta por cobrar.
+/// La otra copia de la misma idea, en `_buildSurchargeBanner`, exigía
+/// `length <= 5`, condición que un UUID no cumple nunca: el recargo se enseñaba
+/// **sin moneda**, que es lo contrario de «nunca sumar monedas distintas».
+///
+/// El recorte del identificador se conserva como último recurso, para cuentas
+/// que llegaron sin su moneda embebida, y nunca devuelve cadena vacía: es
+/// preferible un código feo a un importe sin moneda.
+extension AccountCurrencyLabel on AccountModel {
+  String get currencyLabel {
+    final codigo = currencyCode?.trim();
+    if (codigo != null && codigo.isNotEmpty) return codigo.toUpperCase();
+    if (currencyId.isEmpty) return '';
+    return currencyId.length > 5
+        ? currencyId.substring(0, 5).toUpperCase()
+        : currencyId.toUpperCase();
+  }
+}

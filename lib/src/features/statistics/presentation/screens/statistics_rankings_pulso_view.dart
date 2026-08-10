@@ -494,6 +494,7 @@ class _AlertsPanel extends StatelessWidget {
     final danger = alerts
         .where((alert) => alert.severity == StatisticsAlertSeverity.danger)
         .length;
+    final sinEvaluar = rules.where((rule) => !rule.evaluated).toList();
     return PulsoPanel(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -541,8 +542,13 @@ class _AlertsPanel extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        rule.text,
-                        style: TextStyle(fontSize: 9, color: tokens.muted),
+                        rule.evaluated
+                            ? rule.text
+                            : 'NO EVALUADA · ${rule.text}',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: rule.evaluated ? tokens.muted : tokens.warning,
+                        ),
                       ),
                     ),
                 ],
@@ -563,6 +569,24 @@ class _AlertsPanel extends StatelessWidget {
               'Y $omitted aviso(s) más del mismo tipo, fuera del panel para que '
               'siga leyéndose.',
               style: TextStyle(fontSize: 9, color: tokens.muted),
+            ),
+          // Una regla que no llegó a mirarse tiene que decirse aunque haya
+          // avisos: si no, dos tarjetas visibles se leen como «lo demás está en
+          // orden» cuando en realidad hay algo sin comprobar.
+          if (sinEvaluar.isNotEmpty)
+            Padding(
+              key: const ValueKey('alertas-sin-evaluar'),
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                sinEvaluar.length == 1
+                    ? 'Una regla no se pudo evaluar en esta lectura '
+                          '(${sinEvaluar.first.family}): su fuente no respondió. '
+                          'No es lo mismo que estar en orden.'
+                    : '${sinEvaluar.length} reglas no se pudieron evaluar en '
+                          'esta lectura: su fuente no respondió. No es lo mismo '
+                          'que estar en orden.',
+                style: TextStyle(fontSize: 9, color: tokens.warning),
+              ),
             ),
         ],
       ),

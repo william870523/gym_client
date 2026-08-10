@@ -79,6 +79,51 @@ GovernedExpensesReportModel _report() =>
       ],
     });
 
+/// Informe sin ninguna moneda: el mes existe pero no hubo gastos.
+GovernedExpensesReportModel _reportVacio() =>
+    GovernedExpensesReportModel.fromJson(const {
+      'mes': '2026-07',
+      'fecha_corte': '2026-07-19',
+      'monedas': [],
+    });
+
+/// Arnés que permite inyectar un informe distinto o un fallo del servidor.
+///
+/// La unidad 09 exige comprobar los estados —carga, vacío, error—, y sin poder
+/// forzar el fallo solo se prueba el camino feliz, que es justo el que nunca
+/// sorprende a nadie.
+Widget _harnessCon({
+  GovernedExpensesReportModel? informe,
+  Object? fallo,
+}) {
+  return ProviderScope(
+    overrides: [
+      accountingRepositoryProvider.overrideWithValue(
+        _FakeAccountingRepository(),
+      ),
+      governedExpensesProvider.overrideWith((ref, month) async {
+        if (fallo != null) throw fallo;
+        return informe ?? _report();
+      }),
+      governedExpenseCategoriesProvider.overrideWith((ref) async => []),
+      governedExpenseSuppliersProvider.overrideWith((ref) async => []),
+      currencyProvider.overrideWith(
+        () => _CurrencyNotifier(const [
+          CurrencyModel(id: 'cur-eur', name: 'Euro', code: 'EUR', symbol: '€'),
+        ]),
+      ),
+    ],
+    child: MaterialApp(
+      theme: PulsoThemeFactory.build(
+        PulsoTokens.resolve(PulsoPaletteId.clay, Brightness.light),
+      ),
+      home: Scaffold(
+        body: GovernedExpensesPanel(initialMonth: '2026-07', onBack: () {}),
+      ),
+    ),
+  );
+}
+
 Widget _harness() {
   return ProviderScope(
     overrides: [
@@ -146,6 +191,10 @@ void main() {
 
   for (final entry in const {
     'compacto': Size(390, 844),
+    // 768 es el ancho que la unidad 09 exige y que faltaba: es la tablet y la
+    // ventana a media pantalla, donde la cabecera de tres botones etiquetados
+    // ya rompió una vez en Clientes.
+    'mediano': Size(768, 900),
     'expandido': Size(1280, 900),
   }.entries) {
     testWidgets(
@@ -195,6 +244,56 @@ void main() {
       },
     );
   }
+
+  testWidgets('un mes sin gastos lo dice, y no finge cifras en cero', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harnessCon(informe: _reportVacio()));
+    await tester.pumpAndSettle();
+
+    // Ni CUP ni EUR: no hay secciones de moneda que enseñar.
+    expect(find.text('CUP'), findsNothing);
+    // Y sobre todo: la pantalla no se queda en blanco ni revienta.
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('si el servidor falla, el panel lo dice en vez de mentir', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // Se inyecta un DioException con cuerpo de error, que es **lo que el
+    // camino real produce**: el repositorio no envuelve la excepción, así que
+    // el motivo del servidor llega íntegro. Inyectar un `Exception` cualquiera
+    // probaría una rama que en producción no ocurre.
+    await tester.pumpWidget(
+      _harnessCon(
+        fallo: DioException(
+          requestOptions: RequestOptions(path: '/contabilidad/governed-expenses'),
+          response: Response(
+            requestOptions: RequestOptions(path: '/contabilidad/governed-expenses'),
+            statusCode: 503,
+            data: const {'error': 'El informe de gastos no está disponible.'},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Lo que NO puede pasar: que un fallo se enseñe como un mes sin gastos.
+    // Un cero inventado es peor que un error, porque nadie lo investiga.
+    expect(find.textContaining('No se pudieron cargar'), findsWidgets);
+    expect(find.textContaining('no está disponible'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('el gasto abre el diálogo PULSO de nuevo gasto', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);

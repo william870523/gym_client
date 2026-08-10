@@ -37,15 +37,25 @@ final clientPaymentHistoryProvider =
     });
 
 class PaymentNotifier extends AsyncNotifier<List<PaymentModel>> {
+  // H6: totales autoritativos contados por el servidor, no por la página
+  // cargada. Los lee la cabecera del libro de pagos.
+  int _total = 0;
+  int _totalVoided = 0;
+  int get total => _total;
+  int get totalVoided => _totalVoided;
+
   @override
   Future<List<PaymentModel>> build() async {
     return _fetchPayments();
   }
 
   Future<List<PaymentModel>> _fetchPayments({int page = 1}) async {
-    return ref
+    final page_ = await ref
         .read(paymentRepositoryProvider)
         .getPayments(page: page, limit: 500);
+    _total = page_.total;
+    _totalVoided = page_.totalVoided;
+    return page_.data;
   }
 
   Future<void> refresh() async {

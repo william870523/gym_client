@@ -7,18 +7,35 @@ import 'package:gym_client/src/features/financials/data/models/exchange_rate_mod
 import 'package:gym_client/src/features/payments/data/models/payment_model.dart';
 import 'package:gym_client/src/features/payments/data/models/payment_reversal_model.dart';
 import 'package:gym_client/src/features/payments/data/models/recargo_mora_quote.dart';
+import 'package:gym_client/src/features/payments/data/models/method_surcharge_quote.dart';
+import 'package:gym_client/src/features/payments/data/models/client_discount_quote.dart';
 import 'package:uuid/uuid.dart';
 
 final paymentRepositoryProvider = Provider<PaymentRepository>((ref) {
   return PaymentRepository(ref.watch(apiClientProvider));
 });
 
+/// Resultado paginado del libro de pagos. H6: `total` y `totalVoided` son
+/// conteos autoritativos de la base (no `data.length`); con paginación ese
+/// `length` enseñaba cifras falsas (p. ej. «500 Pagos» habiendo 631).
+class PaymentsPage {
+  const PaymentsPage({
+    required this.data,
+    required this.total,
+    required this.totalVoided,
+  });
+
+  final List<PaymentModel> data;
+  final int total;
+  final int totalVoided;
+}
+
 class PaymentRepository {
   final Dio _client;
 
   PaymentRepository(this._client);
 
-  Future<List<PaymentModel>> getPayments({
+  Future<PaymentsPage> getPayments({
     int page = 1,
     int limit = 500,
   }) async {
@@ -27,9 +44,28 @@ class PaymentRepository {
         '/pagos',
         queryParameters: {'page': page, 'limit': limit},
       );
-      return (response.data as List)
-          .map((e) => PaymentModel.fromJson(e))
+      final body = response.data;
+      // El backend devuelve { data, total, totalVoided } (corte 3, H6). Se
+      // tolera el formato heredado (array pelado) por si alguna ruta antigua
+      // no envuelve, cayando a `length` como antes.
+      if (body is Map<String, dynamic> && body.containsKey('data')) {
+        final data = (body['data'] as List)
+            .map((e) => PaymentModel.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return PaymentsPage(
+          data: data,
+          total: (body['total'] as num?)?.toInt() ?? data.length,
+          totalVoided: (body['totalVoided'] as num?)?.toInt() ?? 0,
+        );
+      }
+      final data = (body as List)
+          .map((e) => PaymentModel.fromJson(e as Map<String, dynamic>))
           .toList();
+      return PaymentsPage(
+        data: data,
+        total: data.length,
+        totalVoided: data.where((p) => p.isDeleted).length,
+      );
     } catch (e) {
       throw Exception('Error fetching payments: $e');
     }
@@ -113,6 +149,69 @@ class PaymentRepository {
         message?.trim().isNotEmpty == true
             ? message
             : 'No se pudo calcular el recargo por mora.',
+      );
+    }
+  }
+
+  /// R5.3 — precio de lista, descuento y precio final calculados por la API.
+  Future<ClientDiscountQuote> getClientDiscountQuote({
+    required String ci,
+    required String planId,
+    int? installmentNumber,
+  }) async {
+    try {
+      final response = await _client.get(
+        '/pagos/descuento-cliente/quote',
+        queryParameters: {
+          'ci': ci,
+          'plan_id': planId,
+          if (installmentNumber != null) 'numero_cuota': installmentNumber,
+        },
+      );
+      return ClientDiscountQuote.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      final message = data is Map ? data['error']?.toString() : null;
+      throw Exception(
+        message?.trim().isNotEmpty == true
+            ? message
+            : 'No se pudo cotizar el descuento del cliente.',
+      );
+    }
+  }
+
+  Future<MethodSurchargeQuote> getMethodSurchargeQuote({
+    required double totalReceived,
+    required String paymentTypeId,
+    required String accountId,
+    required String paymentCurrencyId,
+    required String planCurrencyId,
+    String? exchangeRateId,
+  }) async {
+    try {
+      final response = await _client.post(
+        '/pagos/recargo-metodo/quote',
+        data: {
+          'total_recibido': totalReceived.toStringAsFixed(2),
+          'tipo_pago_id': paymentTypeId,
+          'cuenta_id': accountId,
+          'moneda_pago_id': paymentCurrencyId,
+          'moneda_plan_id': planCurrencyId,
+          if (exchangeRateId != null) 'tipo_cambio_id': exchangeRateId,
+        },
+      );
+      return MethodSurchargeQuote.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      final message = data is Map ? data['error']?.toString() : null;
+      throw Exception(
+        message?.trim().isNotEmpty == true
+            ? message
+            : 'No se pudo cotizar el recargo por método.',
       );
     }
   }

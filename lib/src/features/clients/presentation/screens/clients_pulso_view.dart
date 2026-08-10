@@ -10,6 +10,7 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../auth/presentation/state/auth_notifier.dart';
 import '../../../payments/presentation/state/payment_notifier.dart';
 import '../../../payments/presentation/widgets/process_payment_dialog.dart';
 import '../../../products/data/models/payment_plan_model.dart';
@@ -475,6 +476,8 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
   }
 
   Widget _buildPage(BuildContext context) {
+    final role = ref.watch(authProvider).value?.role.toLowerCase();
+    final canReadAdminNotices = role == 'admin' || role == 'administrador';
     final scopeFilter = ref.watch(clientsScopeFilterProvider);
     final clientsState = ref.watch(clientNotifierProvider);
     final plansState = ref.watch(paymentPlanProvider);
@@ -584,6 +587,7 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
               onCreate: () => _openForm(),
               onRequests: _showMembershipRequests,
               onNotices: _showAdminNotices,
+              showAdminNotices: canReadAdminNotices,
             ),
             const SizedBox(height: 14),
             PulsoMetricStrip(
@@ -669,11 +673,13 @@ class _ClientHeader extends StatelessWidget {
     required this.onCreate,
     required this.onRequests,
     required this.onNotices,
+    required this.showAdminNotices,
   });
 
   final VoidCallback onNotices;
   final VoidCallback onCreate;
   final VoidCallback onRequests;
+  final bool showAdminNotices;
 
   @override
   Widget build(BuildContext context) {
@@ -714,12 +720,18 @@ class _ClientHeader extends StatelessWidget {
               icon: Icons.rule_folder_outlined,
               onPressed: onRequests,
             ),
-            PulsoIconButton(
-              key: const ValueKey('admin-notices-action'),
-              icon: Icons.notifications_none_outlined,
-              tooltip: 'Avisos a administración',
-              onPressed: onNotices,
-            ),
+            // Con etiqueta, no una campana pelada. R5.4 apoya en esta bandeja
+            // el único aviso que administración recibe de un cambio de
+            // entrenador: escondida tras un icono sin nombre, nadie la abre y
+            // el aviso no informa a nadie. Lo destapó el recorrido del
+            // 02-08-2026, donde no se encontró.
+            if (showAdminNotices)
+              PulsoSecondaryButton(
+                key: const ValueKey('admin-notices-action'),
+                label: 'Avisos',
+                icon: Icons.notifications_none_outlined,
+                onPressed: onNotices,
+              ),
             PulsoPrimaryButton(
               label: 'Nuevo socio',
               icon: Icons.person_add_alt_1_outlined,
@@ -727,7 +739,10 @@ class _ClientHeader extends StatelessWidget {
             ),
           ],
         );
-        return constraints.maxWidth < 680
+        // Umbral a 900 y no a 680: con «Avisos» ya etiquetado son tres botones
+        // con texto, y en fila a 768 px el Wrap saltaba de línea y desbordaba
+        // la cabecera 124 px. En columna caben en una sola fila.
+        return constraints.maxWidth < 900
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [copy, const SizedBox(height: 14), actions],

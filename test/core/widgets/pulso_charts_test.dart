@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gym_client/src/core/theme/pulso/pulso_theme.dart';
 import 'package:gym_client/src/core/theme/pulso/pulso_tokens.dart';
 import 'package:gym_client/src/core/widgets/pulso_charts.dart';
 

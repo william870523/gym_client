@@ -9,6 +9,7 @@ import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../data/models/recurring_expense_models.dart';
 import '../../data/repositories/accounting_repository.dart';
+import '../../../financials/presentation/state/currency_notifier.dart';
 import '../state/accounting_providers.dart';
 
 /// R4.7 — Gastos recurrentes.
@@ -84,6 +85,7 @@ class _RecurringExpensesPanelState
           onGenerate: plan.canGenerate && !_working
               ? () => _generate(plan)
               : null,
+          onCreate: _working ? null : _createTemplate,
           onRefresh: _refresh,
         ),
         const SizedBox(height: 8),
@@ -310,6 +312,41 @@ class _RecurringExpensesPanelState
     );
   }
 
+  /// R4.7 — alta de plantilla.
+  ///
+  /// Existía en la API y en el repositorio, pero **ninguna vista la llamaba**:
+  /// el panel sabía pausar y generar, no crear. Sin esto la unidad 09 no se
+  /// puede recorrer, porque no hay forma de dar de alta una plantilla desde la
+  /// pantalla ni en escritorio ni en web. Lo destapó el recorrido del
+  /// 02-08-2026.
+  Future<void> _createTemplate() async {
+    final cuerpo = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => const _NewRecurringTemplateDialog(),
+    );
+    if (cuerpo == null || !mounted) return;
+    setState(() => _working = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(accountingRepositoryProvider).createRecurringExpense(cuerpo);
+      ref.invalidate(recurringExpensesProvider);
+      _refresh();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Plantilla creada. Aparecerá en el plan del mes en cuanto le toque.',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo crear la plantilla: ${_errorText(error)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   Future<void> _toggleTemplate(RecurringExpenseModel template) async {
     setState(() => _working = true);
     try {
@@ -360,6 +397,180 @@ class _RecurringExpensesPanelState
   }
 }
 
+/// R4.7 — alta de plantilla de gasto recurrente.
+///
+/// El servidor decide el dinero: aquí solo se recogen los datos y se envían.
+/// El importe viaja como texto, sin redondear ni convertir en el cliente.
+class _NewRecurringTemplateDialog extends ConsumerStatefulWidget {
+  const _NewRecurringTemplateDialog();
+
+  @override
+  ConsumerState<_NewRecurringTemplateDialog> createState() =>
+      _NewRecurringTemplateDialogState();
+}
+
+class _NewRecurringTemplateDialogState
+    extends ConsumerState<_NewRecurringTemplateDialog> {
+  final _descripcion = TextEditingController();
+  final _monto = TextEditingController();
+  final _dia = TextEditingController(text: '1');
+  String? _categoriaId;
+  String? _proveedorId;
+  String? _monedaId;
+  late String _mesInicio = _mesActual();
+
+  static String _mesActual() {
+    final ahora = appClock.nowUtc();
+    return '${ahora.year.toString().padLeft(4, '0')}-'
+        '${ahora.month.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void dispose() {
+    _descripcion.dispose();
+    _monto.dispose();
+    _dia.dispose();
+    super.dispose();
+  }
+
+  bool get _valido =>
+      _categoriaId != null &&
+      _monedaId != null &&
+      _descripcion.text.trim().isNotEmpty &&
+      (double.tryParse(_monto.text.trim()) ?? 0) > 0 &&
+      RegExp(r'^\d{4}-\d{2}$').hasMatch(_mesInicio);
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final categorias = ref.watch(governedExpenseCategoriesProvider).value ?? const [];
+    final proveedores = ref.watch(governedExpenseSuppliersProvider).value ?? const [];
+    final monedas = ref.watch(currencyProvider).value ?? const [];
+
+    return AlertDialog(
+      key: const Key('recurring-expenses-create-dialog'),
+      title: const Text('NUEVA PLANTILLA RECURRENTE'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'La plantilla no crea ningún gasto por sí sola: aparecerá en el '
+                'plan del mes y solo se materializa al generar.',
+                style: TextStyle(color: tokens.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                key: const Key('recurring-create-category'),
+                initialValue: _categoriaId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Categoría', isDense: true),
+                items: [
+                  for (final c in categorias)
+                    DropdownMenuItem(value: c.categoriaId, child: Text(c.nombre)),
+                ],
+                onChanged: (v) => setState(() => _categoriaId = v),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: const Key('recurring-create-supplier'),
+                initialValue: _proveedorId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Proveedor (opcional)', isDense: true),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Sin proveedor')),
+                  for (final p in proveedores)
+                    DropdownMenuItem(value: p.proveedorId, child: Text(p.nombre)),
+                ],
+                onChanged: (v) => setState(() => _proveedorId = v),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: const Key('recurring-create-currency'),
+                initialValue: _monedaId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Moneda', isDense: true),
+                items: [
+                  for (final m in monedas)
+                    DropdownMenuItem(value: m.id, child: Text(m.code)),
+                ],
+                onChanged: (v) => setState(() => _monedaId = v),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('recurring-create-description'),
+                controller: _descripcion,
+                decoration: const InputDecoration(labelText: 'Descripción', isDense: true),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('recurring-create-amount'),
+                controller: _monto,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Importe', isDense: true),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('recurring-create-day'),
+                      controller: _dia,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Día del mes', isDense: true),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      key: const Key('recurring-create-start'),
+                      initialValue: _mesInicio,
+                      decoration: const InputDecoration(
+                        labelText: 'Mes de inicio (AAAA-MM)', isDense: true),
+                      onChanged: (v) => setState(() => _mesInicio = v.trim()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('CANCELAR'),
+        ),
+        FilledButton(
+          key: const Key('recurring-create-submit'),
+          onPressed: _valido
+              ? () => Navigator.of(context).pop({
+                  'categoria_id': _categoriaId,
+                  'proveedor_id': _proveedorId,
+                  'moneda_id': _monedaId,
+                  'descripcion': _descripcion.text.trim(),
+                  // Texto, no número: redondear aquí sería calcular dinero en
+                  // el cliente.
+                  'monto': _monto.text.trim(),
+                  'dia_programado': int.tryParse(_dia.text.trim()) ?? 1,
+                  'mes_inicio': _mesInicio,
+                })
+              : null,
+          child: const Text('CREAR PLANTILLA'),
+        ),
+      ],
+    );
+  }
+}
+
 class _RecurringToolbar extends StatelessWidget {
   const _RecurringToolbar({
     required this.plan,
@@ -369,6 +580,7 @@ class _RecurringToolbar extends StatelessWidget {
     required this.onNext,
     required this.onCurrent,
     required this.onGenerate,
+    required this.onCreate,
     required this.onRefresh,
   });
 
@@ -379,6 +591,7 @@ class _RecurringToolbar extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onCurrent;
   final VoidCallback? onGenerate;
+  final VoidCallback? onCreate;
   final VoidCallback onRefresh;
 
   @override
@@ -422,6 +635,12 @@ class _RecurringToolbar extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(child: monthBox),
                 const SizedBox(width: 6),
+                PulsoIconButton(
+                  key: const Key('recurring-expenses-create-compact'),
+                  icon: Icons.add,
+                  tooltip: 'Nueva plantilla',
+                  onPressed: onCreate,
+                ),
                 PulsoIconButton(
                   key: const Key('recurring-expenses-generate-compact'),
                   icon: Icons.playlist_add_check,
@@ -474,6 +693,19 @@ class _RecurringToolbar extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               PulsoSecondaryButton(label: 'MES EN CURSO', onPressed: onCurrent),
+              const SizedBox(width: 6),
+              // Sin esto el panel sabía pausar y generar, pero no crear: la
+              // plantilla solo podía darse de alta llamando a la API a mano.
+              //
+              // La etiqueta es corta a propósito: con «NUEVA PLANTILLA» la
+              // barra desbordaba 61 px a 1280, y en una barra que ya lleva
+              // cuatro acciones el texto largo no cabe sin partir la fila.
+              PulsoSecondaryButton(
+                key: const Key('recurring-expenses-create'),
+                label: 'NUEVA',
+                icon: Icons.add,
+                onPressed: onCreate,
+              ),
               const SizedBox(width: 6),
               PulsoPrimaryButton(
                 key: const Key('recurring-expenses-generate'),

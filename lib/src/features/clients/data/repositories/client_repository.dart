@@ -82,6 +82,34 @@ class ClientRepository {
         0;
   }
 
+  /// R5.4 — qué pasaría si se confirmara el cambio, sin escribir nada.
+  ///
+  /// El reparto lo calcula **el servidor**: aquí no se hace aritmética de
+  /// dinero, solo se presenta lo que devuelve. La misma ruta existe en la API
+  /// local y en la remota, así que el diálogo funciona igual en escritorio y en
+  /// web sin saber contra cuál habla.
+  Future<Map<String, dynamic>> previewMembershipTrainerChange({
+    required String membershipId,
+    String? newTrainerId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/membresias/$membershipId/cambiar-entrenador/previsualizacion',
+        data: {'nuevo_entrenador_id': newTrainerId},
+      );
+      return Map<String, dynamic>.from(response.data as Map);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map
+          ? (e.response!.data as Map)['error']?.toString()
+          : null;
+      throw Exception(
+        detail?.trim().isNotEmpty == true
+            ? detail!.trim()
+            : 'No se pudo calcular el efecto del cambio (${e.response?.statusCode ?? 'sin respuesta'}).',
+      );
+    }
+  }
+
   /// R5.4 — cambio de entrenador a petición del cliente (sin aprobación
   /// previa). `newTrainerId` nulo deja la membresía sin entrenador.
   Future<Map<String, dynamic>> changeMembershipTrainer({

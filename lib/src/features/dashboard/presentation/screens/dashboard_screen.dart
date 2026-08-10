@@ -30,6 +30,9 @@ import '../../../statistics/presentation/screens/trainer_statistics_pulso_view.d
 import '../../../statistics/presentation/screens/statistics_rankings_pulso_view.dart';
 import '../../../statistics/presentation/screens/statistics_ranking_explorer_pulso_view.dart';
 import '../../../statistics/presentation/screens/statistics_segmentation_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_cohorts_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_accounting_pulso_view.dart';
+import '../../../statistics/presentation/screens/statistics_forecast_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_pulso_view.dart';
 import '../../../retention/presentation/screens/retention_settings_pulso_view.dart';
 import '../../../clients/presentation/screens/client_discount_settings_pulso_view.dart';
@@ -164,6 +167,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       // 33: cruzador de segmentación (PLAN_ESTADISTICAS.md §5). Una vista con
       // dimensión × medida en lugar de una pantalla por pregunta.
       const StatisticsSegmentationPulsoView(),
+      // 34: cohortes de alta 30/60/90, mapa de demanda observada y panel de
+      // calidad de datos (PLAN_ESTADISTICAS.md §4.3, §5.2 y §5.3).
+      const StatisticsCohortsPulsoView(),
+      // 35: E4, capa visual de los readers contables canónicos.
+      const StatisticsAccountingPulsoView(),
+      // 36: E5, pronóstico de demanda con método y banda visibles.
+      const StatisticsForecastPulsoView(),
     ];
     return _cachedViews!;
   }
@@ -311,6 +321,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 31: // Perfil estadístico del socio desde Clientes
       case 32: // Ranking estadístico completo
       case 33: // Cruzador de segmentación
+      case 34: // Cohortes, demanda y calidad
+      case 35: // Contabilidad gráfica
+      case 36: // Pronóstico explicable
         return '';
       default:
         return '';
