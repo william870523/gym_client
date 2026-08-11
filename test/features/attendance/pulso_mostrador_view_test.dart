@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +72,73 @@ void main() {
 
     expect(notifier.checkIns, ['100']);
     expect(find.text('Entrada · Ana Pérez'.toUpperCase()), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el aviso repite el motivo que da el servidor, no uno genérico', (
+    tester,
+  ) async {
+    // El mostrador decía «No se pudo registrar la entrada» pasara lo que
+    // pasara: pausa, cobro pendiente o cuota vencida. El servidor sí explica y
+    // ese texto se perdía en el `catch`, así que el recepcionista veía un fallo
+    // sin saber qué hacer. Un rechazo que no se explica obliga a llamar a
+    // administración por algo que la pantalla ya sabe.
+    //
+    // No es alcanzable desde el recorrido en pantalla —la vista ofrece COBRAR
+    // en vez de ENTRADA a quien no puede entrar—, y por eso lo fija esta
+    // prueba: el 409 llega cuando la vista tiene el estado viejo, cuando entra
+    // otra terminal o cuando alguien llama a la API por su cuenta.
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const motivo = 'La membresía está pausada. Reanúdela antes de registrar la entrada.';
+    final notifier = _AttendanceNotifier(_attendances())
+      ..fallaConMotivo = motivo;
+    await tester.pumpWidget(_harness(notifier: notifier));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-mostrador-search')),
+      'Ana',
+    );
+    await tester.pump();
+    await tester.tap(find.text('ENTRADA').last);
+    await tester.pump();
+
+    expect(find.text(motivo.toUpperCase()), findsOneWidget);
+    expect(
+      find.text('No se pudo registrar la entrada'.toUpperCase()),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('si el servidor no explica nada, queda el aviso de siempre', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notifier = _AttendanceNotifier(_attendances())..fallaSinMotivo = true;
+    await tester.pumpWidget(_harness(notifier: notifier));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-mostrador-search')),
+      'Ana',
+    );
+    await tester.pump();
+    await tester.tap(find.text('ENTRADA').last);
+    await tester.pump();
+
+    expect(
+      find.text('No se pudo registrar la entrada'.toUpperCase()),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -316,8 +384,30 @@ class _AttendanceNotifier extends AttendanceNotifier {
   @override
   Future<void> refresh() async => state = AsyncValue.data(items);
 
+  /// Motivo que devuelve el servidor en un 409, si esta prueba lo simula.
+  String? fallaConMotivo;
+
+  /// Fallo sin cuerpo legible: la red se cayó, no hubo rechazo de negocio.
+  bool fallaSinMotivo = false;
+
   @override
   Future<void> checkIn(ClientModel client) async {
+    if (fallaConMotivo != null) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/asistencias'),
+        response: Response(
+          requestOptions: RequestOptions(path: '/asistencias'),
+          statusCode: 409,
+          data: {'error': fallaConMotivo},
+        ),
+      );
+    }
+    if (fallaSinMotivo) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/asistencias'),
+        type: DioExceptionType.connectionError,
+      );
+    }
     checkIns.add(client.id);
     items = [
       ...items,

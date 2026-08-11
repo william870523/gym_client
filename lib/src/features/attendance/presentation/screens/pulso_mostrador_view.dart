@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -149,6 +150,25 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     return 'entrar';
   }
 
+  /// El motivo que da el servidor, o `null` si de verdad no dijo nada.
+  ///
+  /// El mostrador enseñaba «No se pudo registrar la entrada» pasara lo que
+  /// pasara. El servidor sí explica —la membresía está pausada, hay un cobro
+  /// pendiente, la cuota está vencida— y ese texto se perdía en el `catch`: el
+  /// recepcionista veía un fallo genérico y no sabía qué hacer a continuación.
+  /// Un rechazo que no se explica obliga a llamar a administración por algo que
+  /// la pantalla ya sabe.
+  String? _motivoDelServidor(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map && data['error'] != null) {
+        final texto = data['error'].toString().trim();
+        if (texto.isNotEmpty) return texto;
+      }
+    }
+    return null;
+  }
+
   // ===== acciones =====
   Future<void> _checkIn(ClientModel c) async {
     final current = ref.read(attendanceNotifierProvider).value;
@@ -170,7 +190,10 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       await ref.read(attendanceNotifierProvider.notifier).checkIn(c);
       _toast('Entrada · ${_fullName(c)}', _ToastKind.ok);
     } catch (e) {
-      _toast('No se pudo registrar la entrada', _ToastKind.bad);
+      _toast(
+        _motivoDelServidor(e) ?? 'No se pudo registrar la entrada',
+        _ToastKind.bad,
+      );
     } finally {
       _checkingInCis.remove(c.id);
     }
@@ -187,7 +210,10 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
         _ToastKind.ok,
       );
     } catch (e) {
-      _toast('No se pudo registrar la salida', _ToastKind.bad);
+      _toast(
+        _motivoDelServidor(e) ?? 'No se pudo registrar la salida',
+        _ToastKind.bad,
+      );
     }
   }
 
@@ -203,7 +229,13 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
         _toast('En pausa · salió un momento', _ToastKind.info);
       }
     } catch (e) {
-      _toast('No se pudo cambiar la pausa', _ToastKind.bad);
+      // La pausa sin días disponibles es un rechazo de negocio con motivo
+      // (409), no una avería: decirlo es la diferencia entre corregirlo y
+      // llamar a soporte.
+      _toast(
+        _motivoDelServidor(e) ?? 'No se pudo cambiar la pausa',
+        _ToastKind.bad,
+      );
     }
   }
 
