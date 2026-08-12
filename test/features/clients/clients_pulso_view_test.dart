@@ -184,6 +184,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Guardar y cobrar encadena el alta pendiente con su cobro', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final notifier = _CreateClientNotifier(_clients());
+    ClientModel? paymentClient;
+    String? paymentPlanId;
+
+    await tester.pumpWidget(
+      _harness(
+        notifier: notifier,
+        view: ClientsPulsoView(
+          paymentFlow: (_, client, planId) async {
+            paymentClient = client;
+            paymentPlanId = planId;
+            return true;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-ci')),
+      '91021020015',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-names')),
+      'Cobro',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-client-surnames')),
+      'Guiado Demo',
+    );
+    await tester.enterText(find.byType(TextFormField).at(3), '165');
+
+    final nationality = find.descendant(
+      of: find.byKey(const ValueKey('nat-1')),
+      matching: find.byType(TextFormField),
+    );
+    await tester.enterText(nationality, 'Estadounidense');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Estadounidense').last);
+    await tester.pumpAndSettle();
+
+    final plan = find.descendant(
+      of: find.byKey(const ValueKey('plan-1')),
+      matching: find.byType(TextFormField),
+    );
+    await tester.enterText(plan, 'Mensual');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mensual').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Guardar y cobrar'), findsOneWidget);
+    await tester.tap(find.text('Guardar y cobrar'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.creates, hasLength(1));
+    expect(notifier.creates.single.planId, 'plan-mensual');
+    expect(paymentClient?.membershipStatus, 'PENDIENTE_PAGO');
+    expect(paymentClient?.membershipId, 'membership-new');
+    expect(paymentPlanId, 'plan-mensual');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('CI válido autodetecta sexo y respeta la selección manual', (
     tester,
   ) async {
@@ -575,6 +646,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('la lista enseña pausada y no la degrada a por vencer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final today = todayInZone(appClock.gymTimezone);
+    final paused = ClientModel(
+      id: 'paused',
+      nombres: 'Pausa',
+      apellidos: 'Vigencia (demo)',
+      activo: true,
+      planId: 'plan-mensual',
+      membershipStatus: 'PAUSADA',
+      membershipVigencia: 'PAUSADA',
+      endDate: calendarDateToUtc(today.subtract(const Duration(days: 20))),
+    );
+
+    await tester.pumpWidget(_harness(notifier: _ClientNotifier([paused])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pausada'), findsOneWidget);
+    expect(
+      find.text('Por vencer'),
+      findsOneWidget,
+    ); // métrica, no sello de fila
+    expect(find.text('Gestionar pausa'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Recepción no ve el acceso a avisos administrativos', (
     tester,
   ) async {
@@ -816,6 +919,25 @@ class _RefreshClientNotifier extends _ClientNotifier {
     refreshCount++;
     state = AsyncValue.data(refreshedItems);
   }
+}
+
+class _CreateClientNotifier extends _ClientNotifier {
+  _CreateClientNotifier(super.items);
+
+  final List<ClientModel> creates = [];
+
+  @override
+  Future<ClientModel> createClient(ClientModel client) async {
+    creates.add(client);
+    return client.copyWith(
+      membershipId: 'membership-new',
+      membershipStatus: 'PENDIENTE_PAGO',
+      activo: false,
+    );
+  }
+
+  @override
+  Future<void> refresh() async {}
 }
 
 class _PlanNotifier extends PaymentPlanNotifier {

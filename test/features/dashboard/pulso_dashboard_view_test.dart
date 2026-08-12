@@ -86,6 +86,25 @@ void main() {
     expect(find.text('PASAR ASISTENCIA'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('una membresía pausada no aparece como vencida en atención', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness(const PulsoAdminDashboardView()));
+    await tester.pumpAndSettle();
+
+    final attention = find.byKey(const ValueKey('pulso-dashboard-attention'));
+    expect(
+      find.descendant(of: attention, matching: find.text('Pausa Vigencia')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Widget _harness(Widget child) {
@@ -97,6 +116,8 @@ Widget _harness(Widget child) {
       nombres: 'Sonia',
       apellidos: 'Ruiz Vega',
       activo: true,
+      membershipStatus: 'ACTIVA',
+      membershipVigencia: 'VIGENTE',
       endDate: calendarDateToUtc(today.add(const Duration(days: 2))),
     ),
     ClientModel(
@@ -104,7 +125,19 @@ Widget _harness(Widget child) {
       nombres: 'Mario',
       apellidos: 'López',
       activo: true,
+      membershipStatus: 'ACTIVA',
+      membershipVigencia: 'VENCIDA_RECIENTE',
       endDate: calendarDateToUtc(today.subtract(const Duration(days: 1))),
+    ),
+    ClientModel(
+      id: 'paused',
+      nombres: 'Pausa',
+      apellidos: 'Vigencia',
+      activo: true,
+      planId: 'plan',
+      membershipStatus: 'PAUSADA',
+      membershipVigencia: 'PAUSADA',
+      endDate: calendarDateToUtc(today.subtract(const Duration(days: 20))),
     ),
   ];
   final attendance = [

@@ -83,7 +83,8 @@ ClientDiscountBreakdown clientDiscountBreakdown({
   required double? planFixedOldPrice,
 }) {
   final listMinor = (listPrice * 100).round();
-  final pct = double.tryParse(discountPct ?? _defaultDiscountPct) ??
+  final pct =
+      double.tryParse(discountPct ?? _defaultDiscountPct) ??
       double.parse(_defaultDiscountPct);
   final fixedOldMinor = planFixedOldPrice == null
       ? null

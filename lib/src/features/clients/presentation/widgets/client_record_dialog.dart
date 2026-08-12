@@ -25,6 +25,7 @@ import '../state/client_record_export_provider.dart';
 import '../state/client_notifier.dart';
 import '../state/client_record_provider.dart';
 import 'membership_requests_dialog.dart';
+import 'voluntary_cancellation_preview_dialog.dart';
 
 class ClientRecordDialog extends ConsumerWidget {
   const ClientRecordDialog({super.key, required this.clientId});
@@ -203,6 +204,15 @@ class _RecordBody extends ConsumerWidget {
                           visibleMemberships,
                         ),
                       ),
+                    ),
+                  ),
+                  PulsoSecondaryButton(
+                    label: 'Emisiones',
+                    icon: Icons.verified_outlined,
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) =>
+                          _StatementDocumentsDialog(clientId: record.client.id),
                     ),
                   ),
                   PulsoSecondaryButton(
@@ -495,6 +505,194 @@ class _StatementExportDialog extends ConsumerWidget {
                 Text(
                   'El PDF separa totales por moneda. El CSV crea una fila por forma de pago para conservar cobros mixtos y tasas históricas.',
                   style: TextStyle(color: tokens.muted2, fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatementDocumentsDialog extends ConsumerWidget {
+  const _StatementDocumentsDialog({required this.clientId});
+
+  final String clientId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = PulsoTokens.of(context);
+    final documents = ref.watch(clientRecordDocumentsProvider(clientId));
+    return PulsoThemeScope(
+      child: Dialog(
+        insetPadding: const EdgeInsets.all(18),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 600),
+          child: PulsoPanel(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(width: 6, height: 38, color: tokens.accent),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const PulsoLabel('EXPEDIENTE DEL SOCIO'),
+                          Text(
+                            'EMISIONES REGISTRADAS',
+                            style: TextStyle(
+                              fontFamily: PulsoFonts.display,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: tokens.chalk,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    PulsoIconButton(
+                      tooltip: 'Actualizar',
+                      icon: Icons.refresh,
+                      onPressed: () => ref.invalidate(
+                        clientRecordDocumentsProvider(clientId),
+                      ),
+                    ),
+                    PulsoIconButton(
+                      tooltip: 'Cerrar',
+                      icon: Icons.close,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Cada fila conserva el archivo exacto, la identidad histórica del operador, la hora confiable y su SHA-256.',
+                  style: TextStyle(color: tokens.muted, fontSize: 11),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: documents.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) => Center(
+                      child: Text(
+                        'No se pudieron cargar las emisiones: $error',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: tokens.danger),
+                      ),
+                    ),
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'Todavía no hay documentos emitidos.',
+                            style: TextStyle(color: tokens.muted),
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) =>
+                            Divider(height: 1, color: tokens.line),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final localTime = toGymWallClock(
+                            item.issuedAtUtc,
+                            appClock.gymTimezone,
+                          );
+                          final shortHash = item.sha256.length > 16
+                              ? '${item.sha256.substring(0, 16)}…'
+                              : item.sha256;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 46,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: tokens.lineStrong,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    item.format,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontFamily: PulsoFonts.mono,
+                                      fontWeight: FontWeight.w800,
+                                      color: tokens.accent,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.fileName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: tokens.chalk,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${DateFormat('dd/MM/yyyy HH:mm').format(localTime)} · '
+                                        '${item.issuedByName} (${item.issuedByRole}) · '
+                                        '${item.destination.toLowerCase()}',
+                                        style: TextStyle(
+                                          fontFamily: PulsoFonts.mono,
+                                          fontSize: 10,
+                                          color: tokens.muted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'SHA-256 $shortHash · ${item.sizeBytes} bytes',
+                                        style: TextStyle(
+                                          fontFamily: PulsoFonts.mono,
+                                          fontSize: 10,
+                                          color: tokens.muted2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PulsoIconButton(
+                                  tooltip: 'Copiar SHA-256',
+                                  icon: Icons.copy_all_outlined,
+                                  onPressed: () async {
+                                    await Clipboard.setData(
+                                      ClipboardData(text: item.sha256),
+                                    );
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('SHA-256 copiado.'),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -961,6 +1159,30 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
     builder: (_) => const MembershipRequestsDialog(),
   );
 
+  Future<void> _previewVoluntaryCancellation() async {
+    final role = ref.read(authProvider).value?.role.toLowerCase();
+    final executed = await showDialog<bool>(
+      context: context,
+      builder: (_) => VoluntaryCancellationPreviewDialog(
+        clientId: client.id,
+        membershipId: membership.id,
+        canExecute: role == 'admin' || role == 'administrador',
+      ),
+    );
+    if (executed == true && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      await ref.read(clientNotifierProvider.notifier).refresh();
+      ref.invalidate(clientRecordProvider(client.id));
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Membresía cancelada y resolución financiera registrada.',
+          ),
+        ),
+      );
+    }
+  }
+
   /// R5.4 — cambio de entrenador a petición del cliente: recepción lo ejecuta
   /// sin aprobación previa y administración recibe un aviso automático.
   Future<void> _changeTrainer() async {
@@ -1169,6 +1391,20 @@ class _MembershipBlockState extends ConsumerState<_MembershipBlock> {
                           : canManage
                           ? _resume
                           : () => _request('REANUDAR'),
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: PulsoSecondaryButton(
+                      key: ValueKey(
+                        'membership-preview-cancellation-${membership.id}',
+                      ),
+                      label: canManage
+                          ? 'Cancelar membresía'
+                          : 'Valorar cancelación',
+                      icon: Icons.calculate_outlined,
+                      onPressed: _busy ? null : _previewVoluntaryCancellation,
                     ),
                   ),
                   const SizedBox(height: 7),

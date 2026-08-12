@@ -6,5 +6,5 @@ import '../../data/repositories/client_discount_repository.dart';
 /// R5.3 — Provider del % global de descuento para cliente VIEJO.
 final clientDiscountSettingsProvider =
     FutureProvider.autoDispose<ClientDiscountSettingsModel>((ref) {
-  return ref.watch(clientDiscountRepositoryProvider).get();
-});
+      return ref.watch(clientDiscountRepositoryProvider).get();
+    });

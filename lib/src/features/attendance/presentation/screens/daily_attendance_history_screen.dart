@@ -67,6 +67,11 @@ class _DailyAttendanceHistoryScreenState
   String _query = '';
   _AttendanceFilter _filter = _AttendanceFilter.all;
 
+  String _calendarDate(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -110,6 +115,9 @@ class _DailyAttendanceHistoryScreenState
     setState(
       () => _selectedDate = DateTime(picked.year, picked.month, picked.day),
     );
+    await ref
+        .read(attendanceHistoryProvider.notifier)
+        .loadPage(1, calendarDate: _calendarDate(_selectedDate));
   }
 
   Future<void> _refresh(int page) async {
@@ -120,10 +128,22 @@ class _DailyAttendanceHistoryScreenState
   }
 
   Future<void> _copyCsv(
-    List<AttendanceModel> items,
     Map<String, ClientModel> clients,
     Map<String, String> plans,
   ) async {
+    List<AttendanceModel> items;
+    try {
+      final day = await ref
+          .read(attendanceHistoryProvider.notifier)
+          .loadAllForSelectedDate();
+      items = _visible(day, clients, plans);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo preparar el CSV: $error')),
+      );
+      return;
+    }
     String cell(Object? value) =>
         '"${value?.toString().replaceAll('"', '""') ?? ''}"';
     final rows = <String>[
@@ -154,7 +174,7 @@ class _DailyAttendanceHistoryScreenState
         content: Text(
           items.isEmpty
               ? 'Se copiaron los encabezados del CSV.'
-              : 'CSV copiado con ${items.length} registros visibles.',
+              : 'CSV copiado con ${items.length} registros del día filtrado.',
         ),
       ),
     );
@@ -270,7 +290,7 @@ class _DailyAttendanceHistoryScreenState
               onSearch: (value) => setState(() => _query = value),
               onFilter: (value) => setState(() => _filter = value),
               onDate: _pickDate,
-              onCopy: () => _copyCsv(visible, clients, plans),
+              onCopy: () => _copyCsv(clients, plans),
               onRefresh: () => _refresh(history.page),
             ),
             const SizedBox(height: 12),
@@ -470,7 +490,7 @@ class _AttendanceCommand extends StatelessWidget {
                   filters,
                   const SizedBox(height: 8),
                   Text(
-                    '$resultCount visibles · fecha y página cargada',
+                    '$resultCount visibles · día seleccionado',
                     style: TextStyle(
                       fontFamily: PulsoFonts.mono,
                       fontSize: 9,

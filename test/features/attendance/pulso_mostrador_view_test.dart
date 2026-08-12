@@ -93,7 +93,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    const motivo = 'La membresía está pausada. Reanúdela antes de registrar la entrada.';
+    const motivo =
+        'La membresía está pausada. Reanúdela antes de registrar la entrada.';
     final notifier = _AttendanceNotifier(_attendances())
       ..fallaConMotivo = motivo;
     await tester.pumpWidget(_harness(notifier: notifier));
@@ -226,6 +227,8 @@ void main() {
       nombres: 'Alfredo',
       apellidos: 'Virgili Perez',
       planId: 'mensual',
+      membershipStatus: 'ACTIVA',
+      membershipVigencia: 'VIGENTE',
       endDate: calendarDateToUtc(today.add(const Duration(days: 2))),
     );
     final notifier = _AttendanceNotifier([
@@ -248,6 +251,41 @@ void main() {
 
     expect(notifier.checkIns, isEmpty);
     expect(find.text('Alfredo Virgili Perez'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('una membresía pausada no aparece como vencida en el panel', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final today = todayInZone(appClock.gymTimezone);
+    final paused = ClientModel(
+      id: 'paused',
+      nombres: 'Pausa',
+      apellidos: 'Vigencia (demo)',
+      activo: true,
+      planId: 'mensual',
+      membershipStatus: 'PAUSADA',
+      membershipVigencia: 'PAUSADA',
+      endDate: calendarDateToUtc(today.subtract(const Duration(days: 20))),
+    );
+    await tester.pumpWidget(
+      _harness(clientItems: [paused], attendanceItems: const []),
+    );
+    await tester.pump();
+
+    final memberships = find.byKey(const ValueKey('pulso-memberships-panel'));
+    expect(
+      find.descendant(
+        of: memberships,
+        matching: find.text('Pausa Vigencia (demo)'),
+      ),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

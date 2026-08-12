@@ -13,6 +13,7 @@ import '../../../../core/utils/datetime_zone.dart';
 import '../../../../core/widgets/base64_image.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../clients/data/models/client_model.dart';
+import '../../../clients/domain/membership_vigencia.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
 import '../../../clients/presentation/widgets/client_form.dart';
 import '../../../payments/presentation/state/payment_notifier.dart';
@@ -350,7 +351,10 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     final paymentsToday = payments
         .where((pay) => !pay.isDeleted && sameGymDay(pay.fecha))
         .toList();
-    final monedasHoy = paymentsToday.map((pay) => pay.currencyId).toSet().length;
+    final monedasHoy = paymentsToday
+        .map((pay) => pay.currencyId)
+        .toSet()
+        .length;
 
     final byCi = {for (final c in clients) c.id: c};
     final horariosById = {for (final h in horarios) h.id: h};
@@ -402,7 +406,13 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
                   const SizedBox(height: 18),
                   _buildTitle(p),
                   const SizedBox(height: 14),
-                  _buildMetrics(p, inks, facts, paymentsToday.length, monedasHoy),
+                  _buildMetrics(
+                    p,
+                    inks,
+                    facts,
+                    paymentsToday.length,
+                    monedasHoy,
+                  ),
                   const SizedBox(height: 14),
                   _buildSearch(p, inks, clients, facts),
                   const SizedBox(height: 18),
@@ -513,12 +523,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
         paused > 0 ? '$paused en pausa' : 'ahora mismo',
         p.verm,
       ),
-      (
-        '$accesosHoy',
-        'ACCESOS HOY',
-        '${f.history.length} salidas',
-        p.ink,
-      ),
+      ('$accesosHoy', 'ACCESOS HOY', '${f.history.length} salidas', p.ink),
       (
         '$cobrosHoy',
         'COBROS HOY',
@@ -1071,9 +1076,7 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Text('SOCIO', style: _columnHeadStyle(p)),
-                ),
+                Expanded(child: Text('SOCIO', style: _columnHeadStyle(p))),
                 Text(
                   _tab == _AforoTab.dentro ? 'TIEMPO · ACCIONES' : 'DURACIÓN',
                   style: _columnHeadStyle(p),
@@ -1885,13 +1888,26 @@ class _MostradorFacts {
     for (final c in clients) {
       if (!c.activo || c.endDate == null) continue;
       final end = DateTime(c.endDate!.year, c.endDate!.month, c.endDate!.day);
-      final days = end.difference(today).inDays;
-      if (days > 7) continue;
+      final vigencia =
+          membershipVigenciaFromServer(c.membershipVigencia) ??
+          resolveMembershipVigencia(
+            status: c.membershipStatus,
+            endDate: c.endDate,
+            today: today,
+          );
+      if (vigencia == MembershipVigencia.paused ||
+          vigencia == MembershipVigencia.pendingPayment ||
+          vigencia == MembershipVigencia.cancelled ||
+          vigencia == MembershipVigencia.none) {
+        continue;
+      }
+      final days = -daysSinceExpiry(end, today);
+      if (vigencia == MembershipVigencia.current && days > 7) continue;
       final String when;
-      if (days < 0) {
-        when = 'vencida (${days.abs()} d)';
-      } else if (days == 0) {
-        when = 'vence hoy';
+      if (vigencia == MembershipVigencia.recentlyExpired ||
+          vigencia == MembershipVigencia.expired) {
+        final expiredDays = daysSinceExpiry(end, today);
+        when = expiredDays == 0 ? 'vencida hoy' : 'vencida ($expiredDays d)';
       } else if (days == 1) {
         when = 'mañana';
       } else {

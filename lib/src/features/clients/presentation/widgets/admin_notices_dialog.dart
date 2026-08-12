@@ -111,8 +111,7 @@ class _AdminNoticesDialogState extends ConsumerState<AdminNoticesDialog> {
                     child: FutureBuilder<List<Map<String, dynamic>>>(
                       future: _notices,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState !=
-                            ConnectionState.done) {
+                        if (snapshot.connectionState != ConnectionState.done) {
                           return const PulsoStateView(
                             kind: PulsoStateKind.loading,
                             message: 'Cargando avisos…',
@@ -142,8 +141,7 @@ class _AdminNoticesDialogState extends ConsumerState<AdminNoticesDialog> {
                           key: const Key('admin-notices-list'),
                           padding: const EdgeInsets.all(12),
                           itemCount: notices.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 6),
+                          separatorBuilder: (_, _) => const SizedBox(height: 6),
                           itemBuilder: (context, index) =>
                               _NoticeRow(notice: notices[index]),
                         );

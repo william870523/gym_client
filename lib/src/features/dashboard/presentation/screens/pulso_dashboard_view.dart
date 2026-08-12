@@ -13,6 +13,7 @@ import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../attendance/data/models/attendance_model.dart';
 import '../../../attendance/presentation/state/attendance_notifier.dart';
 import '../../../clients/data/models/client_model.dart';
+import '../../../clients/domain/membership_vigencia.dart';
 import '../../../clients/presentation/state/client_notifier.dart';
 import '../../../financials/data/models/currency_model.dart';
 import '../../../financials/presentation/state/currency_notifier.dart';
@@ -886,29 +887,38 @@ class _DashboardFacts {
       (item) => item.activo && item.endDate != null,
     )) {
       final end = client.endDate!;
-      final days = DateTime(
-        end.year,
-        end.month,
-        end.day,
-      ).difference(today).inDays;
+      final vigencia =
+          membershipVigenciaFromServer(client.membershipVigencia) ??
+          resolveMembershipVigencia(
+            status: client.membershipStatus,
+            endDate: end,
+            today: today,
+          );
+      if (vigencia == MembershipVigencia.paused ||
+          vigencia == MembershipVigencia.pendingPayment ||
+          vigencia == MembershipVigencia.cancelled ||
+          vigencia == MembershipVigencia.none) {
+        continue;
+      }
+      final days = -daysSinceExpiry(end, today);
       final name = clientName(client.id);
-      if (days < 0) {
+      if (vigencia == MembershipVigencia.recentlyExpired ||
+          vigencia == MembershipVigencia.expired) {
+        final expiredDays = daysSinceExpiry(end, today);
         expiredClients.add(
           _Due(
             name: name,
-            label: 'vencida hace ${days.abs()} d',
+            label: expiredDays == 0
+                ? 'vencida hoy'
+                : 'vencida hace $expiredDays d',
             expired: true,
           ),
         );
-      } else if (days <= 7) {
+      } else if (vigencia == MembershipVigencia.current && days <= 7) {
         dueSoon.add(
           _Due(
             name: name,
-            label: days == 0
-                ? 'vence hoy'
-                : days == 1
-                ? 'mañana'
-                : 'en $days d',
+            label: days == 1 ? 'mañana' : 'en $days d',
             expired: false,
           ),
         );

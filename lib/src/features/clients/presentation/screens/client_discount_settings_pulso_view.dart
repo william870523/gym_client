@@ -245,7 +245,12 @@ class _SettingsHeader extends StatelessWidget {
             children: [
               title,
               const SizedBox(height: 10),
-              Row(children: [Expanded(child: status), button]),
+              Row(
+                children: [
+                  Expanded(child: status),
+                  button,
+                ],
+              ),
             ],
           );
         }
@@ -314,13 +319,7 @@ class _SettingsBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (compact)
-            Column(
-              children: [
-                control,
-                const SizedBox(height: 12),
-                simulation,
-              ],
-            )
+            Column(children: [control, const SizedBox(height: 12), simulation])
           else
             IntrinsicHeight(
               child: Row(
@@ -514,7 +513,11 @@ class _DiscountSimulation extends StatelessWidget {
           const SizedBox(height: 14),
           for (var i = 0; i < referencePrices.length; i++) ...[
             if (i > 0) const SizedBox(height: 8),
-            _SimulationRow(listPrice: referencePrices[i], pct: pct, valid: valid),
+            _SimulationRow(
+              listPrice: referencePrices[i],
+              pct: pct,
+              valid: valid,
+            ),
           ],
         ],
       ),

@@ -10,7 +10,9 @@ import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/features/auth/domain/models/user.dart';
 import 'package:gym_client/src/features/auth/presentation/state/auth_notifier.dart';
 import 'package:gym_client/src/features/clients/data/models/client_model.dart';
+import 'package:gym_client/src/features/clients/data/models/client_record_document.dart';
 import 'package:gym_client/src/features/clients/data/models/client_record_model.dart';
+import 'package:gym_client/src/features/clients/data/models/voluntary_cancellation_preview.dart';
 import 'package:gym_client/src/features/clients/data/repositories/client_repository.dart';
 import 'package:gym_client/src/features/clients/presentation/state/client_record_provider.dart';
 import 'package:gym_client/src/features/clients/presentation/widgets/client_record_dialog.dart';
@@ -136,6 +138,27 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('muestra la trazabilidad de las emisiones registradas', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness(repository: _FakeClientRepository()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('EMISIONES'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('EMISIONES REGISTRADAS'), findsOneWidget);
+    expect(find.text('PDF'), findsOneWidget);
+    expect(find.text('expediente_ana_perez.pdf'), findsOneWidget);
+    expect(find.textContaining('Administración Demo (admin)'), findsOneWidget);
+    expect(find.textContaining('SHA-256 034360b8929e7273'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('administración registra el motivo de una pausa', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
@@ -193,6 +216,83 @@ void main() {
     expect(repository.requestedKind, 'PAUSAR');
     expect(repository.requestReason, 'Viaje de trabajo');
     expect(repository.pausedMembershipId, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in const [Size(390, 844), Size(1280, 900)]) {
+    testWidgets(
+      'recepción valora cancelación sin ejecutarla en ${size.width.toInt()} px',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final repository = _FakeClientRepository();
+
+        await tester.pumpWidget(
+          _harness(reception: true, repository: repository),
+        );
+        await tester.pumpAndSettle();
+
+        final action = find.byKey(
+          const ValueKey('membership-preview-cancellation-membership-1'),
+        );
+        await tester.ensureVisible(action);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('voluntary-cancellation-preview-dialog')),
+          findsOneWidget,
+        );
+        expect(find.text('VALORAR CANCELACIÓN'), findsWidgets);
+        expect(
+          find.textContaining('ESTA VISTA NO CANCELA LA MEMBRESÍA'),
+          findsOneWidget,
+        );
+        expect(find.text(r'$36.00 USD'), findsWidgets);
+        expect(find.text('CRÉDITO DEL CLIENTE'), findsOneWidget);
+        expect(find.text('REEMBOLSO PENDIENTE'), findsOneWidget);
+        expect(repository.previewedMembershipId, 'membership-1');
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('administración confirma cancelación con crédito', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _FakeClientRepository();
+
+    await tester.pumpWidget(_harness(admin: true, repository: repository));
+    await tester.pumpAndSettle();
+    final action = find.byKey(
+      const ValueKey('membership-preview-cancellation-membership-1'),
+    );
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('AL CONFIRMAR SE CANCELA'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('voluntary-cancellation-reason')),
+      'Traslado definitivo',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('voluntary-cancellation-confirm')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('voluntary-cancellation-execute')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repository.executedMembershipId, 'membership-1');
+    expect(repository.executedResolutionType, 'CREDITO_CLIENTE');
+    expect(repository.executedReason, 'Traslado definitivo');
     expect(tester.takeException(), isNull);
   });
 
@@ -416,10 +516,36 @@ class _FakeClientRepository extends ClientRepository {
   String? requestedMembershipId;
   String? requestedKind;
   String? requestReason;
+  String? previewedMembershipId;
+  String? executedMembershipId;
+  String? executedResolutionType;
+  String? executedReason;
 
   @override
   Future<List<ClientModel>> getClients({int page = 1, int limit = 10}) async =>
       const [];
+
+  @override
+  Future<List<ClientRecordDocument>> getClientRecordDocuments(
+    String ci,
+  ) async => [
+    ClientRecordDocument(
+      id: 'document-1',
+      clientId: ci,
+      format: 'PDF',
+      destination: 'ARCHIVO',
+      fileName: 'expediente_ana_perez.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 125,
+      sha256:
+          '034360b8929e7273d543cf892ed752d6f6add7cf407ab271cbdd5a6d290fe5a0',
+      filters: const {'alcance': 'COMPLETO'},
+      issuedByName: 'Administración Demo',
+      issuedByRole: 'admin',
+      issuedByOrigin: 'REMOTE_USER',
+      issuedAtUtc: DateTime.utc(2026, 8, 10, 14, 30),
+    ),
+  ];
 
   @override
   Future<void> pauseMembership({
@@ -441,5 +567,55 @@ class _FakeClientRepository extends ClientRepository {
     requestedMembershipId = membershipId;
     requestedKind = kind;
     requestReason = reason;
+  }
+
+  @override
+  Future<VoluntaryCancellationPreview> previewVoluntaryCancellation({
+    required String clientId,
+    required String membershipId,
+  }) async {
+    previewedMembershipId = membershipId;
+    return const VoluntaryCancellationPreview(
+      effectiveDate: '2026-08-11',
+      clientName: 'Ana Pérez',
+      planName: 'Mensual',
+      membershipState: 'ACTIVA',
+      currency: 'USD',
+      currencySymbol: r'$',
+      totalDays: 30,
+      consumedDays: 18,
+      remainingDays: 12,
+      paidAmount: 90,
+      consumedValue: 54,
+      unusedValue: 36,
+      alternatives: [
+        VoluntaryCancellationAlternative(
+          type: 'CREDITO_CLIENTE',
+          amount: 36,
+          description: 'Conservar como crédito interno.',
+          requiresTreasury: false,
+        ),
+        VoluntaryCancellationAlternative(
+          type: 'REEMBOLSO_PENDIENTE',
+          amount: 36,
+          description: 'Enviar a Tesorería.',
+          requiresTreasury: true,
+        ),
+      ],
+      isPreviewOnly: true,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> executeVoluntaryCancellation({
+    required String clientId,
+    required String membershipId,
+    required String resolutionType,
+    required String reason,
+  }) async {
+    executedMembershipId = membershipId;
+    executedResolutionType = resolutionType;
+    executedReason = reason;
+    return const {'estado': 'APLICADA'};
   }
 }

@@ -436,7 +436,8 @@ class _ClientFormState extends ConsumerState<ClientForm> {
       // R5.3: cambiar la categoría de un socio ya registrado exige motivo. Se
       // comprueba aquí para no mandar al servidor una petición que ya sabemos
       // que va a rechazar, y para decirlo donde el operador está mirando.
-      if (_categoriaCambiada && _motivoCategoriaController.text.trim().length < 5) {
+      if (_categoriaCambiada &&
+          _motivoCategoriaController.text.trim().length < 5) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -731,12 +732,18 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                           ),
                                           _buildTextField(
                                             label: 'Nombres',
+                                            fieldKey: const ValueKey(
+                                              'pulso-client-names',
+                                            ),
                                             controller: _nameController,
                                             isRequired: true,
                                             placeholder: 'Ej: Juan Andrés',
                                           ),
                                           _buildTextField(
                                             label: 'Apellidos',
+                                            fieldKey: const ValueKey(
+                                              'pulso-client-surnames',
+                                            ),
                                             controller: _surnameController,
                                             isRequired: true,
                                             placeholder: 'Ej: Pérez González',
@@ -747,6 +754,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             suffix: 'cm',
                                             placeholder: '175',
                                             isNumber: true,
+                                            isRequired: true,
                                           ),
                                           _buildTextField(
                                             label: 'Peso',
@@ -780,8 +788,8 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             onChanged: _categoriaBloqueada
                                                 ? null
                                                 : (v) => setState(
-                                                    () =>
-                                                        _categoria = v as String?,
+                                                    () => _categoria =
+                                                        v as String?,
                                                   ),
                                             placeholder: 'Seleccionar',
                                           ),
@@ -804,7 +812,8 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                             ),
                                           if (_categoriaCambiada)
                                             _buildTextField(
-                                              label: 'Motivo del cambio de categoría *',
+                                              label:
+                                                  'Motivo del cambio de categoría *',
                                               controller:
                                                   _motivoCategoriaController,
                                               placeholder:
@@ -1536,7 +1545,10 @@ class _ClientFormState extends ConsumerState<ClientForm> {
             ),
             children: [
               if (required)
-                TextSpan(text: ' *', style: TextStyle(color: palette.danger)),
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: palette.danger),
+                ),
             ],
           ),
         ),
@@ -1650,6 +1662,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
   Widget _buildTextField({
     required String label,
     required TextEditingController controller,
+    Key? fieldKey,
     bool isRequired = false,
     String? placeholder,
     String? prefix,
@@ -1681,6 +1694,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         ),
         const SizedBox(height: 6),
         TextFormField(
+          key: fieldKey,
           controller: controller,
           keyboardType: isNumber
               ? const TextInputType.numberWithOptions(decimal: true)
@@ -1761,6 +1775,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     required String label,
     required dynamic value,
     required List<DropdownMenuItem<Object>> items,
+
     /// `null` deshabilita el desplegable: es como Material apaga un control.
     required Function(Object?)? onChanged,
     Key? fieldKey,

@@ -172,7 +172,10 @@ class _HistoryNotifier extends AttendanceHistoryNotifier {
       AttendanceHistoryState(page: 1, limit: 15, attendances: items);
 
   @override
-  Future<void> loadPage(int page) async {}
+  Future<void> loadPage(int page, {String? calendarDate}) async {}
+
+  @override
+  Future<List<AttendanceModel>> loadAllForSelectedDate() async => items;
 }
 
 class _TodayNotifier extends AttendanceNotifier {

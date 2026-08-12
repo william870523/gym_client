@@ -48,6 +48,7 @@ enum _MembershipState {
   active,
   expiring,
   expired,
+  paused,
   pendingPayment,
   noPlan,
   inactive,
@@ -104,6 +105,7 @@ _MembershipState _membership(ClientModel client, DateTime today) {
     case MembershipVigencia.pendingPayment:
       return _MembershipState.pendingPayment;
     case MembershipVigencia.paused:
+      return _MembershipState.paused;
     case MembershipVigencia.current:
       break;
   }
@@ -116,6 +118,7 @@ String _membershipLabel(_MembershipState state) => switch (state) {
   _MembershipState.active => 'Vigente',
   _MembershipState.expiring => 'Por vencer',
   _MembershipState.expired => 'Vencida',
+  _MembershipState.paused => 'Pausada',
   _MembershipState.pendingPayment => 'Pendiente de pago',
   _MembershipState.noPlan => 'Sin plan',
   _MembershipState.inactive => 'Inactivo',
@@ -127,6 +130,7 @@ String _nextAction(ClientModel client, _MembershipState state) {
   }
   if (state == _MembershipState.inactive) return 'Revisar estado del socio';
   if (state == _MembershipState.expired) return 'Renovar membresía';
+  if (state == _MembershipState.paused) return 'Gestionar pausa';
   if (state == _MembershipState.expiring) return 'Preparar renovación';
   if (state == _MembershipState.noPlan) return 'Asignar plan';
   if (client.telefono == null && (client.correo?.trim().isEmpty ?? true)) {
@@ -1386,6 +1390,7 @@ class _MembershipChip extends StatelessWidget {
       _MembershipState.active => (tokens.success, tokens.successSoft),
       _MembershipState.expiring => (tokens.warning, tokens.warningSoft),
       _MembershipState.expired => (tokens.danger, tokens.dangerSoft),
+      _MembershipState.paused => (tokens.warning, tokens.warningSoft),
       _MembershipState.pendingPayment => (tokens.warning, tokens.warningSoft),
       _MembershipState.noPlan => (tokens.warning, tokens.warningSoft),
       _MembershipState.inactive => (tokens.muted, tokens.raised2),

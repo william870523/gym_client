@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/client_model.dart';
 import '../models/client_record_model.dart';
+import '../models/client_record_document.dart';
+import '../models/voluntary_cancellation_preview.dart';
 
 final clientRepositoryProvider = Provider<ClientRepository>((ref) {
   return ClientRepository(ref.watch(apiClientProvider));
@@ -44,6 +49,91 @@ class ClientRepository {
     return ClientRecordModel.fromJson(
       Map<String, dynamic>.from(response.data as Map),
     );
+  }
+
+  Future<List<ClientRecordDocument>> getClientRecordDocuments(String ci) async {
+    final response = await _dio.get('/clientes/$ci/expediente/documentos');
+    return (response.data as List)
+        .map(
+          (item) => ClientRecordDocument.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<ClientRecordDocument> registerClientRecordDocument({
+    required String clientId,
+    required String operationId,
+    required String format,
+    required String destination,
+    required String fileName,
+    required Uint8List bytes,
+    required Map<String, dynamic> filters,
+  }) async {
+    final response = await _dio.post(
+      '/clientes/$clientId/expediente/documentos',
+      data: {
+        'operation_id': operationId,
+        'formato': format,
+        'destino': destination,
+        'nombre_archivo': fileName,
+        'contenido_base64': base64Encode(bytes),
+        'filtros': filters,
+      },
+    );
+    return ClientRecordDocument.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<VoluntaryCancellationPreview> previewVoluntaryCancellation({
+    required String clientId,
+    required String membershipId,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/clientes/$clientId/membresias/$membershipId/cancelacion-voluntaria/previsualizacion',
+      );
+      return VoluntaryCancellationPreview.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (error) {
+      final body = error.response?.data;
+      final detail = body is Map ? body['error']?.toString() : null;
+      throw Exception(
+        detail?.trim().isNotEmpty == true
+            ? detail!.trim()
+            : 'No se pudo calcular la valoración.',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> executeVoluntaryCancellation({
+    required String clientId,
+    required String membershipId,
+    required String resolutionType,
+    required String reason,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/clientes/$clientId/membresias/$membershipId/cancelacion-voluntaria',
+        data: {
+          'operation_id': const Uuid().v4(),
+          'tipo_resolucion': resolutionType,
+          'motivo': reason,
+        },
+      );
+      return Map<String, dynamic>.from(response.data as Map);
+    } on DioException catch (error) {
+      final body = error.response?.data;
+      final detail = body is Map ? body['error']?.toString() : null;
+      throw Exception(
+        detail?.trim().isNotEmpty == true
+            ? detail!.trim()
+            : 'No se pudo cancelar la membresía.',
+      );
+    }
   }
 
   Future<void> pauseMembership({

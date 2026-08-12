@@ -49,14 +49,43 @@ class AttendanceRepository {
     await _dio.put('/asistencias/$attendanceId/reanudar');
   }
 
-  Future<List<AttendanceModel>> getAttendanceHistory({int page = 1, int limit = 50}) async {
+  Future<List<AttendanceModel>> getAttendanceHistory({
+    int page = 1,
+    int limit = 50,
+    String? calendarDate,
+  }) async {
     try {
-      final response = await _dio.get('/asistencias', queryParameters: {'page': page, 'limit': limit});
+      final response = await _dio.get(
+        '/asistencias',
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          if (calendarDate != null) 'date': calendarDate,
+        },
+      );
       final List data = response.data as List;
       return data.map((e) => AttendanceModel.fromJson(e)).toList();
     } catch (e) {
       rethrow;
     }
   }
-}
 
+  /// Descarga todo el día seleccionado para que el CSV no quede truncado por
+  /// la página visible. La API limita cada lote a 200 registros.
+  Future<List<AttendanceModel>> getAttendanceHistoryForDate(
+    String calendarDate,
+  ) async {
+    const pageSize = 200;
+    final result = <AttendanceModel>[];
+    for (var page = 1; page <= 1000; page += 1) {
+      final batch = await getAttendanceHistory(
+        page: page,
+        limit: pageSize,
+        calendarDate: calendarDate,
+      );
+      result.addAll(batch);
+      if (batch.length < pageSize) return result;
+    }
+    throw StateError('El historial excede el límite seguro de exportación.');
+  }
+}

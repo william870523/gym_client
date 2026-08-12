@@ -133,20 +133,15 @@ class ClientsScopeFilter {
       'Socios con ${attribute?.titulo ?? "atributo"} $label',
   };
 
-  bool matches(ClientModel client, {required DateTime today}) =>
-      switch (kind) {
-        ClientsFilterKind.plan => isPlanAssociate(
-          client,
-          planId: id,
-          today: today,
-        ),
-        ClientsFilterKind.trainer => isTrainerAssociate(
-          client,
-          trainerId: id,
-          today: today,
-        ),
-        ClientsFilterKind.attribute => _matchesAttribute(client),
-      };
+  bool matches(ClientModel client, {required DateTime today}) => switch (kind) {
+    ClientsFilterKind.plan => isPlanAssociate(client, planId: id, today: today),
+    ClientsFilterKind.trainer => isTrainerAssociate(
+      client,
+      trainerId: id,
+      today: today,
+    ),
+    ClientsFilterKind.attribute => _matchesAttribute(client),
+  };
 
   bool _matchesAttribute(ClientModel client) {
     final atributo = attribute;

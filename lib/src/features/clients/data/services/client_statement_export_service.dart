@@ -386,6 +386,13 @@ class ClientStatementExportService {
 
   Future<String?> savePdf(ClientStatementSnapshot snapshot) async {
     final bytes = await buildPdf(snapshot);
+    return savePdfBytes(snapshot, bytes);
+  }
+
+  Future<String?> savePdfBytes(
+    ClientStatementSnapshot snapshot,
+    Uint8List bytes,
+  ) {
     return FilePicker.platform.saveFile(
       dialogTitle: 'Guardar estado de cuenta en PDF',
       fileName: _fileName(snapshot, 'pdf'),
@@ -397,18 +404,32 @@ class ClientStatementExportService {
   }
 
   Future<String?> saveCsv(ClientStatementSnapshot snapshot) {
+    return saveCsvBytes(snapshot, buildCsv(snapshot));
+  }
+
+  Future<String?> saveCsvBytes(
+    ClientStatementSnapshot snapshot,
+    Uint8List bytes,
+  ) {
     return FilePicker.platform.saveFile(
       dialogTitle: 'Guardar movimientos en CSV',
       fileName: _fileName(snapshot, 'csv'),
       type: FileType.custom,
       allowedExtensions: const ['csv'],
-      bytes: buildCsv(snapshot),
+      bytes: bytes,
       lockParentWindow: true,
     );
   }
 
   Future<bool> printPdf(ClientStatementSnapshot snapshot) async {
     final bytes = await buildPdf(snapshot);
+    return printPdfBytes(snapshot, bytes);
+  }
+
+  Future<bool> printPdfBytes(
+    ClientStatementSnapshot snapshot,
+    Uint8List bytes,
+  ) {
     return Printing.layoutPdf(
       name: _fileName(snapshot, 'pdf'),
       format: PdfPageFormat.a4,
@@ -423,6 +444,9 @@ class ClientStatementExportService {
         .substring(0, 8);
     return 'estado-cuenta-${snapshot.clientId}-$stamp.$extension';
   }
+
+  String fileName(ClientStatementSnapshot snapshot, String extension) =>
+      _fileName(snapshot, extension);
 }
 
 Future<Uint8List> _renderClientStatementPdf(
