@@ -234,10 +234,7 @@ void main() {
     await tester.tap(find.text('Estadounidense').last);
     await tester.pumpAndSettle();
 
-    final plan = find.descendant(
-      of: find.byKey(const ValueKey('plan-1')),
-      matching: find.byType(TextFormField),
-    );
+    final plan = find.byKey(const ValueKey('pulso-client-plan'));
     await tester.enterText(plan, 'Mensual');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Mensual').last);
@@ -678,6 +675,104 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('cambiar de plan editando no mueve la cobertura del socio', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final clients = _clients();
+    final ana = clients.first;
+    final notifier = _ClientNotifier(clients);
+    await tester.pumpWidget(_harness(notifier: notifier));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Editar Ana Pérez'));
+    await tester.pumpAndSettle();
+
+    // Del Mensual (30 días) al Anual (360). Antes, elegir plan reescribía la
+    // fecha de fin con hoy + duración, así que un intento de cambiar el plan
+    // arrastraba un segundo cambio contractual que nadie pidió.
+    final campoPlan = find.byKey(const ValueKey('pulso-client-plan'));
+    await tester.ensureVisible(campoPlan);
+    await tester.pumpAndSettle();
+    await tester.enterText(campoPlan, 'Anual');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Anual').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Guardar cambios'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.updates, hasLength(1));
+    final enviado = notifier.updates.single;
+    expect(enviado.planId, 'plan-anual');
+    // Las fechas las derivan las membresías: la ficha manda las que leyó.
+    expect(enviado.startDate, ana.startDate);
+    expect(enviado.endDate, ana.endDate);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('al dar de alta, el plan propone el fin desde la fecha de inicio', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NUEVO SOCIO'));
+    await tester.pumpAndSettle();
+
+    // Primero se acuerda cuándo empieza, que es el orden real del mostrador.
+    // Con la fecha de inicio en su valor por defecto —hoy— este caso no
+    // distinguiría nada: «desde hoy» y «desde el inicio» darían lo mismo.
+    final hoy = todayInZone(appClock.gymTimezone);
+    final diaElegido = hoy.day == 15 ? 16 : 15;
+    final campoInicio = find.byKey(const ValueKey('pulso-client-start-date'));
+    await tester.ensureVisible(campoInicio);
+    await tester.pumpAndSettle();
+    await tester.tap(campoInicio);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(DatePickerDialog),
+        matching: find.text('$diaElegido'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    final campoPlan = find.byKey(const ValueKey('pulso-client-plan'));
+    await tester.ensureVisible(campoPlan);
+    await tester.pumpAndSettle();
+    await tester.enterText(campoPlan, 'Anual');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Anual').last);
+    await tester.pumpAndSettle();
+
+    // El fin sale del inicio acordado, no de hoy.
+    final inicio = DateTime(hoy.year, hoy.month, diaElegido);
+    final fin = inicio.add(const Duration(days: 360));
+    String comoLoEscribe(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+    expect(
+      find.widgetWithText(TextFormField, comoLoEscribe(inicio)),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(TextFormField, comoLoEscribe(fin)),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'el rechazo del servidor se lee en la ficha y no se cierra el formulario',
     (tester) async {
@@ -894,6 +989,15 @@ List<PaymentPlanModel> _plans() => [
     nombre: 'Mensual',
     importe: 50,
     duracion: 30,
+    monedaId: 'USD',
+  ),
+  // Segundo plan con OTRA duración: sin dos duraciones distintas no se puede
+  // afirmar que la ficha no recalcula la cobertura al cambiar de plan.
+  PaymentPlanModel(
+    id: 'plan-anual',
+    nombre: 'Anual',
+    importe: 500,
+    duracion: 360,
     monedaId: 'USD',
   ),
 ];

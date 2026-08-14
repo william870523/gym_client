@@ -973,12 +973,18 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                                           ),
                                           _buildDatePicker(
                                             label: 'Fecha de Inicio',
+                                            fieldKey: const ValueKey(
+                                              'pulso-client-start-date',
+                                            ),
                                             controller: _startDateController,
                                             onTap: () =>
                                                 _selectDate(isStart: true),
                                           ),
                                           _buildDatePicker(
                                             label: 'Fecha de Fin',
+                                            fieldKey: const ValueKey(
+                                              'pulso-client-end-date',
+                                            ),
                                             controller: _endDateController,
                                             onTap: () =>
                                                 _selectDate(isStart: false),
@@ -2276,17 +2282,34 @@ class _ClientFormState extends ConsumerState<ClientForm> {
           onSelected: (option) {
             final dynOption = option as dynamic;
             final durationDays = (dynOption.duracion as num?)?.toInt() ?? 0;
-            final baseToday = todayInZone(appClock.gymTimezone);
             setState(() {
               _planId = dynOption.id as String?;
-              if (durationDays > 0) {
-                _endDate = baseToday.add(Duration(days: durationDays));
+              // **Al alta** el plan propone la cobertura, y la propone desde la
+              // fecha de inicio que hay en pantalla, no desde hoy: si se acordó
+              // que empieza el lunes, el fin sale del lunes. Es además lo que
+              // ya hacía el selector de fecha de inicio, que conserva la
+              // duración; calcular desde hoy hacía que los dos controles
+              // dijeran cosas distintas sobre el mismo periodo.
+              //
+              // **Editando no se toca ninguna de las dos.** Las fechas de
+              // cobertura las derivan las membresías y la ficha no cambia esa
+              // condición. Recalcularlas convertía un intento de cambiar el
+              // plan en DOS cambios contractuales —uno que nadie pidió—, y el
+              // rechazo del servidor acababa nombrando el fin de la cobertura,
+              // que el operador no había tocado.
+              if (widget.client == null && durationDays > 0) {
+                _endDate = _startDate.add(Duration(days: durationDays));
                 _endDateController.text = _formatDate(_endDate);
               }
             });
           },
           fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
             return TextFormField(
+              // Estable, como el resto de campos de esta ficha. La clave del
+              // `Autocomplete` de arriba lleva el número de planes porque su
+              // `initialValue` solo se aplica al construirlo, y una prueba
+              // colgada de ella se rompe con solo añadir un plan a la fixture.
+              key: const ValueKey('pulso-client-plan'),
               controller: controller,
               focusNode: focusNode,
               decoration: InputDecoration(
@@ -2584,6 +2607,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     required String label,
     required TextEditingController controller,
     required VoidCallback onTap,
+    Key? fieldKey,
   }) {
     final palette = _ClientFormPalette.of(context);
     return Column(
@@ -2599,6 +2623,7 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         ),
         const SizedBox(height: 6),
         TextFormField(
+          key: fieldKey,
           controller: controller,
           readOnly: true,
           onTap: onTap,
