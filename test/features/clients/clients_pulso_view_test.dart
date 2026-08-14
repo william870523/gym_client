@@ -643,6 +643,65 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('cobrar desde la ficha compacta actualiza los días sin reabrir', (
+    tester,
+  ) async {
+    // Por debajo de 1120 px de espacio útil la ficha es un diálogo, no el panel
+    // lateral: es el camino que se quedaba con la copia vieja del socio.
+    tester.view.physicalSize = const Size(900, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final hoy = todayInZone(appClock.gymTimezone);
+    final antes = ClientModel(
+      id: '100',
+      nombres: 'Ana',
+      apellidos: 'Pérez',
+      nacionalidadId: 'nat-us',
+      planId: 'plan-mensual',
+      activo: true,
+      membershipStatus: 'ACTIVA',
+      startDate: calendarDateToUtc(hoy.subtract(const Duration(days: 28))),
+      endDate: calendarDateToUtc(hoy.add(const Duration(days: 2))),
+    );
+    // Lo que hace el cobro: encadena otro periodo. Son 32 días más de vigencia.
+    final despues = antes.copyWith(
+      endDate: calendarDateToUtc(hoy.add(const Duration(days: 34))),
+    );
+    final notifier = _RefreshClientNotifier([antes], [despues]);
+
+    await tester.pumpWidget(
+      _harness(
+        notifier: notifier,
+        view: ClientsPulsoView(paymentFlow: (_, _, _) async => true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const PageStorageKey('pulso-clients-list')),
+        matching: find.text('Ana Pérez'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('LECTURA OPERATIVA'), findsOneWidget);
+    expect(find.textContaining('2 días'), findsWidgets);
+
+    await tester.ensureVisible(find.text('COBRAR'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COBRAR'));
+    await tester.pumpAndSettle();
+
+    // Sin cerrar el diálogo: acabas de cobrar y la ficha ya lo dice.
+    expect(notifier.refreshCount, 1);
+    expect(find.text('LECTURA OPERATIVA'), findsOneWidget);
+    expect(find.textContaining('34 días'), findsWidgets);
+    expect(find.textContaining('2 días'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('la lista enseña pausada y no la degrada a por vencer', (
     tester,
   ) async {

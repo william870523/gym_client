@@ -402,6 +402,18 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
     ref.read(dashboardNavProvider.notifier).setIndex(31);
   }
 
+  /// El socio tal como está **ahora** en la lista, o la copia recibida si ya
+  /// no está: un borrado no debe dejar el diálogo sin nada que enseñar
+  /// mientras se cierra.
+  ClientModel _clienteVigente(WidgetRef ref, ClientModel copia) {
+    final lista = ref.watch(clientNotifierProvider).value;
+    if (lista == null) return copia;
+    for (final candidato in lista) {
+      if (candidato.id == copia.id) return candidato;
+    }
+    return copia;
+  }
+
   void _showDetail(
     ClientModel client,
     Map<String, String> plans,
@@ -419,25 +431,38 @@ class _ClientsPulsoViewState extends ConsumerState<ClientsPulsoView> {
           child: SizedBox(
             width: 430,
             height: 690,
-            child: _ClientInsight(
-              client: client,
-              plan: plans[client.planId] ?? 'Sin plan',
-              trainer: trainers[client.trainerId] ?? 'Sin entrenador',
-              schedule: schedules[client.scheduleId] ?? 'Sin horario',
-              onEdit: () {
-                Navigator.of(dialogContext).pop();
-                _openForm(client);
+            // La ficha se relee de la lista en cada construcción, en vez de
+            // quedarse con la copia que había al abrir el diálogo.
+            //
+            // Cobrar desde aquí alarga la vigencia. Con la copia capturada, los
+            // pagos sí se actualizaban —su proveedor se observa y se invalida—
+            // y los días no: acababas de cobrar y la pantalla seguía diciendo
+            // los días de antes, hasta cerrar y volver a abrir. El panel lateral
+            // no tenía el defecto porque recibe el socio ya releído de la lista.
+            child: Consumer(
+              builder: (context, ref, _) {
+                final vigente = _clienteVigente(ref, client);
+                return _ClientInsight(
+                  client: vigente,
+                  plan: plans[vigente.planId] ?? 'Sin plan',
+                  trainer: trainers[vigente.trainerId] ?? 'Sin entrenador',
+                  schedule: schedules[vigente.scheduleId] ?? 'Sin horario',
+                  onEdit: () {
+                    Navigator.of(dialogContext).pop();
+                    _openForm(vigente);
+                  },
+                  onDelete: () {
+                    Navigator.of(dialogContext).pop();
+                    _confirmDelete(vigente);
+                  },
+                  onWeight: () => _addWeight(vigente),
+                  onRecord: () => _showRecord(vigente),
+                  onStatistics: () => _showStatistics(vigente),
+                  onPayment: vigente.planId == null
+                      ? null
+                      : () => _processPayment(vigente),
+                );
               },
-              onDelete: () {
-                Navigator.of(dialogContext).pop();
-                _confirmDelete(client);
-              },
-              onWeight: () => _addWeight(client),
-              onRecord: () => _showRecord(client),
-              onStatistics: () => _showStatistics(client),
-              onPayment: client.planId == null
-                  ? null
-                  : () => _processPayment(client),
             ),
           ),
         ),
