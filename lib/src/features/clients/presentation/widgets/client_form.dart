@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/identity/document_type.dart';
 import '../../../auth/presentation/state/auth_notifier.dart';
+import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/time/app_clock.dart';
 import '../../../../core/utils/cuba_ci.dart';
@@ -94,6 +95,17 @@ class _ClientFormState extends ConsumerState<ClientForm> {
       widget.client != null &&
       _categoria != null &&
       _categoria != _categoriaOriginal;
+  /// Lo que el servidor contestó al rechazar el guardado.
+  ///
+  /// El `catch` enseñaba `Error: $e`, que con un `DioException` es un volcado
+  /// técnico de varias líneas: el operador leía «DioException [bad response]…»
+  /// y no el motivo. Los rechazos de esta ficha se explican solos —«Desde la
+  /// ficha no se cambia el entrenador asignado: … se hace por «Cambiar
+  /// entrenador, desde el expediente del socio»»— y el texto tiene que quedarse
+  /// a la vista, no pasar en un aviso de tres segundos: dice por dónde se hace
+  /// lo que se intentó.
+  String? _rechazoServidor;
+
   String? _planId;
   String? _nacionalidadId;
   String? _horarioId; // NEW
@@ -371,10 +383,28 @@ class _ClientFormState extends ConsumerState<ClientForm> {
     });
   }
 
+  /// El motivo del rechazo, tal como lo escribió el servidor.
+  ///
+  /// El repositorio ya trae el `error` del cuerpo envuelto en `Exception`; aquí
+  /// solo se le quita el prefijo, que es ruido de Dart y no dice nada al
+  /// operador. Si de verdad no vino nada —una caída de red— queda el aviso
+  /// genérico de siempre.
+  String _mensajeDeRechazo(Object error) {
+    final texto = error
+        .toString()
+        .replaceFirst(RegExp(r'^Exception:\s*'), '')
+        .trim();
+    return texto.isEmpty ? 'No se pudo guardar la ficha del socio.' : texto;
+  }
+
   Future<void> _submit({bool payNow = false}) async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      // Un rechazo anterior deja de valer en cuanto se vuelve a intentar.
+      _rechazoServidor = null;
+    });
 
     try {
       final email = _emailController.text.trim();
@@ -522,10 +552,20 @@ class _ClientFormState extends ConsumerState<ClientForm> {
         );
       }
     } catch (e) {
+      final motivo = _mensajeDeRechazo(e);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        // El aviso flotante queda **detrás del diálogo**, así que el motivo se
+        // queda además en el formulario, encima del contenido y fuera del
+        // scroll: quien intentó el cambio lo tiene delante mientras lo corrige.
+        setState(() => _rechazoServidor = motivo);
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(motivo),
+              duration: const Duration(seconds: 8),
+            ),
+          );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -643,6 +683,63 @@ class _ClientFormState extends ConsumerState<ClientForm> {
                       ],
                     ),
                   ),
+
+                  // Motivo del rechazo del servidor. Fuera del scroll a
+                  // propósito: el campo que lo provocó puede estar a media
+                  // pantalla de distancia, y un aviso que hay que buscar es un
+                  // aviso que no se lee.
+                  if (_rechazoServidor != null)
+                    Container(
+                      key: const ValueKey('pulso-client-form-rechazo'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.danger.withValues(alpha: 0.10),
+                        border: Border(
+                          bottom: BorderSide(color: palette.danger),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.block,
+                            size: 18,
+                            color: palette.danger,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'NO SE GUARDÓ',
+                                  style: TextStyle(
+                                    fontFamily: PulsoFonts.mono,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.6,
+                                    color: palette.danger,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _rechazoServidor!,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.35,
+                                    color: textMain,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                   // Content
                   Expanded(

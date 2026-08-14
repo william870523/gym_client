@@ -678,6 +678,52 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'el rechazo del servidor se lee en la ficha y no se cierra el formulario',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // El 409 que devuelven las dos APIs cuando se intenta cambiar una
+      // condición del contrato editando la ficha
+      // (`cliente-condiciones-contractuales.ts`, gemelo en local y remoto).
+      const motivo =
+          'Desde la ficha no se cambia el entrenador asignado: tiene '
+          'consecuencias sobre cobros o comisiones y se hace por «Cambiar '
+          'entrenador, desde el expediente del socio».';
+
+      final notifier = _ClientNotifier(_clients(), rechazo: motivo);
+      await tester.pumpWidget(_harness(notifier: notifier));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Editar Ana Pérez'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Guardar cambios'));
+      await tester.pumpAndSettle();
+
+      // El motivo se queda a la vista dentro del diálogo. El aviso flotante se
+      // dibuja detrás del formulario modal, así que por sí solo no vale: quien
+      // guardó no lo vería.
+      final banner = find.byKey(const ValueKey('pulso-client-form-rechazo'));
+      expect(banner, findsOneWidget);
+      expect(
+        find.descendant(of: banner, matching: find.text(motivo)),
+        findsOneWidget,
+      );
+      // Sin `Exception:` delante: eso es ruido de Dart, no lenguaje de gimnasio.
+      expect(find.textContaining('Exception'), findsNothing);
+      expect(find.textContaining('DioException'), findsNothing);
+
+      // Y el formulario sigue abierto con lo que el operador escribió: cerrarlo
+      // le haría repetir la edición entera para leer el motivo.
+      expect(find.text('Editar Cliente'), findsOneWidget);
+      expect(notifier.updates, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('Recepción no ve el acceso a avisos administrativos', (
     tester,
   ) async {
@@ -872,9 +918,13 @@ List<NacionalidadModel> _nationalities() => const [
 ];
 
 class _ClientNotifier extends ClientNotifier {
-  _ClientNotifier(this.items);
+  _ClientNotifier(this.items, {this.rechazo});
   final List<ClientModel> items;
   final updates = <ClientModel>[];
+
+  /// El motivo con que el servidor rechaza el guardado, si la prueba lo pide.
+  /// Llega ya envuelto en `Exception`, que es como lo entrega el repositorio.
+  final String? rechazo;
 
   @override
   Future<List<ClientModel>> build() async => items;
@@ -888,6 +938,7 @@ class _ClientNotifier extends ClientNotifier {
     ClientModel client, {
     String? motivoCategoria,
   }) async {
+    if (rechazo != null) throw Exception(rechazo);
     updates.add(client);
     motivosCategoria.add(motivoCategoria);
     return client;

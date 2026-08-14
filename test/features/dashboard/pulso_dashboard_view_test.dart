@@ -110,6 +110,21 @@ void main() {
 Widget _harness(Widget child) {
   final now = appClock.nowUtc();
   final today = todayInZone(appClock.gymTimezone);
+
+  /// «Hace un rato, pero hoy».
+  ///
+  /// El parte del día solo cuenta lo de **hoy** (`sameDay`), así que restarle
+  /// minutos a `now` manda la fixture a ayer durante los primeros minutos tras
+  /// la medianoche del gimnasio, y el panel de ingresos se queda sin tarjetas.
+  /// Falló de verdad a las 00:06 UTC del 14-08-2026. Es el mismo tropiezo que
+  /// ya costó la fixture de vigencia: una prueba que depende de la hora a la
+  /// que se ejecute no está midiendo lo que dice medir.
+  DateTime haceUnRato(Duration antes) {
+    final momento = now.subtract(antes);
+    final inicioDelDia = calendarDateToUtc(today);
+    return momento.isBefore(inicioDelDia) ? now : momento;
+  }
+
   final clients = [
     ClientModel(
       id: '100',
@@ -145,7 +160,7 @@ Widget _harness(Widget child) {
       id: 'a1',
       clientId: '100',
       clientName: 'Sonia Ruiz Vega',
-      checkIn: now.subtract(const Duration(minutes: 12)),
+      checkIn: haceUnRato(const Duration(minutes: 12)),
     ),
   ];
   final payments = [
@@ -153,7 +168,7 @@ Widget _harness(Widget child) {
       id: 'p1',
       ci: '100',
       clientName: 'Sonia Ruiz Vega',
-      fecha: now.subtract(const Duration(minutes: 8)),
+      fecha: haceUnRato(const Duration(minutes: 8)),
       amount: 25,
       planId: 'plan',
       currencyId: 'eur',
@@ -162,7 +177,7 @@ Widget _harness(Widget child) {
       id: 'p2',
       ci: '200',
       clientName: 'Mario López',
-      fecha: now.subtract(const Duration(minutes: 4)),
+      fecha: haceUnRato(const Duration(minutes: 4)),
       amount: 40,
       planId: 'plan',
       currencyId: 'usd',

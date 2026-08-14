@@ -298,6 +298,17 @@ class ClientRepository {
     );
   }
 
+  /// El motivo que da el servidor al rechazar, o `null` si de verdad no dijo.
+  ///
+  /// Las dos APIs contestan `{ "error": "…" }` y explican el rechazo con el
+  /// nombre del camino correcto —«Desde la ficha no se cambia el entrenador
+  /// asignado: … se hace por «Cambiar entrenador, desde el expediente del
+  /// socio»»—. Ese texto es todo lo que el operador necesita; propagar el
+  /// `DioException` en crudo lo cambia por un volcado técnico que ni cabe en un
+  /// aviso ni dice qué hacer. Es lo mismo que ya se corrigió en el mostrador.
+  String? _motivoDelServidor(DioException error) =>
+      serverErrorDetail(error.response?.data);
+
   Future<ClientModel> createClient(ClientModel client) async {
     try {
       // API expects 'ci' as ID.
@@ -305,14 +316,23 @@ class ClientRepository {
       final data = clientWritePayload(client);
       final response = await _dio.post('/clientes', data: data);
       return ClientModel.fromJson(response.data);
-    } catch (e) {
-      rethrow;
+    } on DioException catch (e) {
+      throw Exception(
+        _motivoDelServidor(e) ??
+            'El servidor rechazó el alta '
+                '(${e.response?.statusCode ?? 'sin respuesta'}).',
+      );
     }
   }
 
   /// R5.3 — `motivoCategoria` acompaña al cambio de categoría, no al resto de
   /// la edición: el servidor solo lo exige cuando la categoría cambia de
   /// verdad, porque eso mueve el precio de todos los cobros futuros.
+  ///
+  /// Los rechazos que este guardado puede recibir **se explican solos** y por
+  /// eso llegan con su texto: 409 por cambiar una condición del contrato desde
+  /// la ficha —entrenador, plan o fechas de cobertura—, 409 por cambiar la
+  /// categoría sin motivo, 403 por no ser administración.
   Future<ClientModel> updateClient(
     ClientModel client, {
     String? motivoCategoria,
@@ -320,17 +340,23 @@ class ClientRepository {
     if (client.id.isEmpty) {
       throw Exception('Client ID cannot be empty');
     }
-    try {
-      final data = clientWritePayload(client);
-      final motivo = motivoCategoria?.trim();
-      if (motivo != null && motivo.isNotEmpty) {
-        data['motivo_categoria'] = motivo;
-      }
-      await _dio.put('/clientes/${client.id}', data: data);
-      return getClient(client.id);
-    } catch (e) {
-      rethrow;
+    final data = clientWritePayload(client);
+    final motivo = motivoCategoria?.trim();
+    if (motivo != null && motivo.isNotEmpty) {
+      data['motivo_categoria'] = motivo;
     }
+    try {
+      await _dio.put('/clientes/${client.id}', data: data);
+    } on DioException catch (e) {
+      throw Exception(
+        _motivoDelServidor(e) ??
+            'El servidor rechazó el guardado '
+                '(${e.response?.statusCode ?? 'sin respuesta'}).',
+      );
+    }
+    // Fuera del `try`: una relectura fallida no es un rechazo del guardado, y
+    // contarla como tal enseñaría un motivo que el servidor no dio.
+    return getClient(client.id);
   }
 
   Future<void> deleteClient(String ci) async {

@@ -75,7 +75,7 @@ Dio apiClient(Ref ref) {
       },
       onError: (DioException e, handler) {
         if (kDebugMode) {
-          final serverDetail = _serverErrorDetail(e.response?.data);
+          final serverDetail = serverErrorDetail(e.response?.data);
           _apiLogger.w(
             '[API] ${e.response?.statusCode ?? 'ERR'} ${e.requestOptions.path}: '
             '${serverDetail ?? e.message}',
@@ -89,7 +89,14 @@ Dio apiClient(Ref ref) {
   return dio;
 }
 
-String? _serverErrorDetail(dynamic data) {
+/// Lo que el servidor dijo al rechazar, o `null` si no dijo nada.
+///
+/// Público a propósito: el registro de depuración no puede ser el único sitio
+/// donde se lea el motivo. Los rechazos de negocio —«Desde la ficha no se
+/// cambia el entrenador asignado…»— tienen que llegar a la pantalla con estas
+/// mismas reglas, y una segunda idea de «qué dijo el servidor» se desincroniza
+/// de esta el día que una API conteste `message` en vez de `error`.
+String? serverErrorDetail(dynamic data) {
   if (data is Map) {
     final detail = data['error'] ?? data['message'] ?? data['detail'];
     if (detail != null && detail.toString().trim().isNotEmpty) {
