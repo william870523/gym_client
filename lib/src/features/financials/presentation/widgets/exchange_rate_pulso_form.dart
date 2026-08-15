@@ -71,7 +71,9 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
       _activo = initial.activo;
       _startDate = initial.fechaInicio;
       _endDate = initial.fechaExpiracion;
-      for (final entry in initial.recargos.entries) {
+      // Este formulario edita el catálogo global. La excepción de la sede se
+      // gobierna en su diálogo propio para no confundir ambos alcances.
+      for (final entry in initial.recargosGlobales.entries) {
         _surcharges.add(_SurchargeEntry(entry.key, entry.value));
       }
     } else {
@@ -339,9 +341,8 @@ class _ExchangeRatePulsoFormState extends ConsumerState<ExchangeRatePulsoForm> {
                             const PulsoLabel('Recargos por método de pago'),
                             const SizedBox(height: 6),
                             Text(
-                              'Porcentaje adicional que cobra el gimnasio según el método '
-                              '(p. ej. transferencia). En efectivo no se configura nada. '
-                              'El recargo es ganancia del gimnasio y sale desglosado en el recibo.',
+                              'Valor predeterminado de plataforma. Cada sede puede heredarlo, '
+                              'cambiarlo o desactivarlo con una excepción propia.',
                               style: TextStyle(color: tokens.muted, fontSize: 12),
                             ),
                             const SizedBox(height: 12),

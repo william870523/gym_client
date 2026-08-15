@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../widgets/global_catalog_authority.dart';
 import '../../data/models/payment_type_model.dart';
 import '../state/payment_type_notifier.dart';
 import '../widgets/payment_type_pulso_form.dart';
@@ -365,10 +366,12 @@ class _PaymentTypeHeader extends StatelessWidget {
             ),
           ],
         );
-        final action = PulsoPrimaryButton(
-          label: 'Nuevo tipo',
-          icon: Icons.add,
-          onPressed: onCreate,
+        final action = GlobalCatalogAuthority(
+          child: PulsoPrimaryButton(
+            label: 'Nuevo tipo',
+            icon: Icons.add,
+            onPressed: onCreate,
+          ),
         );
         return constraints.maxWidth < 680
             ? Column(
@@ -804,36 +807,44 @@ class _PaymentTypeRow extends StatelessWidget {
                   ),
                 ),
                 Expanded(flex: 3, child: _PaymentStatus(active: item.active)),
-                SizedBox(
-                  width: 100,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      PulsoIconButton(
-                        icon: Icons.edit_outlined,
-                        tooltip: 'Editar ${item.name}',
-                        onPressed: onEdit,
-                      ),
-                      const SizedBox(width: 4),
-                      PulsoIconButton(
-                        icon: Icons.delete_outline,
-                        tooltip: 'Eliminar ${item.name}',
-                        danger: true,
-                        onPressed: onDelete,
-                      ),
-                    ],
+                GlobalCatalogAuthority(
+                  readOnly: const SizedBox(
+                    width: 100,
+                    child: Center(child: Icon(Icons.lock_outline, size: 18)),
+                  ),
+                  child: SizedBox(
+                    width: 100,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        PulsoIconButton(
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Editar ${item.name}',
+                          onPressed: onEdit,
+                        ),
+                        const SizedBox(width: 4),
+                        PulsoIconButton(
+                          icon: Icons.delete_outline,
+                          tooltip: 'Eliminar ${item.name}',
+                          danger: true,
+                          onPressed: onDelete,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ] else
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'edit') onEdit();
-                    if (value == 'delete') onDelete();
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                  ],
+                GlobalCatalogAuthority(
+                  child: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') onEdit();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Editar')),
+                      PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -921,17 +932,25 @@ class _PaymentTypeDetail extends StatelessWidget {
             value: paymentType.active ? 'Activo' : 'Inactivo',
           ),
           const Spacer(),
-          PulsoPrimaryButton(
-            label: 'Editar tipo',
-            icon: Icons.edit_outlined,
-            onPressed: onEdit,
-          ),
-          const SizedBox(height: 8),
-          PulsoSecondaryButton(
-            label: 'Eliminar',
-            icon: Icons.delete_outline,
-            danger: true,
-            onPressed: onDelete,
+          GlobalCatalogAuthority(
+            readOnly: const Text('Catálogo global · solo lectura'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PulsoPrimaryButton(
+                  label: 'Editar tipo',
+                  icon: Icons.edit_outlined,
+                  onPressed: onEdit,
+                ),
+                const SizedBox(height: 8),
+                PulsoSecondaryButton(
+                  label: 'Eliminar',
+                  icon: Icons.delete_outline,
+                  danger: true,
+                  onPressed: onDelete,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           Text(

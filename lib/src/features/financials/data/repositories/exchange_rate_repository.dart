@@ -27,9 +27,10 @@ class ExchangeRateRepository {
     }
   }
 
-  Future<void> create(Map<String, dynamic> data) async {
+  Future<ExchangeRateModel> create(Map<String, dynamic> data) async {
     try {
-      await _dio.post('/tipos-cambio', data: data);
+      final response = await _dio.post('/tipos-cambio', data: data);
+      return ExchangeRateModel.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {
       if (e is DioException) {
         final message = e.response?.data?['error'] ?? e.message;
@@ -37,6 +38,24 @@ class ExchangeRateRepository {
       }
       throw Exception('Failed to create exchange rate: $e');
     }
+  }
+
+  Future<void> replaceSiteSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {
+    await _dio.put('/tipos-cambio/$id/recargos/sede', data: {'recargos': values});
+  }
+
+  Future<void> resetSiteSurcharges(String id) async {
+    await _dio.delete('/tipos-cambio/$id/recargos/sede');
+  }
+
+  Future<void> replaceGlobalSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {
+    await _dio.put('/tipos-cambio/$id/recargos/global', data: {'recargos': values});
   }
 
   Future<void> update(String id, Map<String, dynamic> data) async {

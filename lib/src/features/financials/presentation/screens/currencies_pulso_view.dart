@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../../../configuration/presentation/widgets/global_catalog_authority.dart';
 import '../../data/models/currency_model.dart';
 import '../../data/models/exchange_rate_model.dart';
 import '../providers/exchange_rate_notifier.dart';
@@ -514,10 +515,12 @@ class _PageHeader extends StatelessWidget {
             ),
           ],
         );
-        final action = PulsoPrimaryButton(
-          label: 'Nueva moneda',
-          icon: Icons.add,
-          onPressed: onCreate,
+        final action = GlobalCatalogAuthority(
+          child: PulsoPrimaryButton(
+            label: 'Nueva moneda',
+            icon: Icons.add,
+            onPressed: onCreate,
+          ),
         );
         if (constraints.maxWidth < 680) {
           return Column(
@@ -1071,39 +1074,47 @@ class _CurrencyRow extends StatelessWidget {
                   ),
                 ),
                 Expanded(flex: 2, child: _CurrencyStatus(label: status)),
-                SizedBox(
-                  width: 100,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      PulsoIconButton(
-                        icon: Icons.edit_outlined,
-                        tooltip: 'Editar ${currency.name}',
-                        onPressed: onEdit,
-                      ),
-                      const SizedBox(width: 4),
-                      PulsoIconButton(
-                        icon: Icons.delete_outline,
-                        tooltip: 'Eliminar ${currency.name}',
-                        danger: true,
-                        onPressed: onDelete,
-                      ),
-                    ],
+                GlobalCatalogAuthority(
+                  readOnly: const SizedBox(
+                    width: 100,
+                    child: Center(child: Icon(Icons.lock_outline, size: 18)),
+                  ),
+                  child: SizedBox(
+                    width: 100,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        PulsoIconButton(
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Editar ${currency.name}',
+                          onPressed: onEdit,
+                        ),
+                        const SizedBox(width: 4),
+                        PulsoIconButton(
+                          icon: Icons.delete_outline,
+                          tooltip: 'Eliminar ${currency.name}',
+                          danger: true,
+                          onPressed: onDelete,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ] else
-                PopupMenuButton<String>(
-                  tooltip: 'Acciones de ${currency.name}',
-                  color: tokens.surface,
-                  iconColor: tokens.muted,
-                  onSelected: (value) {
-                    if (value == 'edit') onEdit();
-                    if (value == 'delete') onDelete();
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                  ],
+                GlobalCatalogAuthority(
+                  child: PopupMenuButton<String>(
+                    tooltip: 'Acciones de ${currency.name}',
+                    color: tokens.surface,
+                    iconColor: tokens.muted,
+                    onSelected: (value) {
+                      if (value == 'edit') onEdit();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Editar')),
+                      PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -1543,17 +1554,25 @@ class _CurrencyDetail extends StatelessWidget {
                   onPressed: onExploreRates,
                 ),
                 const SizedBox(height: 8),
-                PulsoPrimaryButton(
-                  label: 'Editar moneda',
-                  icon: Icons.edit_outlined,
-                  onPressed: onEdit,
-                ),
-                const SizedBox(height: 8),
-                PulsoSecondaryButton(
-                  label: 'Eliminar',
-                  icon: Icons.delete_outline,
-                  danger: true,
-                  onPressed: onDelete,
+                GlobalCatalogAuthority(
+                  readOnly: const Text('Catálogo global · solo lectura'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PulsoPrimaryButton(
+                        label: 'Editar moneda',
+                        icon: Icons.edit_outlined,
+                        onPressed: onEdit,
+                      ),
+                      const SizedBox(height: 8),
+                      PulsoSecondaryButton(
+                        label: 'Eliminar',
+                        icon: Icons.delete_outline,
+                        danger: true,
+                        onPressed: onDelete,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Text(

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'currency_model.dart';
+import '../../../../core/money/decimal_json.dart';
 
 part 'exchange_rate_model.freezed.dart';
 part 'exchange_rate_model.g.dart';
@@ -12,8 +13,16 @@ sealed class ExchangeRateModel with _$ExchangeRateModel {
     @JsonKey(name: 'tipo_cambio_id') required String id,
     @JsonKey(name: 'moneda_id_base') required String monedaIdBase,
     @JsonKey(name: 'moneda_id_target') required String monedaIdTarget,
-    @JsonKey(name: 'exchange_rate') required double exchangeRate,
+    @JsonKey(name: 'exchange_rate', fromJson: decimalJsonToDouble)
+    required double exchangeRate,
     @JsonKey(name: 'recargos_json') String? recargosJson,
+    @JsonKey(name: 'recargos_globales_json') String? recargosGlobalesJson,
+    @JsonKey(name: 'recargos_sede_json') String? recargosSedeJson,
+    @JsonKey(name: 'recargos_fuentes_json') String? recargosFuentesJson,
+    @JsonKey(name: 'recargos_fuente') @Default('NINGUNO') String recargosFuente,
+    @JsonKey(name: 'recargos_gym_id') String? recargosGymId,
+    @JsonKey(name: 'puede_editar_global') @Default(true) bool puedeEditarGlobal,
+    @JsonKey(name: 'puede_editar_sede') @Default(true) bool puedeEditarSede,
     @JsonKey(name: 'fecha_inicio') required DateTime fechaInicio,
     @JsonKey(name: 'fecha_expiracion') DateTime? fechaExpiracion,
     @Default(true) bool activo,
@@ -33,7 +42,20 @@ extension ExchangeRateSurcharges on ExchangeRateModel {
   /// Mapa `tipo_pago_id → porcentaje` ("5.00"). Vacío si no hay recargos o el
   /// JSON persistido no es legible (el servidor es la autoridad de validez).
   Map<String, String> get recargos {
-    final stored = recargosJson;
+    return _decodeSurcharges(recargosJson);
+  }
+
+  Map<String, String> get recargosGlobales => _decodeSurcharges(
+    recargosGlobalesJson ?? recargosJson,
+  );
+
+  /// Incluye `0.00`: es la excepción explícita que apaga un valor global.
+  Map<String, String> get recargosSede => _decodeSurcharges(recargosSedeJson);
+
+  Map<String, String> get recargosFuentes =>
+      _decodeSurcharges(recargosFuentesJson);
+
+  Map<String, String> _decodeSurcharges(String? stored) {
     if (stored == null || stored.trim().isEmpty) return const {};
     try {
       final decoded = jsonDecode(stored);
@@ -48,4 +70,6 @@ extension ExchangeRateSurcharges on ExchangeRateModel {
   }
 
   bool get tieneRecargos => recargos.isNotEmpty;
+
+  bool get tieneExcepcionSede => recargosSede.isNotEmpty;
 }

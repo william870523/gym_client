@@ -212,7 +212,8 @@ void main() {
 
     expect(rateNotifier.updates, hasLength(1));
     final (_, data) = rateNotifier.updates.single;
-    expect(data['recargos'], {'tp-transfer': '7.50'});
+    expect(data.containsKey('recargos'), isFalse);
+    expect(rateNotifier.globalUpdates.single.$2, {'tp-transfer': '7.50'});
     expect(tester.takeException(), isNull);
   });
 
@@ -262,7 +263,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(rateNotifier.creates, hasLength(1));
-    expect(rateNotifier.creates.single['recargos'], {'tp-transfer': '5.00'});
+    expect(rateNotifier.creates.single.containsKey('recargos'), isFalse);
+    expect(rateNotifier.globalUpdates.single.$2, {'tp-transfer': '5.00'});
     expect(tester.takeException(), isNull);
   });
 
@@ -354,6 +356,7 @@ class _RateNotifier extends ExchangeRateNotifier {
   final List<ExchangeRateModel> items;
   final updates = <(String, Map<String, dynamic>)>[];
   final creates = <Map<String, dynamic>>[];
+  final globalUpdates = <(String, Map<String, String>)>[];
 
   @override
   Future<List<ExchangeRateModel>> build() async => items;
@@ -364,9 +367,27 @@ class _RateNotifier extends ExchangeRateNotifier {
   }
 
   @override
-  Future<void> create(Map<String, dynamic> data) async {
+  Future<ExchangeRateModel> create(Map<String, dynamic> data) async {
     creates.add(data);
+    return items.first;
   }
+
+  @override
+  Future<void> replaceGlobalSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {
+    globalUpdates.add((id, values));
+  }
+
+  @override
+  Future<void> replaceSiteSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {}
+
+  @override
+  Future<void> resetSiteSurcharges(String id) async {}
 }
 
 class _CurrencyNotifier extends CurrencyNotifier {

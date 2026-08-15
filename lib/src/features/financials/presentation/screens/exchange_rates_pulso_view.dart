@@ -9,11 +9,13 @@ import '../../../../core/time/app_clock.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../configuration/presentation/state/payment_type_notifier.dart';
 import '../../../dashboard/presentation/state/dashboard_nav_provider.dart';
+import '../../../auth/presentation/state/sede_session_provider.dart';
 import '../../data/models/currency_model.dart';
 import '../../data/models/exchange_rate_model.dart';
 import '../providers/exchange_rate_notifier.dart';
 import '../state/currency_notifier.dart';
 import '../widgets/exchange_rate_pulso_form.dart';
+import '../widgets/exchange_rate_surcharge_scope_form.dart';
 
 enum _RateFilter { all, active, expired }
 
@@ -148,10 +150,15 @@ class _ExchangeRatesPulsoViewState
         initialData: item,
         onSubmit: (data) async {
           final notifier = ref.read(exchangeRateProvider.notifier);
+          final recargos = Map<String, String>.from(
+            (data.remove('recargos') as Map?) ?? const {},
+          );
           if (item == null) {
-            await notifier.create(data);
+            final created = await notifier.create(data);
+            await notifier.replaceGlobalSurcharges(created.id, recargos);
           } else {
             await notifier.updateExchangeRate(item.id, data);
+            await notifier.replaceGlobalSurcharges(item.id, recargos);
           }
         },
       ),
@@ -181,8 +188,14 @@ class _ExchangeRatesPulsoViewState
         initialBaseCurrencyId: item.monedaIdBase,
         initialTargetCurrencyId: item.monedaIdTarget,
         initialRate: item.exchangeRate,
-        onSubmit: (data) =>
-            ref.read(exchangeRateProvider.notifier).create(data),
+        onSubmit: (data) async {
+          final recargos = Map<String, String>.from(
+            (data.remove('recargos') as Map?) ?? const {},
+          );
+          final notifier = ref.read(exchangeRateProvider.notifier);
+          final created = await notifier.create(data);
+          await notifier.replaceGlobalSurcharges(created.id, recargos);
+        },
       ),
     );
     if (!mounted || saved != true) return;
@@ -190,6 +203,45 @@ class _ExchangeRatesPulsoViewState
       SnackBar(
         content: Text(
           'La tasa ${_pairLabel(item, currencyMap)} fue renovada.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSurchargeForm(
+    ExchangeRateModel item,
+    Map<String, CurrencyModel> currencyMap, {
+    required bool global,
+  }) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ExchangeRateSurchargeScopeForm(
+        rateLabel: _pairLabel(item, currencyMap),
+        initial: global ? item.recargosGlobales : item.recargosSede,
+        globalValues: item.recargosGlobales,
+        isGlobal: global,
+        onSubmit: (values) => global
+            ? ref
+                  .read(exchangeRateProvider.notifier)
+                  .replaceGlobalSurcharges(item.id, values)
+            : ref
+                  .read(exchangeRateProvider.notifier)
+                  .replaceSiteSurcharges(item.id, values),
+        onReset: global
+            ? null
+            : () => ref
+                  .read(exchangeRateProvider.notifier)
+                  .resetSiteSurcharges(item.id),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          global
+              ? 'El recargo global fue actualizado.'
+              : 'La excepción de esta sede fue actualizada.',
         ),
       ),
     );
@@ -266,18 +318,26 @@ class _ExchangeRatesPulsoViewState
             child: _RateDetail(
               item: item,
               currencyMap: currencyMap,
-              onEdit: () {
+              onEdit: item.puedeEditarGlobal ? () {
                 Navigator.of(dialogContext).pop();
                 _openForm(item);
+              } : null,
+              onEditSiteSurcharges: () {
+                Navigator.of(dialogContext).pop();
+                _openSurchargeForm(item, currencyMap, global: false);
               },
-              onRenew: () {
+              onEditGlobalSurcharges: item.puedeEditarGlobal ? () {
+                Navigator.of(dialogContext).pop();
+                _openSurchargeForm(item, currencyMap, global: true);
+              } : null,
+              onRenew: item.puedeEditarGlobal ? () {
                 Navigator.of(dialogContext).pop();
                 _renewRate(item, currencyMap);
-              },
-              onDelete: () {
+              } : null,
+              onDelete: item.puedeEditarGlobal ? () {
                 Navigator.of(dialogContext).pop();
                 _confirmDelete(item, currencyMap);
-              },
+              } : null,
               onCurrencies: () {
                 Navigator.of(dialogContext).pop();
                 _goToCurrencies();
@@ -312,6 +372,9 @@ class _ExchangeRatesPulsoViewState
   Widget _buildPage(BuildContext context) {
     final state = ref.watch(exchangeRateProvider);
     final all = state.value ?? const <ExchangeRateModel>[];
+    final isOwner =
+        ref.watch(esDuenoDeCadenaProvider) ||
+        all.any((rate) => rate.puedeEditarGlobal);
     final currencyMap = <String, CurrencyModel>{
       for (final currency
           in ref.watch(currencyProvider).value ?? const <CurrencyModel>[])
@@ -387,6 +450,10 @@ class _ExchangeRatesPulsoViewState
                     }
                   },
                   onEdit: _openForm,
+                  onEditSiteSurcharges: (item) =>
+                      _openSurchargeForm(item, currencyMap, global: false),
+                  onEditGlobalSurcharges: (item) =>
+                      _openSurchargeForm(item, currencyMap, global: true),
                   onRenew: (item) => _renewRate(item, currencyMap),
                   onDelete: (item) => _confirmDelete(item, currencyMap),
                   onCurrencies: _goToCurrencies,
@@ -396,7 +463,7 @@ class _ExchangeRatesPulsoViewState
           mainAxisSize: scrollPage ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _RateHeader(onCreate: () => _openForm()),
+            _RateHeader(onCreate: isOwner ? () => _openForm() : null),
             const SizedBox(height: 14),
             PulsoMetricStrip(
               metrics: [
@@ -461,7 +528,7 @@ class _ExchangeRatesPulsoViewState
 
 class _RateHeader extends StatelessWidget {
   const _RateHeader({required this.onCreate});
-  final VoidCallback onCreate;
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -492,11 +559,13 @@ class _RateHeader extends StatelessWidget {
             ),
           ],
         );
-        final action = PulsoPrimaryButton(
-          label: 'Nueva tasa',
-          icon: Icons.add,
-          onPressed: onCreate,
-        );
+        final action = onCreate == null
+            ? const SizedBox.shrink()
+            : PulsoPrimaryButton(
+                label: 'Nueva tasa global',
+                icon: Icons.add,
+                onPressed: onCreate,
+              );
         return constraints.maxWidth < 680
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -639,6 +708,8 @@ class _RateWorkspace extends StatelessWidget {
     required this.onSort,
     required this.onSelect,
     required this.onEdit,
+    required this.onEditSiteSurcharges,
+    required this.onEditGlobalSurcharges,
     required this.onRenew,
     required this.onDelete,
     required this.onCurrencies,
@@ -652,6 +723,8 @@ class _RateWorkspace extends StatelessWidget {
   final ValueChanged<_RateSort> onSort;
   final ValueChanged<ExchangeRateModel> onSelect;
   final ValueChanged<ExchangeRateModel> onEdit;
+  final ValueChanged<ExchangeRateModel> onEditSiteSurcharges;
+  final ValueChanged<ExchangeRateModel> onEditGlobalSurcharges;
   final ValueChanged<ExchangeRateModel> onRenew;
   final ValueChanged<ExchangeRateModel> onDelete;
   final VoidCallback onCurrencies;
@@ -669,6 +742,8 @@ class _RateWorkspace extends StatelessWidget {
           onSort: onSort,
           onSelect: onSelect,
           onEdit: onEdit,
+          onEditSiteSurcharges: onEditSiteSurcharges,
+          onEditGlobalSurcharges: onEditGlobalSurcharges,
           onDelete: onDelete,
         );
         if (constraints.maxWidth < 1040) return list;
@@ -682,9 +757,22 @@ class _RateWorkspace extends StatelessWidget {
               child: _RateDetail(
                 item: selected,
                 currencyMap: currencyMap,
-                onEdit: selected == null ? null : () => onEdit(selected!),
-                onRenew: selected == null ? null : () => onRenew(selected!),
-                onDelete: selected == null ? null : () => onDelete(selected!),
+                onEdit: selected?.puedeEditarGlobal != true
+                    ? null
+                    : () => onEdit(selected!),
+                onEditSiteSurcharges: selected == null
+                    ? null
+                    : () => onEditSiteSurcharges(selected!),
+                onEditGlobalSurcharges:
+                    selected?.puedeEditarGlobal != true
+                    ? null
+                    : () => onEditGlobalSurcharges(selected!),
+                onRenew: selected?.puedeEditarGlobal != true
+                    ? null
+                    : () => onRenew(selected!),
+                onDelete: selected?.puedeEditarGlobal != true
+                    ? null
+                    : () => onDelete(selected!),
                 onCurrencies: onCurrencies,
               ),
             ),
@@ -705,6 +793,8 @@ class _RateList extends StatelessWidget {
     required this.onSort,
     required this.onSelect,
     required this.onEdit,
+    required this.onEditSiteSurcharges,
+    required this.onEditGlobalSurcharges,
     required this.onDelete,
   });
   final List<ExchangeRateModel> items;
@@ -715,6 +805,8 @@ class _RateList extends StatelessWidget {
   final ValueChanged<_RateSort> onSort;
   final ValueChanged<ExchangeRateModel> onSelect;
   final ValueChanged<ExchangeRateModel> onEdit;
+  final ValueChanged<ExchangeRateModel> onEditSiteSurcharges;
+  final ValueChanged<ExchangeRateModel> onEditGlobalSurcharges;
   final ValueChanged<ExchangeRateModel> onDelete;
 
   @override
@@ -770,7 +862,7 @@ class _RateList extends StatelessWidget {
                           child: PulsoLabel('Estado'),
                         ),
                       ),
-                      const SizedBox(width: 100),
+                      const SizedBox(width: 152),
                     ],
                   ],
                 ),
@@ -790,8 +882,12 @@ class _RateList extends StatelessWidget {
                       selected: selectedId == item.id,
                       compact: compact,
                       onSelect: () => onSelect(item),
-                      onEdit: () => onEdit(item),
-                      onDelete: () => onDelete(item),
+                      onEdit: item.puedeEditarGlobal ? () => onEdit(item) : null,
+                      onEditSiteSurcharges: () => onEditSiteSurcharges(item),
+                      onEditGlobalSurcharges: item.puedeEditarGlobal
+                          ? () => onEditGlobalSurcharges(item)
+                          : null,
+                      onDelete: item.puedeEditarGlobal ? () => onDelete(item) : null,
                     );
                   },
                 ),
@@ -871,6 +967,8 @@ class _RateRow extends StatelessWidget {
     required this.compact,
     required this.onSelect,
     required this.onEdit,
+    required this.onEditSiteSurcharges,
+    required this.onEditGlobalSurcharges,
     required this.onDelete,
   });
   final ExchangeRateModel item;
@@ -878,8 +976,10 @@ class _RateRow extends StatelessWidget {
   final bool selected;
   final bool compact;
   final VoidCallback onSelect;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback onEditSiteSurcharges;
+  final VoidCallback? onEditGlobalSurcharges;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -992,16 +1092,20 @@ class _RateRow extends StatelessWidget {
                 ),
                 Expanded(flex: 2, child: _RateStatusChip(status: status)),
                 SizedBox(
-                  width: 100,
+                  width: 152,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      PulsoIconButton(
+                        icon: Icons.tune,
+                        tooltip: 'Recargo de esta sede',
+                        onPressed: onEditSiteSurcharges,
+                      ),
                       PulsoIconButton(
                         icon: Icons.edit_outlined,
                         tooltip: 'Editar $baseCode → $targetCode',
                         onPressed: onEdit,
                       ),
-                      const SizedBox(width: 4),
                       PulsoIconButton(
                         icon: Icons.delete_outline,
                         tooltip: 'Eliminar $baseCode → $targetCode',
@@ -1014,12 +1118,25 @@ class _RateRow extends StatelessWidget {
               ] else
                 PopupMenuButton<String>(
                   onSelected: (value) {
-                    if (value == 'edit') onEdit();
-                    if (value == 'delete') onDelete();
+                    if (value == 'site') onEditSiteSurcharges();
+                    if (value == 'global') onEditGlobalSurcharges?.call();
+                    if (value == 'edit') onEdit?.call();
+                    if (value == 'delete') onDelete?.call();
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'site',
+                      child: Text('Recargo de esta sede'),
+                    ),
+                    if (onEditGlobalSurcharges != null)
+                      const PopupMenuItem(
+                        value: 'global',
+                        child: Text('Recargo global'),
+                      ),
+                    if (onEdit != null)
+                      const PopupMenuItem(value: 'edit', child: Text('Editar tasa')),
+                    if (onDelete != null)
+                      const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
                   ],
                 ),
             ],
@@ -1071,6 +1188,8 @@ class _RateDetail extends ConsumerWidget {
     required this.item,
     required this.currencyMap,
     required this.onEdit,
+    required this.onEditSiteSurcharges,
+    required this.onEditGlobalSurcharges,
     required this.onRenew,
     required this.onDelete,
     required this.onCurrencies,
@@ -1078,6 +1197,8 @@ class _RateDetail extends ConsumerWidget {
   final ExchangeRateModel? item;
   final Map<String, CurrencyModel> currencyMap;
   final VoidCallback? onEdit;
+  final VoidCallback? onEditSiteSurcharges;
+  final VoidCallback? onEditGlobalSurcharges;
   final VoidCallback? onRenew;
   final VoidCallback? onDelete;
   final VoidCallback onCurrencies;
@@ -1163,7 +1284,16 @@ class _RateDetail extends ConsumerWidget {
                     value:
                         '${_fmtDate(rate.fechaInicio)} → ${_fmtDate(rate.fechaExpiracion)}',
                   ),
-                  // R5.1: recargos por método (ganancia del gimnasio).
+                  _DetailLine(
+                    label: 'Ámbito recargo',
+                    value: switch (rate.recargosFuente) {
+                      'SEDE' => 'Excepción de esta sede',
+                      'MIXTO' => 'Global + excepciones',
+                      'GLOBAL' => 'Heredado de plataforma',
+                      _ => 'Sin recargo',
+                    },
+                  ),
+                  // M3: el resumen usa el valor efectivo ya resuelto por API.
                   if (rate.tieneRecargos)
                     _DetailLine(
                       label: 'Recargos',
@@ -1174,22 +1304,39 @@ class _RateDetail extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
+          PulsoPrimaryButton(
+            key: const ValueKey('rate-edit-site-surcharges'),
+            label: 'Recargo de esta sede',
+            icon: Icons.tune,
+            onPressed: onEditSiteSurcharges,
+          ),
+          if (onEditGlobalSurcharges != null) ...[
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Recargo global',
+              icon: Icons.public,
+              onPressed: onEditGlobalSurcharges,
+            ),
+          ],
+          if (onEdit != null || onRenew != null) const SizedBox(height: 8),
           // Una tasa vencida se renueva de una pulsación: alta precargada con
           // el par y la última tasa, vigente desde hoy.
-          if (status == _RateStatus.expired) ...[
+          if (status == _RateStatus.expired && onRenew != null) ...[
             PulsoPrimaryButton(
               label: 'Renovar tasa',
               icon: Icons.autorenew,
               onPressed: onRenew,
             ),
-            const SizedBox(height: 8),
+            if (onEdit != null) ...[
+              const SizedBox(height: 8),
+              PulsoSecondaryButton(
+                label: 'Editar tasa global',
+                icon: Icons.edit_outlined,
+                onPressed: onEdit,
+              ),
+            ],
+          ] else if (onEdit != null) ...[
             PulsoSecondaryButton(
-              label: 'Editar tasa',
-              icon: Icons.edit_outlined,
-              onPressed: onEdit,
-            ),
-          ] else ...[
-            PulsoPrimaryButton(
               label: 'Editar tasa',
               icon: Icons.edit_outlined,
               onPressed: onEdit,
@@ -1201,13 +1348,15 @@ class _RateDetail extends ConsumerWidget {
               onPressed: onCurrencies,
             ),
           ],
-          const SizedBox(height: 8),
-          PulsoSecondaryButton(
-            label: 'Eliminar',
-            icon: Icons.delete_outline,
-            danger: true,
-            onPressed: onDelete,
-          ),
+          if (onDelete != null) ...[
+            const SizedBox(height: 8),
+            PulsoSecondaryButton(
+              label: 'Eliminar',
+              icon: Icons.delete_outline,
+              danger: true,
+              onPressed: onDelete,
+            ),
+          ],
           const SizedBox(height: 14),
           Text(
             rate.id,

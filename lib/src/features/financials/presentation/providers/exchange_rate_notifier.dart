@@ -21,10 +21,11 @@ class ExchangeRateNotifier extends _$ExchangeRateNotifier {
     state = await AsyncValue.guard(() => _fetch());
   }
 
-  Future<void> create(Map<String, dynamic> data) async {
+  Future<ExchangeRateModel> create(Map<String, dynamic> data) async {
     final repository = ref.read(exchangeRateRepositoryProvider);
-    await repository.create(data);
+    final created = await repository.create(data);
     await refresh();
+    return created;
   }
 
   Future<void> updateExchangeRate(String id, Map<String, dynamic> data) async {
@@ -36,6 +37,27 @@ class ExchangeRateNotifier extends _$ExchangeRateNotifier {
   Future<void> delete(String id) async {
     final repository = ref.read(exchangeRateRepositoryProvider);
     await repository.delete(id);
+    await refresh();
+  }
+
+  Future<void> replaceSiteSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {
+    await ref.read(exchangeRateRepositoryProvider).replaceSiteSurcharges(id, values);
+    await refresh();
+  }
+
+  Future<void> resetSiteSurcharges(String id) async {
+    await ref.read(exchangeRateRepositoryProvider).resetSiteSurcharges(id);
+    await refresh();
+  }
+
+  Future<void> replaceGlobalSurcharges(
+    String id,
+    Map<String, String> values,
+  ) async {
+    await ref.read(exchangeRateRepositoryProvider).replaceGlobalSurcharges(id, values);
     await refresh();
   }
 }

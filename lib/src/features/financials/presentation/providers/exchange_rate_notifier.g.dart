@@ -35,7 +35,7 @@ final class ExchangeRateNotifierProvider
 }
 
 String _$exchangeRateNotifierHash() =>
-    r'252a855df6b5c9191820b34d49fee09656ecc874';
+    r'50d66577356cdf876d4947d7132252b1ec39accb';
 
 abstract class _$ExchangeRateNotifier
     extends $AsyncNotifier<List<ExchangeRateModel>> {

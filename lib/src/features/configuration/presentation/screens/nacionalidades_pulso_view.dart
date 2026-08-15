@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
+import '../widgets/global_catalog_authority.dart';
 import '../../data/models/nacionalidad_model.dart';
 import '../state/nacionalidad_notifier.dart';
 import '../widgets/nacionalidad_pulso_form.dart';
@@ -387,10 +388,12 @@ class _NationalityHeader extends StatelessWidget {
             ),
           ],
         );
-        final action = PulsoPrimaryButton(
-          label: 'Nueva nacionalidad',
-          icon: Icons.add,
-          onPressed: onCreate,
+        final action = GlobalCatalogAuthority(
+          child: PulsoPrimaryButton(
+            label: 'Nueva nacionalidad',
+            icon: Icons.add,
+            onPressed: onCreate,
+          ),
         );
         if (constraints.maxWidth < 680) {
           return Column(
@@ -841,38 +844,46 @@ class _NationalityRow extends StatelessWidget {
                   ),
                 ),
                 Expanded(flex: 3, child: _NationalityStatus(complete: hasFlag)),
-                SizedBox(
-                  width: 100,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      PulsoIconButton(
-                        icon: Icons.edit_outlined,
-                        tooltip: 'Editar ${item.name}',
-                        onPressed: onEdit,
-                      ),
-                      const SizedBox(width: 4),
-                      PulsoIconButton(
-                        icon: Icons.delete_outline,
-                        tooltip: 'Eliminar ${item.name}',
-                        danger: true,
-                        onPressed: onDelete,
-                      ),
-                    ],
+                GlobalCatalogAuthority(
+                  readOnly: const SizedBox(
+                    width: 100,
+                    child: Center(child: Icon(Icons.lock_outline, size: 18)),
+                  ),
+                  child: SizedBox(
+                    width: 100,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        PulsoIconButton(
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Editar ${item.name}',
+                          onPressed: onEdit,
+                        ),
+                        const SizedBox(width: 4),
+                        PulsoIconButton(
+                          icon: Icons.delete_outline,
+                          tooltip: 'Eliminar ${item.name}',
+                          danger: true,
+                          onPressed: onDelete,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ] else
-                PopupMenuButton<String>(
-                  tooltip: 'Acciones de ${item.name}',
-                  color: tokens.surface,
-                  onSelected: (value) {
-                    if (value == 'edit') onEdit();
-                    if (value == 'delete') onDelete();
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                  ],
+                GlobalCatalogAuthority(
+                  child: PopupMenuButton<String>(
+                    tooltip: 'Acciones de ${item.name}',
+                    color: tokens.surface,
+                    onSelected: (value) {
+                      if (value == 'edit') onEdit();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Editar')),
+                      PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -987,17 +998,25 @@ class _NationalityDetail extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 18),
-                PulsoPrimaryButton(
-                  label: 'Editar nacionalidad',
-                  icon: Icons.edit_outlined,
-                  onPressed: onEdit,
-                ),
-                const SizedBox(height: 8),
-                PulsoSecondaryButton(
-                  label: 'Eliminar',
-                  icon: Icons.delete_outline,
-                  danger: true,
-                  onPressed: onDelete,
+                GlobalCatalogAuthority(
+                  readOnly: const Text('Catálogo global · solo lectura'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PulsoPrimaryButton(
+                        label: 'Editar nacionalidad',
+                        icon: Icons.edit_outlined,
+                        onPressed: onEdit,
+                      ),
+                      const SizedBox(height: 8),
+                      PulsoSecondaryButton(
+                        label: 'Eliminar',
+                        icon: Icons.delete_outline,
+                        danger: true,
+                        onPressed: onDelete,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Text(
