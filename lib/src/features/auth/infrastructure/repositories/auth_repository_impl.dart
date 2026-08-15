@@ -44,20 +44,27 @@ class AuthRepositoryImpl implements AuthRepository {
       final userMap = data['user'] is Map
           ? Map<String, dynamic>.from(data['user'] as Map)
           : <String, dynamic>{};
+      final rawPermissions = userMap['permissions'] ?? data['permissions'];
+      final permissions = rawPermissions is List
+          ? rawPermissions
+                .map((value) => value.toString())
+                .toList(growable: false)
+          : const <String>[];
 
       return User(
         id: (userMap['id'] ?? data['user_id'] ?? data['id'] ?? '').toString(),
-        name: (userMap['username'] ??
-                userMap['name'] ??
-                data['name'] ??
-                email.split('@')[0])
-            .toString(),
+        name:
+            (userMap['username'] ??
+                    userMap['name'] ??
+                    data['name'] ??
+                    email.split('@')[0])
+                .toString(),
         email: (userMap['email'] ?? data['email'] ?? email).toString(),
         role: (userMap['role'] ?? data['role'] ?? 'reception').toString(),
-        status:
-            (userMap['status'] ?? data['status'] ?? 'active').toString(),
+        status: (userMap['status'] ?? data['status'] ?? 'active').toString(),
         imageUrl: (userMap['imageUrl'] ?? data['imageUrl']) as String?,
         token: token,
+        permissions: permissions,
       );
     } on DioException catch (e) {
       String? errorCode;
@@ -99,9 +106,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<SedeSession?> fetchSession() async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/auth/session',
-      );
+      final response = await _client.get<Map<String, dynamic>>('/auth/session');
       final data = response.data;
       if (data == null) return null;
       return SedeSession.fromJson(data);

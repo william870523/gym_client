@@ -35,7 +35,15 @@ class AuthNotifier extends _$AuthNotifier {
       }
       // La apariencia pasa al scope del usuario (gymos.ui.<user_id>.*).
       ref.read(appearanceUserProvider.notifier).set(user.id);
-      state = AsyncValue.data(user);
+      state = AsyncValue.data(
+        user.copyWith(
+          role: session?.role ?? user.role,
+          gymId: session?.gymId ?? user.gymId,
+          permissions: session?.permissions.isNotEmpty == true
+              ? session!.permissions
+              : user.permissions,
+        ),
+      );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
@@ -47,5 +55,33 @@ class AuthNotifier extends _$AuthNotifier {
     ref.read(sedeSessionProvider.notifier).clear();
     ref.read(appearanceUserProvider.notifier).set(null);
     state = const AsyncValue.data(null);
+  }
+
+  /// Cambia de sede y vuelve a resolver rol/permisos contra el servidor.
+  /// La sede provisional reconstruye todos los repositorios; la segunda
+  /// lectura impide conservar el rol de la sede anterior en la navegación.
+  Future<void> changeSede(String gymId) async {
+    final previousSession = ref.read(sedeSessionProvider);
+    final user = state.value;
+    if (previousSession == null || user == null || previousSession.gymId == gymId) {
+      return;
+    }
+    ref.read(sedeSessionProvider.notifier).cambiarSede(gymId);
+    await Future<void>.delayed(Duration.zero);
+    try {
+      final session = await ref.read(authRepositoryProvider).fetchSession();
+      if (session == null || session.gymId != gymId) {
+        throw StateError('El servidor no confirmó la sede seleccionada.');
+      }
+      ref.read(sedeSessionProvider.notifier).set(session);
+      state = AsyncValue.data(user.copyWith(
+        gymId: session.gymId,
+        role: session.role ?? user.role,
+        permissions: session.permissions,
+      ));
+    } catch (_) {
+      ref.read(sedeSessionProvider.notifier).set(previousSession);
+      rethrow;
+    }
   }
 }

@@ -16,6 +16,7 @@ class SedeSession {
     required this.role,
     required this.esPlataforma,
     this.origen,
+    this.permissions = const [],
   });
 
   final String userId;
@@ -23,6 +24,7 @@ class SedeSession {
   final String? role;
   final bool esPlataforma;
   final String? origen;
+  final List<String> permissions;
 
   factory SedeSession.fromJson(Map<String, dynamic> json) {
     String? text(Object? value) {
@@ -36,6 +38,11 @@ class SedeSession {
       role: text(json['role']),
       esPlataforma: json['es_plataforma'] == true,
       origen: text(json['origen']),
+      permissions: json['permissions'] is List
+          ? (json['permissions'] as List)
+                .map((value) => value.toString())
+                .toList(growable: false)
+          : const [],
     );
   }
 }

@@ -35,14 +35,14 @@ class SedeSessionNotifier extends Notifier<SedeSession?> {
       role: actual.role,
       esPlataforma: actual.esPlataforma,
       origen: actual.origen,
+      permissions: actual.permissions,
     );
   }
 }
 
-final sedeSessionProvider =
-    NotifierProvider<SedeSessionNotifier, SedeSession?>(
-      SedeSessionNotifier.new,
-    );
+final sedeSessionProvider = NotifierProvider<SedeSessionNotifier, SedeSession?>(
+  SedeSessionNotifier.new,
+);
 
 /// Nivel de Dueño de la cadena: crear y dar de baja sedes. Solo decide qué se
 /// enseña; el servidor lo vuelve a comprobar en cada petición.

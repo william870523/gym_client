@@ -15,8 +15,8 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$User {
 
-@JsonKey(name: 'user_id') String get id;@JsonKey(name: 'user_nombre') String get name;@JsonKey(name: 'user_email') String get email; String get role;// 'admin', 'reception', 'trainer', 'maintenance'
- bool get active; String get status;// Kept for backward compat if needed, but 'active' bool is primary
+@JsonKey(name: 'user_id') String get id;@JsonKey(name: 'user_nombre') String get name;@JsonKey(name: 'user_email') String get email; String get role;// 'admin', 'reception', 'accounting', 'trainer'
+@JsonKey(name: 'rol_sede') String? get siteRole; bool get active; String get status;// Kept for backward compat if needed, but 'active' bool is primary
  String? get imageUrl;@JsonKey(includeToJson: false) String? get token;@JsonKey(includeFromJson: false, includeToJson: true) String? get password;// Only for creation/update, not returned by API
 @JsonKey(name: 'gym_id') String? get gymId; List<String> get permissions;
 /// Create a copy of User
@@ -31,12 +31,12 @@ $UserCopyWith<User> get copyWith => _$UserCopyWithImpl<User>(this as User, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is User&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.role, role) || other.role == role)&&(identical(other.active, active) || other.active == active)&&(identical(other.status, status) || other.status == status)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.token, token) || other.token == token)&&(identical(other.password, password) || other.password == password)&&(identical(other.gymId, gymId) || other.gymId == gymId)&&const DeepCollectionEquality().equals(other.permissions, permissions));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is User&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.role, role) || other.role == role)&&(identical(other.siteRole, siteRole) || other.siteRole == siteRole)&&(identical(other.active, active) || other.active == active)&&(identical(other.status, status) || other.status == status)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.token, token) || other.token == token)&&(identical(other.password, password) || other.password == password)&&(identical(other.gymId, gymId) || other.gymId == gymId)&&const DeepCollectionEquality().equals(other.permissions, permissions));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,email,role,active,status,imageUrl,token,password,gymId,const DeepCollectionEquality().hash(permissions));
+int get hashCode => Object.hash(runtimeType,id,name,email,role,siteRole,active,status,imageUrl,token,password,gymId,const DeepCollectionEquality().hash(permissions));
 
 
 
@@ -47,7 +47,7 @@ abstract mixin class $UserCopyWith<$Res>  {
   factory $UserCopyWith(User value, $Res Function(User) _then) = _$UserCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'user_id') String id,@JsonKey(name: 'user_nombre') String name,@JsonKey(name: 'user_email') String email, String role, bool active, String status, String? imageUrl,@JsonKey(includeToJson: false) String? token,@JsonKey(includeFromJson: false, includeToJson: true) String? password,@JsonKey(name: 'gym_id') String? gymId, List<String> permissions
+@JsonKey(name: 'user_id') String id,@JsonKey(name: 'user_nombre') String name,@JsonKey(name: 'user_email') String email, String role,@JsonKey(name: 'rol_sede') String? siteRole, bool active, String status, String? imageUrl,@JsonKey(includeToJson: false) String? token,@JsonKey(includeFromJson: false, includeToJson: true) String? password,@JsonKey(name: 'gym_id') String? gymId, List<String> permissions
 });
 
 
@@ -64,13 +64,14 @@ class _$UserCopyWithImpl<$Res>
 
 /// Create a copy of User
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? email = null,Object? role = null,Object? active = null,Object? status = null,Object? imageUrl = freezed,Object? token = freezed,Object? password = freezed,Object? gymId = freezed,Object? permissions = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? email = null,Object? role = null,Object? siteRole = freezed,Object? active = null,Object? status = null,Object? imageUrl = freezed,Object? token = freezed,Object? password = freezed,Object? gymId = freezed,Object? permissions = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,email: null == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
-as String,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
+as String,siteRole: freezed == siteRole ? _self.siteRole : siteRole // ignore: cast_nullable_to_non_nullable
+as String?,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as bool,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as String,imageUrl: freezed == imageUrl ? _self.imageUrl : imageUrl // ignore: cast_nullable_to_non_nullable
 as String?,token: freezed == token ? _self.token : token // ignore: cast_nullable_to_non_nullable
@@ -162,10 +163,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role, @JsonKey(name: 'rol_sede')  String? siteRole,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _User() when $default != null:
-return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
+return $default(_that.id,_that.name,_that.email,_that.role,_that.siteRole,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
   return orElse();
 
 }
@@ -183,10 +184,10 @@ return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.st
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role, @JsonKey(name: 'rol_sede')  String? siteRole,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)  $default,) {final _that = this;
 switch (_that) {
 case _User():
-return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
+return $default(_that.id,_that.name,_that.email,_that.role,_that.siteRole,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -203,10 +204,10 @@ return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.st
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'user_id')  String id, @JsonKey(name: 'user_nombre')  String name, @JsonKey(name: 'user_email')  String email,  String role, @JsonKey(name: 'rol_sede')  String? siteRole,  bool active,  String status,  String? imageUrl, @JsonKey(includeToJson: false)  String? token, @JsonKey(includeFromJson: false, includeToJson: true)  String? password, @JsonKey(name: 'gym_id')  String? gymId,  List<String> permissions)?  $default,) {final _that = this;
 switch (_that) {
 case _User() when $default != null:
-return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
+return $default(_that.id,_that.name,_that.email,_that.role,_that.siteRole,_that.active,_that.status,_that.imageUrl,_that.token,_that.password,_that.gymId,_that.permissions);case _:
   return null;
 
 }
@@ -218,14 +219,15 @@ return $default(_that.id,_that.name,_that.email,_that.role,_that.active,_that.st
 @JsonSerializable()
 
 class _User implements User {
-  const _User({@JsonKey(name: 'user_id') required this.id, @JsonKey(name: 'user_nombre') required this.name, @JsonKey(name: 'user_email') required this.email, required this.role, this.active = true, this.status = 'active', this.imageUrl, @JsonKey(includeToJson: false) this.token, @JsonKey(includeFromJson: false, includeToJson: true) this.password, @JsonKey(name: 'gym_id') this.gymId, final  List<String> permissions = const []}): _permissions = permissions;
+  const _User({@JsonKey(name: 'user_id') required this.id, @JsonKey(name: 'user_nombre') required this.name, @JsonKey(name: 'user_email') required this.email, required this.role, @JsonKey(name: 'rol_sede') this.siteRole, this.active = true, this.status = 'active', this.imageUrl, @JsonKey(includeToJson: false) this.token, @JsonKey(includeFromJson: false, includeToJson: true) this.password, @JsonKey(name: 'gym_id') this.gymId, final  List<String> permissions = const []}): _permissions = permissions;
   factory _User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
 
 @override@JsonKey(name: 'user_id') final  String id;
 @override@JsonKey(name: 'user_nombre') final  String name;
 @override@JsonKey(name: 'user_email') final  String email;
 @override final  String role;
-// 'admin', 'reception', 'trainer', 'maintenance'
+// 'admin', 'reception', 'accounting', 'trainer'
+@override@JsonKey(name: 'rol_sede') final  String? siteRole;
 @override@JsonKey() final  bool active;
 @override@JsonKey() final  String status;
 // Kept for backward compat if needed, but 'active' bool is primary
@@ -255,12 +257,12 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _User&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.role, role) || other.role == role)&&(identical(other.active, active) || other.active == active)&&(identical(other.status, status) || other.status == status)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.token, token) || other.token == token)&&(identical(other.password, password) || other.password == password)&&(identical(other.gymId, gymId) || other.gymId == gymId)&&const DeepCollectionEquality().equals(other._permissions, _permissions));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _User&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.role, role) || other.role == role)&&(identical(other.siteRole, siteRole) || other.siteRole == siteRole)&&(identical(other.active, active) || other.active == active)&&(identical(other.status, status) || other.status == status)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.token, token) || other.token == token)&&(identical(other.password, password) || other.password == password)&&(identical(other.gymId, gymId) || other.gymId == gymId)&&const DeepCollectionEquality().equals(other._permissions, _permissions));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,email,role,active,status,imageUrl,token,password,gymId,const DeepCollectionEquality().hash(_permissions));
+int get hashCode => Object.hash(runtimeType,id,name,email,role,siteRole,active,status,imageUrl,token,password,gymId,const DeepCollectionEquality().hash(_permissions));
 
 
 
@@ -271,7 +273,7 @@ abstract mixin class _$UserCopyWith<$Res> implements $UserCopyWith<$Res> {
   factory _$UserCopyWith(_User value, $Res Function(_User) _then) = __$UserCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'user_id') String id,@JsonKey(name: 'user_nombre') String name,@JsonKey(name: 'user_email') String email, String role, bool active, String status, String? imageUrl,@JsonKey(includeToJson: false) String? token,@JsonKey(includeFromJson: false, includeToJson: true) String? password,@JsonKey(name: 'gym_id') String? gymId, List<String> permissions
+@JsonKey(name: 'user_id') String id,@JsonKey(name: 'user_nombre') String name,@JsonKey(name: 'user_email') String email, String role,@JsonKey(name: 'rol_sede') String? siteRole, bool active, String status, String? imageUrl,@JsonKey(includeToJson: false) String? token,@JsonKey(includeFromJson: false, includeToJson: true) String? password,@JsonKey(name: 'gym_id') String? gymId, List<String> permissions
 });
 
 
@@ -288,13 +290,14 @@ class __$UserCopyWithImpl<$Res>
 
 /// Create a copy of User
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? email = null,Object? role = null,Object? active = null,Object? status = null,Object? imageUrl = freezed,Object? token = freezed,Object? password = freezed,Object? gymId = freezed,Object? permissions = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? email = null,Object? role = null,Object? siteRole = freezed,Object? active = null,Object? status = null,Object? imageUrl = freezed,Object? token = freezed,Object? password = freezed,Object? gymId = freezed,Object? permissions = null,}) {
   return _then(_User(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,email: null == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
-as String,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
+as String,siteRole: freezed == siteRole ? _self.siteRole : siteRole // ignore: cast_nullable_to_non_nullable
+as String?,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as bool,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as String,imageUrl: freezed == imageUrl ? _self.imageUrl : imageUrl // ignore: cast_nullable_to_non_nullable
 as String?,token: freezed == token ? _self.token : token // ignore: cast_nullable_to_non_nullable

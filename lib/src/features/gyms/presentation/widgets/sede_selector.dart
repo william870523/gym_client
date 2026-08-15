@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../auth/presentation/state/sede_session_provider.dart';
+import '../../../auth/presentation/state/auth_notifier.dart';
 import '../gyms_provider.dart';
 
 /// Selector de la sede activa (docs/MULTI_SEDE.md §3.4, etapa M2).
@@ -43,8 +44,16 @@ class SedeSelector extends ConsumerWidget {
           color: tokens.surface,
           surfaceTintColor: Colors.transparent,
           position: PopupMenuPosition.under,
-          onSelected: (gymId) =>
-              ref.read(sedeSessionProvider.notifier).cambiarSede(gymId),
+          onSelected: (gymId) async {
+            try {
+              await ref.read(authProvider.notifier).changeSede(gymId);
+            } catch (_) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('No se pudo cambiar de sede. El contexto anterior se conserva.'),
+              ));
+            }
+          },
           itemBuilder: (context) => [
             for (final gym in sedes)
               PopupMenuItem<String>(

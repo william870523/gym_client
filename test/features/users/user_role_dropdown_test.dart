@@ -21,7 +21,7 @@ Widget _harness(User user) {
         PulsoTokens.resolve(PulsoPaletteId.clay, Brightness.light),
       ),
       home: Scaffold(
-        body: UserPulsoForm(user: user, onSubmit: (_) async {}),
+        body: UserPulsoForm(user: user, onSubmit: (_, _) async {}),
       ),
     ),
   );

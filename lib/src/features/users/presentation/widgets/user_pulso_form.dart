@@ -7,8 +7,10 @@ import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../auth/domain/models/user.dart';
 import '../../../gyms/presentation/gyms_provider.dart';
+import '../providers/users_provider.dart';
 
-typedef UserPulsoSubmit = Future<void> Function(User user);
+typedef UserPulsoSubmit =
+    Future<void> Function(User user, Map<String, String>? siteRoles);
 
 /// Alta y edición de usuarios en PULSO. Mantiene la lógica original:
 /// contraseña obligatoria al crear (opcional al editar) con los mismos cinco
@@ -35,6 +37,8 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
   bool _active = true;
   bool _showPassword = false;
   bool _busy = false;
+  bool _sitesLoading = false;
+  final Map<String, String> _siteRoles = {};
   String? _error;
 
   bool get _isEdit => widget.user != null;
@@ -62,9 +66,38 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
       _role = user.role;
       _gymId = user.gymId;
       _active = user.active;
+      if (kIsWeb) _loadSiteAssignments(user.id);
     } else {
       // Al crear, la sección de contraseña es parte del alta.
       _showPassword = true;
+    }
+  }
+
+  Future<void> _loadSiteAssignments(String userId) async {
+    setState(() => _sitesLoading = true);
+    try {
+      final items = await ref.read(usersProvider.notifier).getUserSites(userId);
+      if (!mounted) return;
+      setState(() {
+        _siteRoles
+          ..clear()
+          ..addEntries(
+            items
+                .where((item) => item.active)
+                .map((item) => MapEntry(item.gymId, item.role)),
+          );
+        final primaryGymId = widget.user?.gymId;
+        if (primaryGymId != null && primaryGymId.isNotEmpty) {
+          _siteRoles.putIfAbsent(primaryGymId, () => widget.user!.role);
+        }
+        _sitesLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _sitesLoading = false;
+        _error = 'No se pudieron cargar las sedes asignadas: $error';
+      });
     }
   }
 
@@ -83,7 +116,6 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
     'reception',
     'accounting',
     'trainer',
-    'maintenance',
   ];
 
   /// Opciones del desplegable **incluyendo el rol que la cuenta ya tiene**.
@@ -142,7 +174,10 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
       gymId: _gymId,
     );
     try {
-      await widget.onSubmit(user);
+      await widget.onSubmit(
+        user,
+        kIsWeb && _isEdit ? Map.unmodifiable(_siteRoles) : null,
+      );
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
@@ -313,11 +348,15 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
                                       () => _role = value ?? 'reception',
                                     ),
                             ),
-                            // El gimnasio asignado solo aplica en la gestión
-                            // remota (web), igual que en la pantalla original.
+                            // Al crear se elige la sede principal. Al editar en
+                            // web se administra la relación usuario↔sedes con
+                            // un rol independiente en cada una.
                             if (kIsWeb) ...[
                               const SizedBox(height: 16),
-                              _buildGymField(context),
+                              if (_isEdit)
+                                _buildSiteAssignments(context)
+                              else
+                                _buildGymField(context),
                             ],
                             const SizedBox(height: 24),
                             const PulsoLabel('Disponibilidad operativa'),
@@ -409,6 +448,67 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
     );
   }
 
+  Widget _buildSiteAssignments(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    if (_sitesLoading) return const LinearProgressIndicator(minHeight: 2);
+    final gymsState = ref.watch(gymsListProvider);
+    return gymsState.when(
+      loading: () => const LinearProgressIndicator(minHeight: 2),
+      error: (error, _) => Text(
+        'No se pudo cargar el catálogo de gimnasios: $error',
+        style: TextStyle(color: tokens.danger, fontSize: 12),
+      ),
+      data: (gyms) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: tokens.raised,
+          border: Border.all(color: tokens.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Sedes donde puede trabajar',
+              style: TextStyle(
+                color: tokens.chalk,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Cada sede conserva su propio rol. La sede principal no se puede retirar aquí.',
+              style: TextStyle(color: tokens.muted, fontSize: 11),
+            ),
+            const SizedBox(height: 10),
+            for (final gym in gyms) ...[
+              _SiteAssignmentRow(
+                gymName: '${gym.name} (${gym.code})',
+                selected: _siteRoles.containsKey(gym.id),
+                locked: gym.id == widget.user?.gymId,
+                role: _siteRoles[gym.id] ?? _role,
+                roles: _knownRoles.take(4).toList(growable: false),
+                roleLabel: _roleLabel,
+                onSelected: _busy
+                    ? null
+                    : (selected) => setState(() {
+                        if (selected) {
+                          _siteRoles[gym.id] = _siteRoles[gym.id] ?? _role;
+                        } else {
+                          _siteRoles.remove(gym.id);
+                        }
+                      }),
+                onRole: _busy
+                    ? null
+                    : (role) => setState(() => _siteRoles[gym.id] = role),
+              ),
+              if (gym != gyms.last) Divider(height: 1, color: tokens.line),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatusField(BuildContext context) {
     final tokens = PulsoTokens.of(context);
     return Container(
@@ -496,6 +596,70 @@ class _UserPulsoFormState extends ConsumerState<UserPulsoForm> {
           met: _hasSpecial,
         ),
       ],
+    );
+  }
+}
+
+class _SiteAssignmentRow extends StatelessWidget {
+  const _SiteAssignmentRow({
+    required this.gymName,
+    required this.selected,
+    required this.locked,
+    required this.role,
+    required this.roles,
+    required this.roleLabel,
+    required this.onSelected,
+    required this.onRole,
+  });
+
+  final String gymName;
+  final bool selected;
+  final bool locked;
+  final String role;
+  final List<String> roles;
+  final String Function(String) roleLabel;
+  final ValueChanged<bool>? onSelected;
+  final ValueChanged<String>? onRole;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Checkbox(
+            value: selected,
+            onChanged: locked || onSelected == null
+                ? null
+                : (value) => onSelected!(value == true),
+          ),
+          Expanded(
+            child: Text(
+              locked ? '$gymName · principal' : gymName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 155,
+            child: DropdownButtonFormField<String>(
+              initialValue: roles.contains(role) ? role : roles.first,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Rol en sede'),
+              items: [
+                for (final item in roles)
+                  DropdownMenuItem(value: item, child: Text(roleLabel(item))),
+              ],
+              onChanged: !selected || onRole == null
+                  ? null
+                  : (value) {
+                      if (value != null) onRole!(value);
+                    },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

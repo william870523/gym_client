@@ -32,7 +32,7 @@ final class UsersProvider extends $AsyncNotifierProvider<Users, List<User>> {
   Users create() => Users();
 }
 
-String _$usersHash() => r'e57fd27ad7c426166779003e82d2da0e6d9e0598';
+String _$usersHash() => r'3887947281a6e769841db60b94219fe8ac5d365b';
 
 abstract class _$Users extends $AsyncNotifier<List<User>> {
   FutureOr<List<User>> build();

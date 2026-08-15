@@ -45,4 +45,30 @@ class Users extends _$Users {
     await repository.updateUser(user);
     ref.invalidateSelf();
   }
+
+  Future<List<UserSiteAssignment>> getUserSites(String userId) {
+    return ref.read(userRepositoryProvider).getUserSites(userId);
+  }
+
+  Future<void> replaceUserSites(
+    User user,
+    Map<String, String> desired,
+  ) async {
+    final repository = ref.read(userRepositoryProvider);
+    final current = await repository.getUserSites(user.id);
+    final currentByGym = {for (final item in current) item.gymId: item};
+
+    for (final entry in desired.entries) {
+      final existing = currentByGym[entry.key];
+      if (existing == null || !existing.active || existing.role != entry.value) {
+        await repository.putUserSite(user.id, entry.key, entry.value);
+      }
+    }
+    for (final existing in current) {
+      if (!desired.containsKey(existing.gymId) && existing.gymId != user.gymId) {
+        await repository.deleteUserSite(user.id, existing.gymId);
+      }
+    }
+    ref.invalidateSelf();
+  }
 }

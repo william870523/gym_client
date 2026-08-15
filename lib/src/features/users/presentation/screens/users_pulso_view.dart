@@ -17,18 +17,19 @@ String _displayName(User user) =>
     user.name.trim().isNotEmpty ? user.name.trim() : user.email.trim();
 
 String _roleLabel(User user) {
-  return switch (user.role.toLowerCase()) {
+  final role = user.siteRole ?? user.role;
+  return switch (role.toLowerCase()) {
     'admin' || 'administrador' => 'Administrador',
     'trainer' || 'entrenador' => 'Entrenador',
     'reception' || 'recepcion' || 'recepción' => 'Recepción',
     'accounting' || 'contabilidad' => 'Contabilidad / Control',
     'maintenance' || 'mantenimiento' => 'Mantenimiento',
-    _ => user.role.isEmpty ? 'Sin rol' : user.role,
+    _ => role.isEmpty ? 'Sin rol' : role,
   };
 }
 
 bool _isAdmin(User user) {
-  final role = user.role.toLowerCase();
+  final role = (user.siteRole ?? user.role).toLowerCase();
   return role == 'admin' || role == 'administrador';
 }
 
@@ -124,12 +125,15 @@ class _UsersPulsoViewState extends ConsumerState<UsersPulsoView> {
       barrierDismissible: false,
       builder: (context) => UserPulsoForm(
         user: user,
-        onSubmit: (updated) async {
+        onSubmit: (updated, siteRoles) async {
           final notifier = ref.read(usersProvider.notifier);
           if (user == null) {
             await notifier.createUser(updated);
           } else {
             await notifier.updateUser(updated);
+            if (siteRoles != null) {
+              await notifier.replaceUserSites(user, siteRoles);
+            }
           }
         },
       ),

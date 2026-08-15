@@ -9,7 +9,8 @@ abstract class User with _$User {
     @JsonKey(name: 'user_id') required String id,
     @JsonKey(name: 'user_nombre') required String name,
     @JsonKey(name: 'user_email') required String email,
-    required String role, // 'admin', 'reception', 'trainer', 'maintenance'
+    required String role, // 'admin', 'reception', 'accounting', 'trainer'
+    @JsonKey(name: 'rol_sede') String? siteRole,
     @Default(true) bool active,
     @Default('active')
     String
