@@ -39,6 +39,7 @@ import '../../../clients/presentation/screens/client_discount_settings_pulso_vie
 import '../../../accounting/presentation/screens/exchange_revaluation_pulso_view.dart';
 
 import '../../../auth/presentation/state/auth_notifier.dart';
+import '../../domain/dashboard_access_policy.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -51,6 +52,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Widget>? _cachedViews;
   String? _cachedRole;
+  String? _cachedPermissions;
   bool _isLoggingOut = false;
 
   Future<void> _logout() async {
@@ -71,23 +73,48 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
-  List<Widget> _getViews(String role) {
-    if (_cachedViews != null && _cachedRole == role) {
+  List<Widget> _getViews(String role, Set<String> permissions) {
+    final permissionFingerprint = (permissions.toList()..sort()).join('|');
+    if (_cachedViews != null &&
+        _cachedRole == role &&
+        _cachedPermissions == permissionFingerprint) {
       return _cachedViews!;
     }
 
     _cachedRole = role;
+    _cachedPermissions = permissionFingerprint;
     // Igual que la barra lateral: acepta 'admin' y 'administrador',
     // sin distinguir mayúsculas.
     final normalizedRole = role.toLowerCase();
-    final isAdmin =
-        normalizedRole == 'admin' || normalizedRole == 'administrador';
+    final landing = switch (normalizedRole) {
+      'admin' || 'administrador' => const PulsoAdminDashboardView(),
+      'reception' ||
+      'recepcion' ||
+      'recepción' ||
+      'recepcionista' => const PulsoReceptionDashboardView(),
+      'accounting' || 'contabilidad' || 'contador' => _RoleAccessDashboard(
+        eyebrow: 'CONTABILIDAD · CONTROL',
+        title: 'PANEL CONTABLE.',
+        description:
+            'Tesorería, gastos e informes disponibles según la matriz RBAC.',
+        permissions: permissions,
+      ),
+      'trainer' || 'entrenador' => _RoleAccessDashboard(
+        eyebrow: 'ENTRENADOR · CONSULTA',
+        title: 'PANEL DEL ENTRENADOR.',
+        description: 'Socios y estadística disponibles en modo de consulta.',
+        permissions: permissions,
+      ),
+      _ => _RoleAccessDashboard(
+        eyebrow: 'ACCESO · RESTRINGIDO',
+        title: 'SIN OPERACIÓN ASIGNADA.',
+        description: 'Solicita a administración un rol válido del producto.',
+        permissions: permissions,
+      ),
+    };
     _cachedViews = [
       // 0: Dashboard PULSO diferenciado por rol.
-      // Admin: "Parte del día" (F-01); Recepción: "Parte del turno" (F-01R).
-      isAdmin
-          ? const PulsoAdminDashboardView()
-          : const PulsoReceptionDashboardView(),
+      landing,
       // 1: Clientes (PULSO; la versión REGISTRO se conserva como reversión)
       const ClientsPulsoView(),
       // 2: Classes (Placeholder)
@@ -132,7 +159,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       // 19: Attendance History (HTML 2)
       const DailyAttendanceHistoryScreen(),
       // 20: Accounting
-      const AccountingView(),
+      AccountingView(permissions: permissions),
       // 21: Alias del destino oficial de Monedas (18). El piloto fue
       // promovido y su entrada de navegación retirada; el índice se conserva
       // para no desplazar el 22.
@@ -196,36 +223,41 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     // Role Logic
     final authState = ref.watch(authProvider);
     final role = authState.value?.role ?? 'user';
+    final permissions = authState.value?.permissions.toSet() ?? <String>{};
 
-    final rawViews = _getViews(role);
+    final rawViews = _getViews(role, permissions);
     // Navigation State
-    final selectedIndex = ref.watch(dashboardNavProvider);
+    final requestedIndex = ref.watch(dashboardNavProvider);
+    final safeIndex =
+        requestedIndex < rawViews.length &&
+            dashboardIndexAllowed(requestedIndex, permissions)
+        ? requestedIndex
+        : 0;
 
     final views = rawViews.asMap().entries.map((entry) {
       return _LazyView(
         key: ValueKey('lazy_view_${entry.key}'),
-        isVisible: selectedIndex == entry.key,
+        isVisible: safeIndex == entry.key,
         child: entry.value,
       );
     }).toList();
 
     // Title Logic
-    String title = _getTitleForIndex(selectedIndex, role);
+    String title = _getTitleForIndex(safeIndex, role);
 
     // Header Action
     Widget? actionButton;
-
-    // Ensure we don't overflow if sidebar returns an index we haven't handled
-    final safeIndex = selectedIndex < views.length ? selectedIndex : 0;
 
     DashboardSidebar buildSidebar({required bool closeOnNavigate}) {
       return DashboardSidebar(
         isDark: isDark,
         surfaceColor: surfaceColor,
         borderColor: borderColor,
-        selectedIndex: selectedIndex,
+        selectedIndex: safeIndex,
         role: role,
+        permissions: permissions,
         onNavigate: (index) {
+          if (!dashboardIndexAllowed(index, permissions)) return;
           ref.read(dashboardNavProvider.notifier).setIndex(index);
           if (closeOnNavigate) {
             Navigator.of(context).pop();
@@ -282,7 +314,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       case 0:
         // El "Parte del día" (admin) trae su propio membrete interno.
         final r = role.toLowerCase();
-        return (r == 'admin' || r == 'administrador') ? '' : 'Recepción';
+        return (r == 'reception' ||
+                r == 'recepcion' ||
+                r == 'recepción' ||
+                r == 'recepcionista')
+            ? 'Recepción'
+            : '';
       case 2:
         return 'Clases'; // Placeholder
       case 4:
@@ -328,6 +365,104 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       default:
         return '';
     }
+  }
+}
+
+class _RoleAccessDashboard extends StatelessWidget {
+  const _RoleAccessDashboard({
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    required this.permissions,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String description;
+  final Set<String> permissions;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink = isDark ? const Color(0xFFEFEAE0) : const Color(0xFF1C1A16);
+    final muted = isDark ? const Color(0xFFA9A394) : const Color(0xFF6F695D);
+    final rule = isDark ? const Color(0xFF3A352B) : const Color(0xFFD8D3C6);
+    final sorted = permissions.toList()..sort();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            eyebrow,
+            style: TextStyle(
+              color: muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: ink,
+              fontSize: 38,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(description, style: TextStyle(color: muted, fontSize: 15)),
+          const SizedBox(height: 28),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              border: Border.all(color: rule),
+              color: isDark ? const Color(0xFF1D1A14) : const Color(0xFFF8F5EE),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PERMISOS ACTIVOS · ${sorted.length}',
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: sorted
+                      .map(
+                        (permission) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: rule),
+                          ),
+                          child: Text(
+                            permission,
+                            style: TextStyle(color: ink, fontSize: 12),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

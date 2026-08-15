@@ -13,6 +13,7 @@ import '../../../products/data/models/payment_plan_model.dart';
 import '../../../products/presentation/state/payment_plan_notifier.dart';
 import '../../../trainers/data/models/trainer_model.dart';
 import '../../../trainers/presentation/providers/trainer_notifier.dart';
+import '../../domain/accounting_access_policy.dart';
 import '../../data/models/accounting_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 import '../../data/services/trainer_liquidation_receipt_service.dart';
@@ -50,7 +51,11 @@ String _requestError(Object error) {
 }
 
 class AccountingView extends ConsumerStatefulWidget {
-  const AccountingView({super.key});
+  const AccountingView({super.key, this.permissions});
+
+  /// `null` conserva el modo administrador usado por pruebas y vistas legadas.
+  /// El dashboard siempre entrega la sesión real y oculta pestañas sin permiso.
+  final Set<String>? permissions;
 
   @override
   ConsumerState<AccountingView> createState() => _AccountingViewState();
@@ -60,6 +65,33 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
   _AccountingTab _tab = _AccountingTab.summary;
   String _period = 'BIWEEKLY';
   String? _expensesMonth;
+
+  bool _can(String action) =>
+      widget.permissions == null || widget.permissions!.contains(action);
+
+  bool get _canAdmin => _can('configuracion.escribir');
+
+  Set<_AccountingTab> get _allowedTabs {
+    final sections = accountingSectionsFor(widget.permissions);
+    return {
+      if (sections.contains(accountingSectionSummary)) _AccountingTab.summary,
+      if (sections.contains(accountingSectionOperationalResults))
+        _AccountingTab.operationalResults,
+      if (sections.contains(accountingSectionTreasury)) _AccountingTab.treasury,
+      if (sections.contains(accountingSectionExpenses)) _AccountingTab.expenses,
+      if (sections.contains(accountingSectionInstallments))
+        _AccountingTab.installments,
+      if (sections.contains(accountingSectionRefunds)) _AccountingTab.refunds,
+      if (sections.contains(accountingSectionRules)) _AccountingTab.rules,
+      if (sections.contains(accountingSectionPayroll)) _AccountingTab.payroll,
+    };
+  }
+
+  @override
+  void didUpdateWidget(covariant AccountingView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_allowedTabs.contains(_tab)) _tab = _AccountingTab.summary;
+  }
 
   void _refresh() {
     ref.invalidate(accountingSummaryProvider);
@@ -106,11 +138,15 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
         final content = switch (_tab) {
           _AccountingTab.summary => _buildSummary(),
           _AccountingTab.operationalResults => OperationalCashResultsPanel(
-            onOpenTrainerPayments: () =>
-                setState(() => _tab = _AccountingTab.installments),
-            onOpenRefunds: () => setState(() => _tab = _AccountingTab.refunds),
-            onOpenTreasury: () =>
-                setState(() => _tab = _AccountingTab.treasury),
+            onOpenTrainerPayments: _canAdmin
+                ? () => setState(() => _tab = _AccountingTab.installments)
+                : null,
+            onOpenRefunds: _canAdmin
+                ? () => setState(() => _tab = _AccountingTab.refunds)
+                : null,
+            onOpenTreasury: _can('tesoreria.cerrar')
+                ? () => setState(() => _tab = _AccountingTab.treasury)
+                : null,
           ),
           _AccountingTab.treasury => _buildTreasury(),
           _AccountingTab.expenses => GovernedExpensesPanel(
@@ -142,6 +178,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
                 const SizedBox(height: 16),
                 _AccountingTabs(
                   selected: _tab,
+                  allowed: _allowedTabs,
                   onSelected: (value) => setState(() => _tab = value),
                 ),
                 const SizedBox(height: 14),
@@ -161,6 +198,7 @@ class _AccountingViewState extends ConsumerState<AccountingView> {
               const SizedBox(height: 16),
               _AccountingTabs(
                 selected: _tab,
+                allowed: _allowedTabs,
                 onSelected: (value) => setState(() => _tab = value),
               ),
               const SizedBox(height: 14),
@@ -1265,8 +1303,13 @@ class _AccountingHeader extends StatelessWidget {
 }
 
 class _AccountingTabs extends StatelessWidget {
-  const _AccountingTabs({required this.selected, required this.onSelected});
+  const _AccountingTabs({
+    required this.selected,
+    required this.allowed,
+    required this.onSelected,
+  });
   final _AccountingTab selected;
+  final Set<_AccountingTab> allowed;
   final ValueChanged<_AccountingTab> onSelected;
 
   @override
@@ -1277,46 +1320,54 @@ class _AccountingTabs extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            _TabButton(
-              label: 'Resumen',
-              selected: selected == _AccountingTab.summary,
-              onTap: () => onSelected(_AccountingTab.summary),
-            ),
-            _TabButton(
-              label: 'Tesorería · cierre',
-              selected: selected == _AccountingTab.treasury,
-              onTap: () => onSelected(_AccountingTab.treasury),
-            ),
-            _TabButton(
-              label: 'Gastos devengados',
-              selected: selected == _AccountingTab.expenses,
-              onTap: () => onSelected(_AccountingTab.expenses),
-            ),
-            _TabButton(
-              label: 'Cuotas entrenadores',
-              selected: selected == _AccountingTab.installments,
-              onTap: () => onSelected(_AccountingTab.installments),
-            ),
-            _TabButton(
-              label: 'Tesorería · reembolsos',
-              selected: selected == _AccountingTab.refunds,
-              onTap: () => onSelected(_AccountingTab.refunds),
-            ),
-            _TabButton(
-              label: 'Reglas de comisión',
-              selected: selected == _AccountingTab.rules,
-              onTap: () => onSelected(_AccountingTab.rules),
-            ),
-            _TabButton(
-              label: 'Perfiles y nómina',
-              selected: selected == _AccountingTab.payroll,
-              onTap: () => onSelected(_AccountingTab.payroll),
-            ),
-            _TabButton(
-              label: 'Resultado de caja',
-              selected: selected == _AccountingTab.operationalResults,
-              onTap: () => onSelected(_AccountingTab.operationalResults),
-            ),
+            if (allowed.contains(_AccountingTab.summary))
+              _TabButton(
+                label: 'Resumen',
+                selected: selected == _AccountingTab.summary,
+                onTap: () => onSelected(_AccountingTab.summary),
+              ),
+            if (allowed.contains(_AccountingTab.treasury))
+              _TabButton(
+                label: 'Tesorería · cierre',
+                selected: selected == _AccountingTab.treasury,
+                onTap: () => onSelected(_AccountingTab.treasury),
+              ),
+            if (allowed.contains(_AccountingTab.expenses))
+              _TabButton(
+                label: 'Gastos devengados',
+                selected: selected == _AccountingTab.expenses,
+                onTap: () => onSelected(_AccountingTab.expenses),
+              ),
+            if (allowed.contains(_AccountingTab.installments))
+              _TabButton(
+                label: 'Cuotas entrenadores',
+                selected: selected == _AccountingTab.installments,
+                onTap: () => onSelected(_AccountingTab.installments),
+              ),
+            if (allowed.contains(_AccountingTab.refunds))
+              _TabButton(
+                label: 'Tesorería · reembolsos',
+                selected: selected == _AccountingTab.refunds,
+                onTap: () => onSelected(_AccountingTab.refunds),
+              ),
+            if (allowed.contains(_AccountingTab.rules))
+              _TabButton(
+                label: 'Reglas de comisión',
+                selected: selected == _AccountingTab.rules,
+                onTap: () => onSelected(_AccountingTab.rules),
+              ),
+            if (allowed.contains(_AccountingTab.payroll))
+              _TabButton(
+                label: 'Perfiles y nómina',
+                selected: selected == _AccountingTab.payroll,
+                onTap: () => onSelected(_AccountingTab.payroll),
+              ),
+            if (allowed.contains(_AccountingTab.operationalResults))
+              _TabButton(
+                label: 'Resultado de caja',
+                selected: selected == _AccountingTab.operationalResults,
+                onTap: () => onSelected(_AccountingTab.operationalResults),
+              ),
           ],
         ),
       ),

@@ -8,6 +8,7 @@ class DashboardSidebar extends StatefulWidget {
   final int selectedIndex;
   final Function(int) onNavigate;
   final String role;
+  final Set<String> permissions;
   final VoidCallback onLogout;
 
   const DashboardSidebar({
@@ -18,6 +19,7 @@ class DashboardSidebar extends StatefulWidget {
     required this.selectedIndex,
     required this.onNavigate,
     required this.role,
+    required this.permissions,
     required this.onLogout,
   });
 
@@ -77,8 +79,20 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
     final textMain = _ink;
     final textMuted = _ink3;
     final primary = _verm;
-    final role = widget.role.toLowerCase();
-    final isAdmin = role == 'admin' || role == 'administrador';
+    bool can(String permission) => widget.permissions.contains(permission);
+    final canReadClients = can('clientes.leer');
+    final canWriteClients = can('clientes.escribir');
+    final canCollect = can('cobros.registrar');
+    final canManageTrainers = can('entrenadores.gestionar');
+    final canCloseTreasury = can('tesoreria.cerrar');
+    final canGovernExpenses = can('gastos.gobernar');
+    final canReadStatistics = can('estadisticas.leer');
+    final canConfigure = can('configuracion.escribir');
+    final canUseFinances =
+        canCollect ||
+        canCloseTreasury ||
+        canGovernExpenses ||
+        canReadStatistics;
 
     final currentWidth = _isCollapsed ? 72.0 : _expandedWidth;
 
@@ -211,194 +225,209 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                 textMain: primary,
                                 textMuted: textMuted,
                               ),
-                              _buildNavItem(
-                                Icons.fitness_center,
-                                'Gimnasios',
-                                index: 12,
-                                isActive: widget.selectedIndex == 12,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(
-                                  0xFF10B981,
-                                ), // Emerald/Green
-                              ),
+                              if (canConfigure)
+                                _buildNavItem(
+                                  Icons.fitness_center,
+                                  'Gimnasios',
+                                  index: 12,
+                                  isActive: widget.selectedIndex == 12,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF10B981),
+                                ),
                               // Asistencia Expandable
-                              _buildExpandableNavItem(
-                                Icons.access_time,
-                                'Asistencia',
-                                isExpanded: _isAttendanceExpanded,
-                                onTap: _toggleAttendance,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFF06B6D4), // Cyan
-                                children: [
-                                  _buildSubNavItem(
-                                    Icons.dashboard_customize,
-                                    'Panel Principal',
-                                    index: 7,
-                                    isActive: widget.selectedIndex == 7,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(0xFF06B6D4),
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.history,
-                                    'Historial',
-                                    index: 19,
-                                    isActive: widget.selectedIndex == 19,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(0xFF06B6D4),
-                                  ),
-                                ],
-                              ),
-                              _buildNavItem(
-                                Icons.sports_rounded,
-                                'Entrenadores',
-                                index: 17,
-                                isActive: widget.selectedIndex == 17,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFFF59E0B), // Amber
-                              ),
-                              _buildNavItem(
-                                Icons.people_outline,
-                                'Clientes',
-                                index: 1,
-                                isActive: widget.selectedIndex == 1,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFF3B82F6), // Blue
-                              ),
-                              _buildNavItem(
-                                Icons.monitor_heart_outlined,
-                                'Control y Calidad',
-                                index: 23,
-                                isActive: widget.selectedIndex == 23,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFFD9481C),
-                              ),
-                              _buildNavItem(
-                                Icons.calendar_today_outlined,
-                                'Clases',
-                                index: 2,
-                                isActive: widget.selectedIndex == 2,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFFF59E0B), // Amber
-                              ),
-                              _buildNavItem(
-                                Icons.credit_card, // Planes icon
-                                'Planes',
-                                index: 14, // New Index
-                                isActive: widget.selectedIndex == 14,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFF3B82F6), // Blue
-                              ),
-                              _buildNavItem(
-                                Icons.schedule,
-                                'Horarios',
-                                index: 13,
-                                isActive: widget.selectedIndex == 13,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFF06B6D4), // Cyan
-                              ),
+                              if (canWriteClients)
+                                _buildExpandableNavItem(
+                                  Icons.access_time,
+                                  'Asistencia',
+                                  isExpanded: _isAttendanceExpanded,
+                                  onTap: _toggleAttendance,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF06B6D4), // Cyan
+                                  children: [
+                                    _buildSubNavItem(
+                                      Icons.dashboard_customize,
+                                      'Panel Principal',
+                                      index: 7,
+                                      isActive: widget.selectedIndex == 7,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFF06B6D4),
+                                    ),
+                                    _buildSubNavItem(
+                                      Icons.history,
+                                      'Historial',
+                                      index: 19,
+                                      isActive: widget.selectedIndex == 19,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(0xFF06B6D4),
+                                    ),
+                                  ],
+                                ),
+                              if (canReadClients || canManageTrainers)
+                                _buildNavItem(
+                                  Icons.sports_rounded,
+                                  'Entrenadores',
+                                  index: 17,
+                                  isActive: widget.selectedIndex == 17,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFFF59E0B), // Amber
+                                ),
+                              if (canReadClients)
+                                _buildNavItem(
+                                  Icons.people_outline,
+                                  'Clientes',
+                                  index: 1,
+                                  isActive: widget.selectedIndex == 1,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF3B82F6), // Blue
+                                ),
+                              if (canReadStatistics)
+                                _buildNavItem(
+                                  Icons.monitor_heart_outlined,
+                                  'Control y Calidad',
+                                  index: 23,
+                                  isActive: widget.selectedIndex == 23,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFFD9481C),
+                                ),
+                              if (canConfigure)
+                                _buildNavItem(
+                                  Icons.calendar_today_outlined,
+                                  'Clases',
+                                  index: 2,
+                                  isActive: widget.selectedIndex == 2,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFFF59E0B), // Amber
+                                ),
+                              if (canReadClients || canConfigure)
+                                _buildNavItem(
+                                  Icons.credit_card, // Planes icon
+                                  'Planes',
+                                  index: 14, // New Index
+                                  isActive: widget.selectedIndex == 14,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF3B82F6), // Blue
+                                ),
+                              if (canConfigure)
+                                _buildNavItem(
+                                  Icons.schedule,
+                                  'Horarios',
+                                  index: 13,
+                                  isActive: widget.selectedIndex == 13,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF06B6D4), // Cyan
+                                ),
                               // Finanzas Expandable Section
-                              _buildExpandableNavItem(
-                                Icons.payments_outlined,
-                                'Finanzas',
-                                isExpanded: _isFinanzasExpanded,
-                                onTap: _toggleFinanzas,
-                                textMain: primary,
-                                textMuted: textMuted,
-                                accentColor: const Color(0xFF8B5CF6), // Violet
-                                children: [
-                                  _buildSubNavItem(
-                                    Icons.receipt_long_outlined,
-                                    'Transacciones', // Was Monedas
-                                    index: 3,
-                                    isActive: widget.selectedIndex == 3,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(0xFF8B5CF6),
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.account_balance_wallet_outlined,
-                                    'Contabilidad',
-                                    index: 20,
-                                    isActive: widget.selectedIndex == 20,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(0xFF8B5CF6),
-                                  ),
-                                  if (isAdmin)
-                                    _buildSubNavItem(
-                                      Icons.currency_exchange_outlined,
-                                      'Revaluación',
-                                      index: 26,
-                                      isActive: widget.selectedIndex == 26,
-                                      textMain: primary,
-                                      textMuted: textMuted,
-                                      accentColor: const Color(0xFF8B5CF6),
-                                    ),
-                                  if (isAdmin)
-                                    _buildSubNavItem(
-                                      Icons.stacked_bar_chart_outlined,
-                                      'Contabilidad gráfica',
-                                      index: 35,
-                                      isActive: widget.selectedIndex == 35,
-                                      textMain: primary,
-                                      textMuted: textMuted,
-                                      accentColor: const Color(0xFF8B5CF6),
-                                    ),
-                                  _buildSubNavItem(
-                                    Icons.attach_money,
-                                    'Monedas',
-                                    index: 18,
-                                    isActive: widget.selectedIndex == 18,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(0xFF8B5CF6),
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.account_balance_outlined,
-                                    'Cuentas',
-                                    index: 11,
-                                    isActive: widget.selectedIndex == 11,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(
-                                      0xFF8B5CF6,
-                                    ), // Violet
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.credit_card_outlined,
-                                    'Tipos de Pago',
-                                    index: 10,
-                                    isActive: widget.selectedIndex == 10,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(
-                                      0xFF8B5CF6,
-                                    ), // Violet
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.currency_exchange,
-                                    'Tipos de Cambio',
-                                    index: 16,
-                                    isActive: widget.selectedIndex == 16,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(
-                                      0xFF8B5CF6,
-                                    ), // Violet
-                                  ),
-                                ],
-                              ),
-                              if (isAdmin)
+                              if (canUseFinances)
+                                _buildExpandableNavItem(
+                                  Icons.payments_outlined,
+                                  'Finanzas',
+                                  isExpanded: _isFinanzasExpanded,
+                                  onTap: _toggleFinanzas,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(
+                                    0xFF8B5CF6,
+                                  ), // Violet
+                                  children: [
+                                    if (canCollect)
+                                      _buildSubNavItem(
+                                        Icons.receipt_long_outlined,
+                                        'Transacciones', // Was Monedas
+                                        index: 3,
+                                        isActive: widget.selectedIndex == 3,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(0xFF8B5CF6),
+                                      ),
+                                    if (canCloseTreasury || canGovernExpenses)
+                                      _buildSubNavItem(
+                                        Icons.account_balance_wallet_outlined,
+                                        'Contabilidad',
+                                        index: 20,
+                                        isActive: widget.selectedIndex == 20,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(0xFF8B5CF6),
+                                      ),
+                                    if (canCloseTreasury || canGovernExpenses)
+                                      _buildSubNavItem(
+                                        Icons.currency_exchange_outlined,
+                                        'Revaluación',
+                                        index: 26,
+                                        isActive: widget.selectedIndex == 26,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(0xFF8B5CF6),
+                                      ),
+                                    if (canCloseTreasury || canGovernExpenses)
+                                      _buildSubNavItem(
+                                        Icons.stacked_bar_chart_outlined,
+                                        'Contabilidad gráfica',
+                                        index: 35,
+                                        isActive: widget.selectedIndex == 35,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(0xFF8B5CF6),
+                                      ),
+                                    if (canConfigure)
+                                      _buildSubNavItem(
+                                        Icons.attach_money,
+                                        'Monedas',
+                                        index: 18,
+                                        isActive: widget.selectedIndex == 18,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(0xFF8B5CF6),
+                                      ),
+                                    if (canConfigure)
+                                      _buildSubNavItem(
+                                        Icons.account_balance_outlined,
+                                        'Cuentas',
+                                        index: 11,
+                                        isActive: widget.selectedIndex == 11,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(
+                                          0xFF8B5CF6,
+                                        ), // Violet
+                                      ),
+                                    if (canConfigure)
+                                      _buildSubNavItem(
+                                        Icons.credit_card_outlined,
+                                        'Tipos de Pago',
+                                        index: 10,
+                                        isActive: widget.selectedIndex == 10,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(
+                                          0xFF8B5CF6,
+                                        ), // Violet
+                                      ),
+                                    if (canConfigure)
+                                      _buildSubNavItem(
+                                        Icons.currency_exchange,
+                                        'Tipos de Cambio',
+                                        index: 16,
+                                        isActive: widget.selectedIndex == 16,
+                                        textMain: primary,
+                                        textMuted: textMuted,
+                                        accentColor: const Color(
+                                          0xFF8B5CF6,
+                                        ), // Violet
+                                      ),
+                                  ],
+                                ),
+                              if (canConfigure)
                                 _buildNavItem(
                                   Icons.manage_accounts_outlined,
                                   'Usuarios',
@@ -418,28 +447,30 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                 textMuted: textMuted,
                                 accentColor: const Color(0xFFF59E0B), // Amber
                                 children: [
-                                  _buildSubNavItem(
-                                    Icons.public_outlined,
-                                    'Nacionalidades',
-                                    index: 9,
-                                    isActive: widget.selectedIndex == 9,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(
-                                      0xFFF59E0B,
-                                    ), // Amber
-                                  ),
-                                  _buildSubNavItem(
-                                    Icons.share_outlined,
-                                    'Referencias',
-                                    index: 15,
-                                    isActive: widget.selectedIndex == 15,
-                                    textMain: primary,
-                                    textMuted: textMuted,
-                                    accentColor: const Color(
-                                      0xFFF59E0B,
-                                    ), // Amber
-                                  ),
+                                  if (canConfigure)
+                                    _buildSubNavItem(
+                                      Icons.public_outlined,
+                                      'Nacionalidades',
+                                      index: 9,
+                                      isActive: widget.selectedIndex == 9,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(
+                                        0xFFF59E0B,
+                                      ), // Amber
+                                    ),
+                                  if (canConfigure)
+                                    _buildSubNavItem(
+                                      Icons.share_outlined,
+                                      'Referencias',
+                                      index: 15,
+                                      isActive: widget.selectedIndex == 15,
+                                      textMain: primary,
+                                      textMuted: textMuted,
+                                      accentColor: const Color(
+                                        0xFFF59E0B,
+                                      ), // Amber
+                                    ),
                                   _buildSubNavItem(
                                     Icons.palette_outlined,
                                     'Apariencia',
@@ -449,7 +480,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                     textMuted: textMuted,
                                     accentColor: const Color(0xFFF59E0B),
                                   ),
-                                  if (isAdmin)
+                                  if (canConfigure)
                                     _buildSubNavItem(
                                       Icons.rule_folder_outlined,
                                       'Retención',
@@ -459,7 +490,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),
                                     ),
-                                  if (isAdmin)
+                                  if (canConfigure)
                                     _buildSubNavItem(
                                       Icons.percent_outlined,
                                       'Descuento viejo',
@@ -474,7 +505,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                   // alimenta (PLAN_ESTADISTICAS.md §7-ter).
                                   // R6: portada comparativa. El perfil del
                                   // socio vive dentro de Clientes.
-                                  if (isAdmin)
+                                  if (canReadStatistics)
                                     _buildSubNavItem(
                                       Icons.insights_outlined,
                                       'Resumen estadístico',
@@ -487,7 +518,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                   // R6 §5: el cruzador. Vive junto al
                                   // resumen porque responde las preguntas que
                                   // la portada no puede anticipar.
-                                  if (isAdmin)
+                                  if (canReadStatistics)
                                     _buildSubNavItem(
                                       Icons.grid_view_outlined,
                                       'Cruzador',
@@ -502,7 +533,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                   // de la pregunta: no quién es cada corte,
                                   // sino cuántos siguen y de qué datos nos
                                   // podemos fiar.
-                                  if (isAdmin)
+                                  if (canReadStatistics)
                                     _buildSubNavItem(
                                       Icons.timeline_outlined,
                                       'Permanencia',
@@ -512,7 +543,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),
                                     ),
-                                  if (isAdmin)
+                                  if (canReadStatistics)
                                     _buildSubNavItem(
                                       Icons.online_prediction_outlined,
                                       'Pronóstico',
@@ -522,7 +553,7 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                       textMuted: textMuted,
                                       accentColor: const Color(0xFFD9481C),
                                     ),
-                                  if (isAdmin)
+                                  if (canConfigure)
                                     _buildSubNavItem(
                                       Icons.label_off_outlined,
                                       'Motivos de baja',
