@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import '../../../../core/money/decimal_json.dart';
 
 part 'payment_model.g.dart';
 
@@ -11,7 +12,7 @@ class PaymentModel {
 
   final DateTime fecha;
 
-  @JsonKey(name: 'monto_total')
+  @JsonKey(name: 'monto_total', fromJson: decimalJsonToDouble)
   final double amount;
 
   @JsonKey(name: 'id_entrenador')
@@ -26,13 +27,13 @@ class PaymentModel {
   @JsonKey(name: 'membresia_id')
   final String? membershipId;
 
-  @JsonKey(name: 'precio_lista_snapshot')
+  @JsonKey(name: 'precio_lista_snapshot', fromJson: nullableDecimalJsonToDouble)
   final double? listPriceSnapshot;
 
   @JsonKey(name: 'descuento_pct_snapshot')
   final String? discountPctSnapshot;
 
-  @JsonKey(name: 'descuento_monto_snapshot')
+  @JsonKey(name: 'descuento_monto_snapshot', fromJson: nullableDecimalJsonToDouble)
   final double? discountAmountSnapshot;
 
   @JsonKey(name: 'categoria_cliente_snapshot')
@@ -133,7 +134,7 @@ class PaymentDetailModel {
   @JsonKey(name: 'cuenta_id')
   final String? accountId;
 
-  @JsonKey(name: 'cantidad')
+  @JsonKey(name: 'cantidad', fromJson: decimalJsonToDouble)
   final double amount;
 
   @JsonKey(name: 'tipo_cambio_id')
@@ -146,7 +147,11 @@ class PaymentDetailModel {
   final int? methodSurchargeRateVersion;
 
   // Exchange rate value (snapshot)
-  @JsonKey(includeFromJson: true, includeToJson: false)
+  @JsonKey(
+    includeFromJson: true,
+    includeToJson: false,
+    fromJson: nullableDecimalJsonToDouble,
+  )
   final double? exchangeRateValue;
 
   PaymentDetailModel({

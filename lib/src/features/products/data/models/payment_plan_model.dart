@@ -1,3 +1,5 @@
+import '../../../../core/money/decimal_json.dart';
+
 class PaymentPlanModel {
   final String? id;
   final String nombre;
@@ -49,7 +51,9 @@ class PaymentPlanModel {
     return PaymentPlanModel(
       id: json['id_planes_pago'] as String?,
       nombre: json['nombre_plan_pago'] as String? ?? '',
-      importe: (json['importe_plan_pago'] as num?)?.toDouble() ?? 0.0,
+      importe: json['importe_plan_pago'] == null
+          ? 0.0
+          : decimalJsonToDouble(json['importe_plan_pago']),
       duracion: json['duracion_plan_pago'] as int? ?? 0,
       monedaId: json['moneda_id'] as String? ?? '',
       activo: json['activo'] == 1 || json['activo'] == true,
@@ -58,11 +62,11 @@ class PaymentPlanModel {
       comisionEntrenadorTipo:
           json['comision_entrenador_tipo'] as String? ?? 'NONE',
       comisionEntrenadorValor:
-          (json['comision_entrenador_valor'] as num?)?.toDouble(),
+          nullableDecimalJsonToDouble(json['comision_entrenador_valor']),
       aceptaCuotas: json['acepta_cuotas'] == 1 || json['acepta_cuotas'] == true,
       codigo: json['codigo'] as String?,
       precioViejoExcepcion:
-          (json['precio_viejo_excepcion'] as num?)?.toDouble(),
+          nullableDecimalJsonToDouble(json['precio_viejo_excepcion']),
       recargoMoraModo: json['recargo_mora_modo'] as String?,
       recargoMoraValor: json['recargo_mora_valor']?.toString(),
       recargoMoraTope: json['recargo_mora_tope']?.toString(),

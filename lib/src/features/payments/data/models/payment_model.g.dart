@@ -10,15 +10,16 @@ PaymentModel _$PaymentModelFromJson(Map<String, dynamic> json) => PaymentModel(
   id: json['pago_cliente_id'] as String,
   ci: json['ci'] as String,
   fecha: DateTime.parse(json['fecha'] as String),
-  amount: (json['monto_total'] as num).toDouble(),
+  amount: decimalJsonToDouble(json['monto_total']),
   trainerId: json['id_entrenador'] as String?,
   planId: json['id_planes_pago'] as String,
   currencyId: json['moneda_id'] as String,
   membershipId: json['membresia_id'] as String?,
-  listPriceSnapshot: (json['precio_lista_snapshot'] as num?)?.toDouble(),
+  listPriceSnapshot: nullableDecimalJsonToDouble(json['precio_lista_snapshot']),
   discountPctSnapshot: json['descuento_pct_snapshot'] as String?,
-  discountAmountSnapshot: (json['descuento_monto_snapshot'] as num?)
-      ?.toDouble(),
+  discountAmountSnapshot: nullableDecimalJsonToDouble(
+    json['descuento_monto_snapshot'],
+  ),
   clientCategorySnapshot: json['categoria_cliente_snapshot'] as String?,
   planCodeSnapshot: json['plan_codigo_snapshot'] as String?,
   installmentSuffixSnapshot: json['cuota_sufijo_snapshot'] as String?,
@@ -75,12 +76,12 @@ PaymentDetailModel _$PaymentDetailModelFromJson(Map<String, dynamic> json) =>
       paymentTypeId: json['tipo_pago_id'] as String,
       currencyId: json['moneda_id'] as String,
       accountId: json['cuenta_id'] as String?,
-      amount: (json['cantidad'] as num).toDouble(),
+      amount: decimalJsonToDouble(json['cantidad']),
       exchangeRateId: json['tipo_cambio_id'] as String?,
       methodSurchargeBase: json['recargo_metodo_base'] as String?,
       methodSurchargeRateVersion: (json['recargo_metodo_tasa_version'] as num?)
           ?.toInt(),
-      exchangeRateValue: (json['exchangeRateValue'] as num?)?.toDouble(),
+      exchangeRateValue: nullableDecimalJsonToDouble(json['exchangeRateValue']),
     );
 
 Map<String, dynamic> _$PaymentDetailModelToJson(PaymentDetailModel instance) =>
