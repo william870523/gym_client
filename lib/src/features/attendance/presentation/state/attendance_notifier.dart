@@ -24,6 +24,28 @@ class AttendanceNotifier extends AsyncNotifier<List<AttendanceModel>> {
     );
   }
 
+  /// Entrada por identificación, sin exigir la ficha completa del socio.
+  ///
+  /// M4a: un visitante de otra sede **no tiene `ClientModel`** en esta
+  /// instalación —su ficha vive en su sede y aquí solo llega la copia de solo
+  /// lectura—, así que el mostrador necesita poder registrarle la entrada con
+  /// lo único que tiene de él: su cédula. El servidor decide si puede pasar.
+  Future<void> checkInPorCi(String ci) async {
+    final alreadyInside =
+        state.value?.any(
+          (attendance) => attendance.clientId == ci && attendance.checkOut == null,
+        ) ??
+        false;
+    if (alreadyInside || !_pendingCheckIns.add(ci)) return;
+    try {
+      await ref.read(attendanceRepositoryProvider).checkIn(ci);
+      await refresh();
+      ref.invalidate(attendanceHistoryProvider);
+    } finally {
+      _pendingCheckIns.remove(ci);
+    }
+  }
+
   Future<void> checkIn(ClientModel client) async {
     final alreadyInside =
         state.value?.any(

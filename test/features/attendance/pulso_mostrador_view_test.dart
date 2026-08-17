@@ -17,6 +17,8 @@ import 'package:gym_client/src/features/payments/data/models/payment_model.dart'
 import 'package:gym_client/src/features/payments/presentation/state/payment_notifier.dart';
 import 'package:gym_client/src/features/schedules/data/models/horario_model.dart';
 import 'package:gym_client/src/features/schedules/presentation/state/horario_notifier.dart';
+import 'package:gym_client/src/features/clients/data/models/multisede_access_model.dart';
+import 'package:gym_client/src/features/clients/data/repositories/multisede_access_repository.dart';
 
 void main() {
   for (final entry in const {
@@ -351,6 +353,9 @@ Widget _harness({
   return ProviderScope(
     overrides: [
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
+      // M4a: el mostrador consulta a los socios de otras sedes al identificar.
+      // Sin simularlo, la vista sale a la red y deja un temporizador vivo.
+      visitantesProvider.overrideWith((_) async => const <VisitanteModel>[]),
       syncStatusProvider.overrideWith(
         (ref) => Stream.value(
           SyncStatusSnapshot.offline(

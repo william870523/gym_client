@@ -22,6 +22,8 @@ import '../../../schedules/data/models/horario_model.dart';
 import '../../../schedules/presentation/state/horario_notifier.dart';
 import '../../data/models/attendance_model.dart';
 import '../state/attendance_notifier.dart';
+import '../../../clients/data/models/multisede_access_model.dart';
+import '../../../clients/data/repositories/multisede_access_repository.dart';
 
 /// Asistencia / Recepción — MOSTRADOR PULSO.
 ///
@@ -769,8 +771,89 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
               ],
             ),
           ),
+        _buildVisitantesSugeridos(p, inks),
       ],
     );
+  }
+
+  /// Socios de OTRA sede que coinciden con lo escrito (M4a).
+  ///
+  /// El mostrador buscaba solo en el padrón de la sede, así que un visitante
+  /// **no aparecía**: se tecleaba su cédula y no pasaba nada, ni coincidencia
+  /// ni motivo. Lo destapó el recorrido de escritorio del 16-08, y con ese
+  /// hueco el plus multi-sede no servía para lo único que existe —dejar entrar
+  /// a quien lo pagó—.
+  ///
+  /// Van en su propia vía, no mezclados con el padrón: un visitante no es «uno
+  /// más de la casa» y quien atiende tiene que verlo antes de decidir. El que
+  /// tiene el plus vencido también sale, marcado, porque no encontrarlo dejaría
+  /// al mostrador sin saber por qué.
+  Widget _buildVisitantesSugeridos(_MostradorPalette p, _MostradorInks inks) {
+    final consulta = _searchQuery.trim().toLowerCase();
+    if (consulta.isEmpty) return const SizedBox.shrink();
+
+    final visitantes = ref.watch(visitantesProvider).asData?.value ?? const [];
+    final coinciden = visitantes
+        .where(
+          (v) =>
+              v.ci.toLowerCase().contains(consulta) ||
+              v.nombreCompleto.toLowerCase().contains(consulta),
+        )
+        .take(4)
+        .toList();
+    if (coinciden.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(border: Border.all(color: inks.ocre)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Text(
+              'DE OTRA SEDE · ${coinciden.length}',
+              style: TextStyle(
+                fontFamily: PulsoFonts.mono,
+                fontSize: 9,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w500,
+                color: inks.ocre,
+              ),
+            ),
+          ),
+          for (final visitante in coinciden)
+            _SuggestRow(
+              p: p,
+              inks: inks,
+              name: visitante.nombreCompleto,
+              ci: '${visitante.ci} · ${visitante.gymIdOrigen}',
+              photo: null,
+              initials: _initials(visitante.nombreCompleto),
+              action: visitante.accesoVigente ? 'entrar' : 'sin plus',
+              onTap: () => _entrarVisitante(visitante),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _entrarVisitante(VisitanteModel visitante) async {
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+    try {
+      await ref
+          .read(attendanceNotifierProvider.notifier)
+          .checkInPorCi(visitante.ci);
+      _toast('Entrada · ${visitante.nombreCompleto}', _ToastKind.ok);
+    } catch (e) {
+      // El servidor explica si el plus venció o si su membresía de origen no
+      // cubre; ese texto es lo único accionable en el mostrador.
+      _toast(
+        _motivoDelServidor(e) ?? 'No se pudo registrar la entrada',
+        _ToastKind.bad,
+      );
+    }
   }
 
   // ===== cuerpo: cola + aforo =====
@@ -1210,15 +1293,29 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    s.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: p.ink,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          s.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: p.ink,
+                          ),
+                        ),
+                      ),
+                      // M4a — el visitante se distingue **en el mostrador**, no
+                      // en un informe: quien atiende tiene que saber que este
+                      // socio es de otra sede antes de cobrarle o de buscar su
+                      // ficha aquí, porque no la va a encontrar.
+                      if (s.attendance.visitante) ...[
+                        const SizedBox(width: 8),
+                        _DistintivoVisitante(p: p, inks: inks),
+                      ],
+                    ],
                   ),
                   Text(
                     paused
@@ -2421,4 +2518,41 @@ class _MostradorInks {
   final Color verde;
   final Color ocre;
   final Color azul;
+}
+
+/// Distintivo de socio visitante en el mostrador (M4a).
+///
+/// Texto **e** icono, nunca solo color: es el principio 5 de PULSO, y aquí no
+/// es teoría —quien atiende decide con esto si busca la ficha en esta sede o
+/// no—. Va con borde propio, como todo control PULSO: nada flota.
+class _DistintivoVisitante extends StatelessWidget {
+  const _DistintivoVisitante({required this.p, required this.inks});
+
+  final _MostradorPalette p;
+  final _MostradorInks inks;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(border: Border.all(color: inks.ocre)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_horiz, size: 11, color: inks.ocre),
+          const SizedBox(width: 4),
+          Text(
+            'VISITANTE',
+            style: TextStyle(
+              fontFamily: PulsoFonts.mono,
+              fontSize: 8,
+              letterSpacing: 0.8,
+              fontWeight: FontWeight.w500,
+              color: inks.ocre,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

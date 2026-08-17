@@ -25,6 +25,7 @@ import '../state/client_record_export_provider.dart';
 import '../state/client_notifier.dart';
 import '../state/client_record_provider.dart';
 import 'membership_requests_dialog.dart';
+import 'multisede_access_panel.dart';
 import 'voluntary_cancellation_preview_dialog.dart';
 
 class ClientRecordDialog extends ConsumerWidget {
@@ -276,6 +277,10 @@ class _RecordBody extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _Summary(record: record),
+                const SizedBox(height: 16),
+                // M4a — el acceso multi-sede va junto a la identidad y antes
+                // del historial: es una condición del socio, no un movimiento.
+                MultisedeAccessPanel(ci: record.client.id),
                 const SizedBox(height: 16),
                 LayoutBuilder(
                   builder: (context, constraints) {

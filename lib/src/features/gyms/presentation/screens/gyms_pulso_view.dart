@@ -9,6 +9,7 @@ import '../../../../core/widgets/pulso_widgets.dart';
 import '../../domain/models/gym.dart';
 import '../gyms_provider.dart';
 import '../widgets/gym_pulso_form.dart';
+import '../widgets/multisede_price_panel.dart';
 
 enum _GymFilter { all, active, inactive }
 
@@ -303,6 +304,10 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
             _GymHeader(
               onCreate: puedeGestionarSedes ? () => _openForm() : null,
             ),
+            const SizedBox(height: 14),
+            // M4a — la tarifa del plus es de la cadena, y esta es la pantalla
+            // donde se mira la cadena.
+            const MultisedePricePanel(),
             const SizedBox(height: 14),
             PulsoMetricStrip(
               metrics: [

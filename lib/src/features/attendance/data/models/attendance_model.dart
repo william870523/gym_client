@@ -35,6 +35,14 @@ class AttendanceModel {
   @JsonKey(includeFromJson: false, includeToJson: false)
   final String? photoUrl;
 
+  /// M4a — socio de otra sede entrenando aquí con su acceso multi-sede. El
+  /// servidor lo marca al rellenar la fila con la copia de solo lectura: sin
+  /// esta distinción, el mostrador contaría al visitante como socio propio.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final bool visitante;
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? sedeDeOrigen;
+
   AttendanceModel({
     required this.id,
     required this.clientId,
@@ -45,6 +53,8 @@ class AttendanceModel {
     String? status,
     this.clientName,
     this.photoUrl,
+    this.visitante = false,
+    this.sedeDeOrigen,
   }) : status = status ?? (checkOut == null ? 'activo' : 'finalizado');
 
   bool get isPaused => checkOut == null && pauseStart != null;
@@ -107,6 +117,8 @@ class AttendanceModel {
       status: checkOut == null ? 'activo' : 'finalizado',
       clientName: name,
       photoUrl: photo,
+      visitante: json['visitante'] == true,
+      sedeDeOrigen: json['gym_id_origen'] as String?,
     );
   }
 
