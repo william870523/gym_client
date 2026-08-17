@@ -20,6 +20,7 @@ class MultisedeAccessModel {
     required this.marcadoPorUserId,
     required this.marcadoEnGymId,
     required this.version,
+    required this.fechaNegocio,
   });
 
   final String id;
@@ -40,6 +41,14 @@ class MultisedeAccessModel {
   final String marcadoEnGymId;
   final int version;
 
+  /// Fecha de negocio **de la sede**, tal y como la calcula el servidor.
+  ///
+  /// La vista no la deduce del reloj del equipo: un socio de una sede en
+  /// America/Los_Angeles atendido a las 23:00 estaría ya en «mañana» según UTC,
+  /// y el periodo que la confirmación promete saldría desplazado un día
+  /// respecto al que el servidor cobra. Pasó en el recorrido del 17-08-2026.
+  final DateTime? fechaNegocio;
+
   static MultisedeAccessModel? fromJson(Map<String, dynamic>? json) {
     if (json == null) return null;
     return MultisedeAccessModel(
@@ -56,6 +65,9 @@ class MultisedeAccessModel {
       marcadoPorUserId: json['marcado_por_user_id'] as String? ?? '',
       marcadoEnGymId: json['marcado_en_gym_id'] as String? ?? '',
       version: (json['version'] as num?)?.toInt() ?? 1,
+      fechaNegocio: json['fecha_negocio'] == null
+          ? null
+          : DateTime.parse(json['fecha_negocio'] as String).toUtc(),
     );
   }
 }
@@ -117,4 +129,53 @@ class VisitanteModel {
         ? null
         : DateTime.parse(json['membresia_fecha_fin'] as String).toUtc(),
   );
+}
+
+/// Cobro del plus multi-sede (M4b, docs/MULTI_SEDE.md §5.1).
+///
+/// Lleva el **periodo comprado** y no solo el importe, y es a propósito:
+/// renovar antes de tiempo encadena desde el fin vigente, así que sin esas dos
+/// fechas el socio no puede comprobar qué mes acaba de pagar.
+///
+/// `ingresoDe` es lo que separa este cobro de cualquier otro: el efectivo entró
+/// en la caja de la sede, pero el ingreso es de la cadena. La vista lo dice con
+/// esas palabras para que nadie sume mal.
+class MultisedeCobroModel {
+  const MultisedeCobroModel({
+    required this.cobroId,
+    required this.ci,
+    required this.importe,
+    required this.monedaId,
+    required this.cubreDesde,
+    required this.cubreHasta,
+    required this.cobradoEnGymId,
+    required this.ingresoDe,
+  });
+
+  final String cobroId;
+  final String ci;
+  final double importe;
+  final String monedaId;
+  final DateTime cubreDesde;
+
+  /// Exclusiva, igual que `vigente_hasta`: ese día ya no cubre.
+  final DateTime cubreHasta;
+  final String cobradoEnGymId;
+
+  /// `CADENA` hoy. Cuando M4c traiga el cobro cruzado, será una sede.
+  final String ingresoDe;
+
+  static MultisedeCobroModel? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    return MultisedeCobroModel(
+      cobroId: json['cobro_id'] as String,
+      ci: json['ci'] as String? ?? '',
+      importe: decimalJsonToDouble(json['importe']),
+      monedaId: json['moneda_id'] as String? ?? '',
+      cubreDesde: DateTime.parse(json['cubre_desde'] as String).toUtc(),
+      cubreHasta: DateTime.parse(json['cubre_hasta'] as String).toUtc(),
+      cobradoEnGymId: json['cobrado_en_gym_id'] as String? ?? '',
+      ingresoDe: json['ingreso_de'] as String? ?? 'CADENA',
+    );
+  }
 }

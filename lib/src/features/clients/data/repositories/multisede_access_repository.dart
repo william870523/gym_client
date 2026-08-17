@@ -49,8 +49,13 @@ class MultisedeAccessRepository {
     );
   }
 
-  /// Vende o renueva el plus. Renovar antes de tiempo **encadena**: el mes
-  /// nuevo empieza donde termina el vigente, no hoy.
+  /// Concede el plus **sin cobrarlo**.
+  ///
+  /// Desde M4b la vista no lo usa: el botón del panel cobra. Se conserva
+  /// porque el endpoint sigue existiendo para una corrección o una cortesía, y
+  /// borrarlo aquí obligaría a reescribirlo el día que haga falta esa pantalla.
+  /// Renovar antes de tiempo **encadena**: el mes nuevo empieza donde termina
+  /// el vigente, no hoy.
   Future<MultisedeAccessModel?> marcar(String ci) async {
     try {
       final response = await _dio.post('/acceso-multisede/clientes/$ci');
@@ -60,6 +65,40 @@ class MultisedeAccessRepository {
       );
     } on DioException catch (e) {
       throw Exception(serverErrorDetail(e.response?.data) ?? 'No se pudo activar el acceso multi-sede.');
+    }
+  }
+
+  /// **Cobra** el plus (M4b): extiende la vigencia y toma el dinero.
+  ///
+  /// Distinto de `marcar`, que concede sin cobrar. Son dos operaciones y no una
+  /// con bandera: un solo camino que a veces mueve dinero y a veces no, según
+  /// lo que lleve el cuerpo, es imposible de auditar después.
+  ///
+  /// Funciona sin conexión en el escritorio: la cola lo lleva al concentrador
+  /// cuando vuelva. Obligar a abrir la web dejaría al socio esperando.
+  Future<({MultisedeAccessModel? acceso, MultisedeCobroModel? cobro})> cobrar(
+    String ci, {
+    String? cuentaId,
+    String? tipoPagoId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/acceso-multisede/clientes/$ci/cobro',
+        data: {'cuenta_id': cuentaId, 'tipo_pago_id': tipoPagoId},
+      );
+      final cuerpo = (response.data as Map).cast<String, dynamic>();
+      return (
+        acceso: MultisedeAccessModel.fromJson(
+          cuerpo['acceso'] as Map<String, dynamic>?,
+        ),
+        cobro: MultisedeCobroModel.fromJson(
+          cuerpo['cobro'] as Map<String, dynamic>?,
+        ),
+      );
+    } on DioException catch (e) {
+      throw Exception(
+        serverErrorDetail(e.response?.data) ?? 'No se pudo cobrar el acceso multi-sede.',
+      );
     }
   }
 

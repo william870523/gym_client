@@ -7,6 +7,8 @@ import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../auth/presentation/state/auth_notifier.dart';
+import '../../../financials/data/models/account_model.dart';
+import '../../../payments/presentation/state/payment_notifier.dart';
 import '../../data/models/multisede_access_model.dart';
 import '../../data/repositories/multisede_access_repository.dart';
 
@@ -30,6 +32,12 @@ class MultisedeAccessPanel extends ConsumerStatefulWidget {
 class _MultisedeAccessPanelState extends ConsumerState<MultisedeAccessPanel> {
   bool _trabajando = false;
   String? _motivoDelServidor;
+
+  /// M4b — el cobro pide confirmación porque mueve dinero. La marca gratuita
+  /// no la pide: no mueve nada.
+  bool _confirmando = false;
+  String? _cuentaId;
+  MultisedeCobroModel? _ultimoCobro;
 
   Future<void> _operar(Future<void> Function() accion) async {
     setState(() {
@@ -120,21 +128,47 @@ class _MultisedeAccessPanelState extends ConsumerState<MultisedeAccessPanel> {
           acceso.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
-            data: (fila) => _Acciones(
-              acceso: fila,
-              habilitado: puedeEscribir && !_trabajando,
-              onMarcar: () => _operar(
-                () => ref
-                    .read(multisedeAccessRepositoryProvider)
-                    .marcar(widget.ci),
-              ),
-              onRetirar: () => _operar(
-                () => ref
-                    .read(multisedeAccessRepositoryProvider)
-                    .retirar(widget.ci),
-              ),
-            ),
+            data: (fila) => _confirmando
+                ? _Confirmacion(
+                    acceso: fila,
+                    precio: precio.asData?.value,
+                    cuentas: ref.watch(accountsProvider).asData?.value ??
+                        const <AccountModel>[],
+                    cuentaId: _cuentaId,
+                    habilitado: !_trabajando,
+                    onCuenta: (id) => setState(() => _cuentaId = id),
+                    onCancelar: () => setState(() => _confirmando = false),
+                    onCobrar: () => _operar(() async {
+                      final salida = await ref
+                          .read(multisedeAccessRepositoryProvider)
+                          .cobrar(widget.ci, cuentaId: _cuentaId);
+                      if (mounted) {
+                        setState(() {
+                          _confirmando = false;
+                          _ultimoCobro = salida.cobro;
+                        });
+                      }
+                    }),
+                  )
+                : _Acciones(
+                    acceso: fila,
+                    habilitado: puedeEscribir && !_trabajando,
+                    onCobrar: () => setState(() {
+                      _confirmando = true;
+                      _motivoDelServidor = null;
+                      _ultimoCobro = null;
+                    }),
+                    onRetirar: () => _operar(
+                      () => ref
+                          .read(multisedeAccessRepositoryProvider)
+                          .retirar(widget.ci),
+                    ),
+                  ),
           ),
+          if (_ultimoCobro != null) ...[
+            const SizedBox(height: 12),
+            _Comprobante(cobro: _ultimoCobro!, tokens: tokens),
+          ],
           if (!puedeEscribir) ...[
             const SizedBox(height: 8),
             PulsoLabel('Solo recepción y administración lo venden',
@@ -222,12 +256,18 @@ class _Cuerpo extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: PulsoLabel(
-                // `vigente_hasta` es exclusiva: el día que figura ya no cubre.
-                acceso!.vigente ? 'cubre hasta ese día, sin incluirlo' : 'ya no cubre',
-                color: tokens.muted2,
+            // `Expanded` y no un `Padding` a secas: la glosa es larga y a 390 px
+            // desbordaba la fila 337 px. No lo vio nadie hasta que M4b probó el
+            // panel en los cuatro anchos de referencia; las pruebas de M4a solo
+            // lo miraban a tamaño de escritorio.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: PulsoLabel(
+                  // `vigente_hasta` es exclusiva: el día que figura ya no cubre.
+                  acceso!.vigente ? 'cubre hasta ese día, sin incluirlo' : 'ya no cubre',
+                  color: tokens.muted2,
+                ),
               ),
             ),
           ],
@@ -286,13 +326,13 @@ class _Acciones extends StatelessWidget {
   const _Acciones({
     required this.acceso,
     required this.habilitado,
-    required this.onMarcar,
+    required this.onCobrar,
     required this.onRetirar,
   });
 
   final MultisedeAccessModel? acceso;
   final bool habilitado;
-  final VoidCallback onMarcar;
+  final VoidCallback onCobrar;
   final VoidCallback onRetirar;
 
   @override
@@ -302,8 +342,10 @@ class _Acciones extends StatelessWidget {
       children: [
         Expanded(
           child: PulsoPrimaryButton(
-            label: vivo ? 'Renovar un mes' : 'Activar acceso',
-            onPressed: habilitado ? onMarcar : null,
+            // M4b: el verbo dice que hay dinero de por medio. «Renovar» a secas
+            // sonaba a trámite y ahora abre un cobro.
+            label: vivo ? 'Cobrar un mes' : 'Vender acceso',
+            onPressed: habilitado ? onCobrar : null,
           ),
         ),
         if (vivo) ...[
@@ -315,6 +357,205 @@ class _Acciones extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Paso de confirmación del cobro (M4b).
+///
+/// Existe porque este botón **mueve dinero**, y el resto del panel no. Enseña
+/// las tres cosas que el operador necesita antes de decir que sí: cuánto, qué
+/// periodo compra —encadenado desde el fin vigente, no desde hoy— y en qué caja
+/// entra. La cuarta la dice el aviso: el ingreso no es de esta sede.
+class _Confirmacion extends StatelessWidget {
+  const _Confirmacion({
+    required this.acceso,
+    required this.precio,
+    required this.cuentas,
+    required this.cuentaId,
+    required this.habilitado,
+    required this.onCuenta,
+    required this.onCancelar,
+    required this.onCobrar,
+  });
+
+  final MultisedeAccessModel? acceso;
+  final MultisedePriceModel? precio;
+  final List<AccountModel> cuentas;
+  final String? cuentaId;
+  final bool habilitado;
+  final ValueChanged<String?> onCuenta;
+  final VoidCallback onCancelar;
+  final VoidCallback onCobrar;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final formato = DateFormat('dd/MM/yyyy');
+    // El mismo encadenado que aplica el servidor, para que la vista no prometa
+    // un periodo distinto del que se va a cobrar. **La fecha de hoy la manda el
+    // servidor**, no el reloj del equipo: es la fecha de negocio de la sede, y
+    // deducirla aquí desplazaba el periodo un día a partir de las 17:00 en una
+    // sede de la costa oeste (recorrido del 17-08-2026).
+    final ahora = DateTime.now().toUtc();
+    final hoy =
+        acceso?.fechaNegocio ?? DateTime.utc(ahora.year, ahora.month, ahora.day);
+    final cubriendo = acceso != null && acceso!.activo && acceso!.vigente
+        ? acceso!.vigenteHasta
+        : null;
+    final desde = cubriendo != null && cubriendo.isAfter(hoy) ? cubriendo : hoy;
+    final hasta = DateTime.utc(desde.year, desde.month + 1, desde.day);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const PulsoLabel('Confirmar cobro'),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              (precio?.precio ?? 0).toStringAsFixed(2),
+              style: TextStyle(
+                fontFamily: PulsoFonts.display,
+                fontSize: 31,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1,
+                color: tokens.chalk,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  'cubre ${formato.format(desde)} → ${formato.format(hasta)}',
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 11,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: tokens.chalkDim,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const PulsoLabel('Caja donde entra el efectivo'),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String?>(
+          initialValue: cuentaId,
+          isExpanded: true,
+          decoration: const InputDecoration(isDense: true),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('Sin asignar · queda para revisar'),
+            ),
+            for (final cuenta in cuentas)
+              DropdownMenuItem<String?>(
+                value: cuenta.id,
+                child: Text(cuenta.name, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: habilitado ? onCuenta : null,
+        ),
+        const SizedBox(height: 10),
+        // El aviso que impide el error contable más caro (§7.10): quien cobra
+        // no se queda el ingreso. Se dice aquí, antes de cobrar, y no en un
+        // informe de fin de mes donde ya no se puede hacer nada.
+        Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(border: Border.all(color: tokens.line)),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.account_balance_outlined, size: 14, color: tokens.muted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'El efectivo entra en esta caja, pero el ingreso es de la '
+                  'cadena: queda como saldo a su favor.',
+                  style: TextStyle(color: tokens.muted, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: PulsoPrimaryButton(
+                label: 'Cobrar',
+                onPressed: habilitado && precio != null ? onCobrar : null,
+              ),
+            ),
+            const SizedBox(width: 10),
+            PulsoSecondaryButton(
+              label: 'Cancelar',
+              onPressed: habilitado ? onCancelar : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Comprobante de lo que se acaba de cobrar.
+///
+/// Se queda en el panel en vez de desaparecer en un aviso flotante: es lo que
+/// el operador lee en voz alta al socio, y lo que mira si el socio pregunta
+/// «¿hasta cuándo me cubre?» treinta segundos después.
+class _Comprobante extends StatelessWidget {
+  const _Comprobante({required this.cobro, required this.tokens});
+
+  final MultisedeCobroModel cobro;
+  final PulsoTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final formato = DateFormat('dd/MM/yyyy');
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: tokens.success.withValues(alpha: 0.07),
+        border: Border.all(color: tokens.success),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.receipt_long_outlined, size: 15, color: tokens.success),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cobrado ${cobro.importe.toStringAsFixed(2)} · cubre '
+                  '${formato.format(cobro.cubreDesde)} → '
+                  '${formato.format(cobro.cubreHasta)}',
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 12,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: tokens.chalk,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                PulsoLabel(
+                  'ingreso de ${cobro.ingresoDe.toLowerCase()} · '
+                  'efectivo en ${cobro.cobradoEnGymId}',
+                  color: tokens.muted2,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
