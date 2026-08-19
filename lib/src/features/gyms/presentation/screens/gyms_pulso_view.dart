@@ -9,7 +9,6 @@ import '../../../../core/widgets/pulso_widgets.dart';
 import '../../domain/models/gym.dart';
 import '../gyms_provider.dart';
 import '../widgets/gym_pulso_form.dart';
-import '../../../accounting/presentation/widgets/semaforo_cierre_panel.dart';
 import '../widgets/multisede_price_panel.dart';
 
 enum _GymFilter { all, active, inactive }
@@ -38,9 +37,6 @@ class GymsPulsoView extends ConsumerStatefulWidget {
 }
 
 class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
-  /// El semáforo de cierre arranca plegado: esta pantalla es el catálogo de
-  /// sedes, y quien viene a mirar el cierre lo abre.
-  bool _semaforoAbierto = false;
 
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
@@ -253,11 +249,7 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 600;
-        // Con el semáforo desplegado la página ya no cabe de una pieza: pasa
-        // a desplazarse, que es lo que la regla de scroll permite —lo que no
-        // puede es llevarse los mandos con ella—.
-        final scrollPage =
-            compact || constraints.maxHeight < 760 || _semaforoAbierto;
+        final scrollPage = compact || constraints.maxHeight < 760;
         final padding = compact
             ? 16.0
             : constraints.maxWidth < 840
@@ -318,14 +310,7 @@ class _GymsPulsoViewState extends ConsumerState<GymsPulsoView> {
             // donde se mira la cadena.
             const MultisedePricePanel(),
             const SizedBox(height: 14),
-            // M5 — el semáforo de cierre, por el mismo motivo: aquí se mira la
-            // red entera, que es el ámbito de un cierre coordinado (§6.2).
-            SemaforoCierrePanel(
-              abierto: _semaforoAbierto,
-              onAbrir: () =>
-                  setState(() => _semaforoAbierto = !_semaforoAbierto),
-            ),
-            const SizedBox(height: 14),
+
             PulsoMetricStrip(
               metrics: [
                 PulsoMetricData(

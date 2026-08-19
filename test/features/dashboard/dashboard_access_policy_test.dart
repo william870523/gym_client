@@ -51,4 +51,15 @@ void main() {
     expect(dashboardIndexAllowed(1, {}), isFalse);
     expect(dashboardIndexAllowed(0, {}), isTrue);
   });
+
+  group('cierre de la cadena (M6)', () {
+    test('exige el permiso con el que el concentrador protege esas rutas', () {
+      // Esta política no conoce la sesión, así que aquí solo se mira el permiso.
+      // La autoridad de cadena la comprueban el menú —que solo se la ofrece al
+      // Dueño— y el servidor, que responde 403 a cualquier otro.
+      expect(dashboardIndexAllowed(37, {'tesoreria.cerrar'}), isTrue);
+      expect(dashboardIndexAllowed(37, {'clientes.leer'}), isFalse);
+      expect(dashboardIndexAllowed(37, <String>{}), isFalse);
+    });
+  });
 }

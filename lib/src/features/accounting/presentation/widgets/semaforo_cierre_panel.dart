@@ -38,7 +38,25 @@ const double _altoEstado = 214;
 /// «sin datos» en esta tabla se leería como «ninguna sede ha cerrado», que es
 /// justo la conclusión equivocada.
 class SemaforoCierrePanel extends ConsumerStatefulWidget {
-  const SemaforoCierrePanel({super.key, this.abierto = true, this.onAbrir});
+  const SemaforoCierrePanel({
+    super.key,
+    this.abierto = true,
+    this.onAbrir,
+    this.periodoFijado,
+    this.onPeriodo,
+  });
+
+  /// Período impuesto desde fuera.
+  ///
+  /// En la vista de cierre de la cadena el período se elige **una vez** y manda
+  /// sobre el semáforo, el informe, el certificado y el detalle: cada panel con
+  /// su propio selector es como se acaba mirando agosto en uno y julio en otro.
+  /// Sin esto, el panel conserva el suyo.
+  final PeriodoSemaforo? periodoFijado;
+
+  /// Avisa al contenedor de que el período cambió desde aquí —«Ver lo pedido»—
+  /// para que los demás paneles lo sigan.
+  final void Function(PeriodoSemaforo)? onPeriodo;
 
   /// Plegado, ocupa solo su cabecera.
   ///
@@ -64,9 +82,15 @@ class _SemaforoCierrePanelState extends ConsumerState<SemaforoCierrePanel> {
     // Arranca en el mes anterior: es el que se cierra. El mes en curso todavía
     // está abierto y pedir su cierre sería pedir que se firme dinero que aún
     // está entrando.
-    _periodo = PeriodoSemaforo.mesDe(
-      DateTime(DateTime.now().year, DateTime.now().month - 1),
-    );
+    _periodo = widget.periodoFijado ??
+        PeriodoSemaforo.mesDe(DateTime(DateTime.now().year, DateTime.now().month - 1));
+  }
+
+  @override
+  void didUpdateWidget(SemaforoCierrePanel anterior) {
+    super.didUpdateWidget(anterior);
+    final fijado = widget.periodoFijado;
+    if (fijado != null && fijado != _periodo) setState(() => _periodo = fijado);
   }
 
   @override
@@ -111,7 +135,10 @@ class _SemaforoCierrePanelState extends ConsumerState<SemaforoCierrePanel> {
     return null;
   }
 
-  void _mover(PeriodoSemaforo destino) => setState(() => _periodo = destino);
+  void _mover(PeriodoSemaforo destino) {
+    setState(() => _periodo = destino);
+    widget.onPeriodo?.call(destino);
+  }
 
   /// La primera solicitud viva cuyo período no es el que se está mirando.
   ///
@@ -171,6 +198,7 @@ class _SemaforoCierrePanelState extends ConsumerState<SemaforoCierrePanel> {
           _Cabecera(
             periodo: _periodo,
             etiquetaMes: _etiquetaPeriodo(),
+            conMando: widget.periodoFijado == null,
             solicitado: solicitud != null,
             pedidoFuera: _pedidoFueraDeVista(),
             onVerPedido: (pedida) => _mover(
@@ -249,6 +277,7 @@ class _Cabecera extends StatelessWidget {
   const _Cabecera({
     required this.periodo,
     required this.etiquetaMes,
+    required this.conMando,
     required this.solicitado,
     required this.pedidoFuera,
     required this.onVerPedido,
@@ -261,6 +290,9 @@ class _Cabecera extends StatelessWidget {
 
   final PeriodoSemaforo periodo;
   final String etiquetaMes;
+
+  /// Si este panel lleva su propio selector de período o lo manda su contenedor.
+  final bool conMando;
   final bool solicitado;
   final SolicitudCierreModel? pedidoFuera;
   final void Function(SolicitudCierreModel) onVerPedido;
@@ -308,38 +340,43 @@ class _Cabecera extends StatelessWidget {
             _VerPedido(onTap: () => onVerPedido(pedidoFuera!)),
             const SizedBox(width: 6),
           ],
-          if (onAlternar != null) ...[
-            _PasoMes(
-              icono: abierto ? Icons.unfold_less : Icons.unfold_more,
-              onTap: onAlternar!,
-            ),
-            const SizedBox(width: 6),
-          ],
-          _PasoMes(icono: Icons.chevron_left, onTap: onAnterior),
-          Container(
-            constraints: const BoxConstraints(minWidth: 132),
-            height: 32,
-            alignment: Alignment.center,
-            margin: const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(border: Border.all(color: tokens.line)),
-            child: Text(
-              etiquetaMes,
-              style: TextStyle(
-                fontFamily: PulsoFonts.mono,
-                fontSize: 10,
-                letterSpacing: 1.3,
-                fontWeight: FontWeight.w500,
-                color: tokens.chalkDim,
+          // Con el período impuesto desde fuera, este panel **no** repite el
+          // selector: dos mandos para lo mismo en la misma pantalla es el tipo
+          // de duplicado que hace dudar de cuál manda.
+          if (conMando) ...[
+            if (onAlternar != null) ...[
+              _PasoMes(
+                icono: abierto ? Icons.unfold_less : Icons.unfold_more,
+                onTap: onAlternar!,
+              ),
+              const SizedBox(width: 6),
+            ],
+            _PasoMes(icono: Icons.chevron_left, onTap: onAnterior),
+            Container(
+              constraints: const BoxConstraints(minWidth: 132),
+              height: 32,
+              alignment: Alignment.center,
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(border: Border.all(color: tokens.line)),
+              child: Text(
+                etiquetaMes,
+                style: TextStyle(
+                  fontFamily: PulsoFonts.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.3,
+                  fontWeight: FontWeight.w500,
+                  color: tokens.chalkDim,
+                ),
               ),
             ),
-          ),
-          _PasoMes(icono: Icons.chevron_right, onTap: onSiguiente),
-          const SizedBox(width: 6),
-          PulsoIconButton(
-            icon: Icons.refresh,
-            tooltip: 'Volver a leer el semáforo',
-            onPressed: onRecargar,
-          ),
+            _PasoMes(icono: Icons.chevron_right, onTap: onSiguiente),
+            const SizedBox(width: 6),
+            PulsoIconButton(
+              icon: Icons.refresh,
+              tooltip: 'Volver a leer el semáforo',
+              onPressed: onRecargar,
+            ),
+          ],
         ],
       ),
     );

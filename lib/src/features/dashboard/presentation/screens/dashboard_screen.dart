@@ -22,6 +22,7 @@ import '../../../financials/presentation/screens/exchange_rates_pulso_view.dart'
 import '../../../trainers/presentation/screens/trainers_pulso_view.dart';
 import '../../../payments/presentation/screens/payments_pulso_view.dart';
 import '../../../accounting/presentation/screens/accounting_view.dart';
+import '../../../accounting/presentation/screens/cierre_cadena_view.dart';
 import '../../../settings/presentation/screens/appearance_pulso_view.dart';
 import '../../../retention/presentation/screens/dropout_reasons_pulso_view.dart';
 import '../../../statistics/presentation/screens/member_statistics_pulso_view.dart';
@@ -201,6 +202,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       const StatisticsAccountingPulsoView(),
       // 36: E5, pronóstico de demanda con método y banda visibles.
       const StatisticsForecastPulsoView(),
+      // 37: M6, contabilidad central de la cadena: semáforo, informe agregado,
+      // certificado y detalle por sede, con un solo período mandando sobre las
+      // cuatro (docs/MULTI_SEDE.md §6.3 y §6.4).
+      const CierreCadenaView(),
     ];
     return _cachedViews!;
   }

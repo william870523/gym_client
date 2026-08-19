@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../auth/presentation/state/sede_session_provider.dart';
 
-class DashboardSidebar extends StatefulWidget {
+class DashboardSidebar extends ConsumerStatefulWidget {
   final bool isDark;
   final Color surfaceColor;
   final Color borderColor;
@@ -24,10 +26,10 @@ class DashboardSidebar extends StatefulWidget {
   });
 
   @override
-  State<DashboardSidebar> createState() => _DashboardSidebarState();
+  ConsumerState<DashboardSidebar> createState() => _DashboardSidebarState();
 }
 
-class _DashboardSidebarState extends State<DashboardSidebar> {
+class _DashboardSidebarState extends ConsumerState<DashboardSidebar> {
   // Tokens "Registro" (papel/tinta/vermellón) — ver docs/DESIGN_SYSTEM.md.
   Color get _ink =>
       widget.isDark ? const Color(0xFFEFEAE0) : const Color(0xFF1C1A16);
@@ -88,6 +90,10 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
     final canGovernExpenses = can('gastos.gobernar');
     final canReadStatistics = can('estadisticas.leer');
     final canConfigure = can('configuracion.escribir');
+    // M6 — la contabilidad de la cadena no es un permiso de sede: es el nivel de
+    // Dueño, que llega y se revoca por sincronización. El servidor lo vuelve a
+    // comprobar en cada petición; esto solo decide qué se ofrece.
+    final esDuenoDeCadena = ref.watch(esDuenoDeCadenaProvider);
     final canUseFinances =
         canCollect ||
         canCloseTreasury ||
@@ -225,6 +231,19 @@ class _DashboardSidebarState extends State<DashboardSidebar> {
                                 textMain: primary,
                                 textMuted: textMuted,
                               ),
+                              // M6 — contabilidad de la cadena. Solo para el
+                              // Dueño: suma el dinero de todas las sedes, y el
+                              // servidor lo rechaza con 403 a cualquier otro.
+                              if (esDuenoDeCadena)
+                                _buildNavItem(
+                                  Icons.account_balance_outlined,
+                                  'Cierre de la cadena',
+                                  index: 37,
+                                  isActive: widget.selectedIndex == 37,
+                                  textMain: primary,
+                                  textMuted: textMuted,
+                                  accentColor: const Color(0xFF8B5CF6),
+                                ),
                               if (canConfigure)
                                 _buildNavItem(
                                   Icons.fitness_center,

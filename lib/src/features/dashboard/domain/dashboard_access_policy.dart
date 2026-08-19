@@ -20,6 +20,14 @@ bool dashboardIndexAllowed(int index, Set<String> permissions) {
       return has('clientes.escribir');
     case 20:
       return any(['tesoreria.cerrar', 'gastos.gobernar']);
+    // M6 — cierre de la cadena. Aquí solo se comprueba el permiso, porque esta
+    // política no conoce la sesión: quien de verdad decide es la **autoridad de
+    // cadena**, y la comprueban las otras dos puertas —el menú, que solo se la
+    // ofrece al Dueño, y el servidor, que responde 403 a cualquier otro—. El
+    // permiso que se exige es el mismo con el que el concentrador protege
+    // `/cierre-cadena`.
+    case 37:
+      return has('tesoreria.cerrar');
     case 22:
       return has('clientes.leer');
     case 23:

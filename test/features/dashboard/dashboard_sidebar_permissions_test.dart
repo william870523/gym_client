@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_client/src/features/dashboard/presentation/widgets/dashboard_sidebar.dart';
 
-Widget _sidebar(Set<String> permissions) => MaterialApp(
-  home: Scaffold(
-    body: DashboardSidebar(
-      isDark: false,
-      surfaceColor: Colors.white,
-      borderColor: Colors.grey,
-      selectedIndex: 0,
-      onNavigate: (_) {},
-      role: 'rol-del-operador',
-      permissions: permissions,
-      onLogout: () {},
+/// El sidebar lee la sesión desde M6: el nivel de Dueño de la cadena no es un
+/// permiso de sede, así que no puede salir de la lista de permisos. Sin sesión
+/// montada —este arnés— no es Dueño, que es lo que estas pruebas comprueban.
+Widget _sidebar(Set<String> permissions) => ProviderScope(
+  child: MaterialApp(
+    home: Scaffold(
+      body: DashboardSidebar(
+        isDark: false,
+        surfaceColor: Colors.white,
+        borderColor: Colors.grey,
+        selectedIndex: 0,
+        onNavigate: (_) {},
+        role: 'rol-del-operador',
+        permissions: permissions,
+        onLogout: () {},
+      ),
     ),
   ),
 );
