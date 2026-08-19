@@ -12,6 +12,7 @@ import '../../data/models/treasury_period_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 import '../../data/services/treasury_period_close_report_service.dart';
 import '../state/accounting_providers.dart';
+import 'solicitud_cierre_aviso.dart';
 import 'treasury_monthly_panel.dart';
 
 enum _PeriodPreset { day, week, month, custom }
@@ -96,6 +97,34 @@ class _TreasuryPeriodClosePanelState
     });
   }
 
+  /// Carga el período que administración pidió (M5, docs/MULTI_SEDE.md §6.2).
+  ///
+  /// El preset se deduce de la **forma** del rango, igual que lo hace el
+  /// servidor al normalizarlo: un mes natural se firma con el cierre mensual
+  /// formal y nunca crea certificado por período, así que ofrecerlo como
+  /// `PERSONALIZADO` acabaría en un rechazo `USE_MENSUAL` que el operador no
+  /// tiene por qué entender.
+  void _cargarPeriodoPedido(DateTime desde, DateTime hastaIncluido) {
+    final dias = hastaIncluido.difference(desde).inDays + 1;
+    final mesNatural =
+        desde.day == 1 &&
+        hastaIncluido.day == DateTime(desde.year, desde.month + 1, 0).day &&
+        desde.month == hastaIncluido.month &&
+        desde.year == hastaIncluido.year;
+    setState(() {
+      _from = desde;
+      _to = hastaIncluido;
+      _currencyId = null;
+      _preset = mesNatural
+          ? _PeriodPreset.month
+          : dias == 1
+          ? _PeriodPreset.day
+          : (dias == 7 && desde.weekday == DateTime.monday)
+          ? _PeriodPreset.week
+          : _PeriodPreset.custom;
+    });
+  }
+
   void _refresh() {
     ref.invalidate(treasuryPeriodSummaryProvider(_request));
     ref.invalidate(treasuryPeriodClosesProvider(_request));
@@ -111,6 +140,8 @@ class _TreasuryPeriodClosePanelState
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // M5 — lo que administración pide, delante de quien puede firmarlo.
+            SolicitudCierreAviso(onCargarPeriodo: _cargarPeriodoPedido),
             PulsoPanel(
               padding: const EdgeInsets.all(14),
               child: _PeriodSelector(

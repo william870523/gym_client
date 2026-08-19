@@ -8,6 +8,8 @@ import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
 import 'package:gym_client/src/features/auth/domain/models/sede_session.dart';
+import 'package:gym_client/src/features/accounting/data/models/cierre_cadena_models.dart';
+import 'package:gym_client/src/features/accounting/presentation/state/cierre_cadena_providers.dart';
 import 'package:gym_client/src/features/auth/presentation/state/sede_session_provider.dart';
 import 'package:gym_client/src/features/gyms/domain/models/gym.dart';
 import 'package:gym_client/src/features/gyms/presentation/gyms_provider.dart';
@@ -248,6 +250,22 @@ Widget _harness({
         ),
       ),
       gymsListProvider.overrideWith((ref) async => _gyms()),
+      // M5 — el semáforo de cierre vive en esta pantalla desde que la cadena
+      // se cierra de forma coordinada. Aquí se le da una red vacía: estas
+      // pruebas miden el layout de Sedes, no el semáforo, y sin esto saldrían a
+      // buscar el dato de verdad.
+      solicitudesCierreProvider.overrideWith(
+        (ref) async => const <SolicitudCierreModel>[],
+      ),
+      semaforoCadenaProvider.overrideWith(
+        (ref, periodo) async => SemaforoCadenaModel(
+          fechaInicio: periodo.desde,
+          fechaFinExclusiva: periodo.hastaExclusivo,
+          filas: const [],
+          puedeFirmarse: false,
+          ausentes: const [],
+        ),
+      ),
       gymsControllerProvider.overrideWith(
         () => controller ?? _GymsController(),
       ),

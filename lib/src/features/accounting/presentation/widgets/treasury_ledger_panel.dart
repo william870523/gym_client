@@ -13,6 +13,8 @@ import '../../data/models/accounting_models.dart';
 import '../../data/repositories/accounting_repository.dart';
 import '../../data/services/treasury_daily_close_report_service.dart';
 import '../state/accounting_providers.dart';
+import '../state/cierre_cadena_providers.dart';
+import 'solicitud_cierre_aviso.dart';
 import 'treasury_monthly_panel.dart';
 import 'treasury_period_close_panel.dart';
 
@@ -258,10 +260,26 @@ class _TreasuryLedgerPanelState extends ConsumerState<TreasuryLedgerPanel> {
                   : _collectorsLineHeight) +
               10 +
               (_collectorsExpanded ? _collectorsDetailHeight : 0.0);
+    // M5 — el aviso de cierre de la cadena solo existe en la pestaña de período
+    // y solo cuando administración ha pedido algo. Su alto se reserva aquí, como
+    // el de las otras dos líneas variables: este panel tiene altura fija y quien
+    // la calcula es este padre.
+    final avisoHeight =
+        _range == _TreasuryRange.period &&
+            (ref.watch(solicitudesCierreProvider).asData?.value.isNotEmpty ??
+                false)
+        ? (width < 620
+              ? kSolicitudCierreAvisoAltoCompacto
+              : kSolicitudCierreAvisoAlto)
+        : 0.0;
     // El libro apilado (cuentas sobre movimientos) entra por debajo de 880 px,
     // no de 760: con el umbral viejo la vista desbordaba entre 760 y 880.
     return SizedBox(
-      height: (width < 880 ? 970 : 770) + waivedHeight + collectorsHeight,
+      height:
+          (width < 880 ? 970 : 770) +
+          waivedHeight +
+          collectorsHeight +
+          avisoHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
