@@ -24,6 +24,7 @@ import '../../data/models/attendance_model.dart';
 import '../state/attendance_notifier.dart';
 import '../../../clients/data/models/multisede_access_model.dart';
 import '../../../clients/data/repositories/multisede_access_repository.dart';
+import '../widgets/visitante_cobro_panel.dart';
 
 /// Asistencia / Recepción — MOSTRADOR PULSO.
 ///
@@ -833,10 +834,41 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
               action: visitante.accesoVigente ? 'entrar' : 'sin plus',
               onTap: () => _entrarVisitante(visitante),
             ),
+          // M4c — el visitante también puede pagar aquí. La fila deja entrar y
+          // esta línea abre el cobro: son dos acciones distintas sobre la misma
+          // persona y meterlas en un solo toque haría que quien quiere darle
+          // paso acabe cobrándole.
+          for (final visitante in coinciden)
+            if (visitante.accesoVigente)
+              Padding(
+                padding: const EdgeInsets.only(left: 58, bottom: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _MiniTap(
+                    onTap: () => setState(() => _visitanteEnCobro = visitante),
+                    child: PulsoLabel(
+                      'cobrar su plan →',
+                      color: inks.azul,
+                    ),
+                  ),
+                ),
+              ),
+          if (_visitanteEnCobro != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: VisitanteCobroPanel(
+                ci: _visitanteEnCobro!.ci,
+                nombre: _visitanteEnCobro!.nombreCompleto,
+                onCerrar: () => setState(() => _visitanteEnCobro = null),
+              ),
+            ),
         ],
       ),
     );
   }
+
+  /// Visitante al que se le está cobrando el plan (M4c), si hay alguno.
+  VisitanteModel? _visitanteEnCobro;
 
   Future<void> _entrarVisitante(VisitanteModel visitante) async {
     _searchController.clear();

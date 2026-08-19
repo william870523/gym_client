@@ -114,6 +114,42 @@ class MultisedeAccessRepository {
     }
   }
 
+  /// Qué se le cobraría hoy a un visitante (M4c), **sin cobrar nada**.
+  ///
+  /// El mostrador lo necesita antes de pulsar: enseñar el importe después de
+  /// haberlo cobrado no sirve para decidir. En la instalación se responde con
+  /// lo que hay en su base, así que funciona sin conexión.
+  Future<CotizacionVisitaRespuesta> getCotizacionVisita(String ci) async {
+    final response = await _dio.get('/acceso-multisede/visitantes/$ci/cotizacion');
+    return CotizacionVisitaRespuesta.fromJson(
+      (response.data as Map).cast<String, dynamic>(),
+    );
+  }
+
+  /// Cobra el plan de un visitante: el efectivo entra aquí, el ingreso es de su
+  /// sede. El método de pago es obligatorio —el detalle dice CÓMO se pagó—; la
+  /// cuenta no, porque el efectivo se apunta en la tesorería de esta sede.
+  Future<CobroCruzadoModel?> cobrarVisitante(
+    String ci, {
+    required String tipoPagoId,
+    String? cuentaId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/acceso-multisede/visitantes/$ci/cobro',
+        data: {'tipo_pago_id': tipoPagoId, 'cuenta_id': cuentaId},
+      );
+      return CobroCruzadoModel.fromJson(
+        ((response.data as Map).cast<String, dynamic>()['cobro'] as Map)
+            .cast<String, dynamic>(),
+      );
+    } on DioException catch (e) {
+      throw Exception(
+        serverErrorDetail(e.response?.data) ?? 'No se pudo cobrar al visitante.',
+      );
+    }
+  }
+
   /// Fija el precio de cadena. La instalación responde 409
   /// `GLOBAL_CATALOG_REMOTE_ONLY`: esto solo tiene efecto desde la web y con
   /// autoridad de Dueño.
@@ -141,6 +177,13 @@ class MultisedeAccessRepository {
 final multisedePrecioProvider = FutureProvider<MultisedePriceModel?>(
   (ref) => ref.watch(multisedeAccessRepositoryProvider).getPrecio(),
 );
+
+/// Qué se le cobraría a un visitante concreto.
+final cotizacionVisitaProvider =
+    FutureProvider.family<CotizacionVisitaRespuesta, String>(
+      (ref, ci) =>
+          ref.watch(multisedeAccessRepositoryProvider).getCotizacionVisita(ci),
+    );
 
 /// Visitantes que esta sede puede atender hoy.
 final visitantesProvider = FutureProvider<List<VisitanteModel>>(

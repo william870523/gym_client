@@ -179,3 +179,116 @@ class MultisedeCobroModel {
     );
   }
 }
+
+/// Lo que se le cobraría hoy a un visitante (M4c, docs/MULTI_SEDE.md §5.3).
+///
+/// Es una **foto tomada por su sede** que esta instalación guarda para poder
+/// cobrar sin conexión. Por eso lleva `antiguedadDias`: el operador tiene
+/// derecho a saber de cuándo es el precio que está a punto de cobrar, y
+/// disimularlo sería peor que enseñarlo.
+///
+/// El recargo por mora **no** viene de la foto: lo recalcula el servidor al
+/// leerla, contra los días de atraso de hoy.
+class CotizacionVisitaModel {
+  const CotizacionVisitaModel({
+    required this.ci,
+    required this.gymIdOrigen,
+    required this.planCodigo,
+    required this.planNombre,
+    required this.monedaId,
+    required this.precioLista,
+    required this.base,
+    required this.recargoMora,
+    required this.total,
+    required this.diasAtraso,
+    required this.categoriaCliente,
+    required this.antiguedadDias,
+    this.cuotaNumero,
+  });
+
+  final String ci;
+  final String gymIdOrigen;
+  final String planCodigo;
+  final String planNombre;
+  final String monedaId;
+  final double precioLista;
+  final double base;
+  final double recargoMora;
+  final double total;
+  final int diasAtraso;
+  final String categoriaCliente;
+  final int antiguedadDias;
+  final int? cuotaNumero;
+
+  static CotizacionVisitaModel fromJson(Map<String, dynamic> json) =>
+      CotizacionVisitaModel(
+        ci: json['ci'] as String? ?? '',
+        gymIdOrigen: json['gym_id_origen'] as String? ?? '',
+        planCodigo: json['plan_codigo'] as String? ?? '',
+        planNombre: json['plan_nombre'] as String? ?? '',
+        monedaId: json['moneda_id'] as String? ?? '',
+        precioLista: decimalJsonToDouble(json['precio_lista']),
+        base: decimalJsonToDouble(json['base']),
+        recargoMora: decimalJsonToDouble(json['recargo_mora']),
+        total: decimalJsonToDouble(json['total']),
+        diasAtraso: (json['dias_atraso'] as num?)?.toInt() ?? 0,
+        categoriaCliente: json['categoria_cliente'] as String? ?? '',
+        antiguedadDias: (json['antiguedad_dias'] as num?)?.toInt() ?? 0,
+        cuotaNumero: (json['cuota_numero'] as num?)?.toInt(),
+      );
+}
+
+/// Respuesta del servidor a «qué le cobro»: o el importe, o el motivo de que no
+/// se pueda. Las dos son respuestas legítimas y el mostrador enseña la que haya.
+class CotizacionVisitaRespuesta {
+  const CotizacionVisitaRespuesta({required this.cotizacion, required this.motivo});
+
+  final CotizacionVisitaModel? cotizacion;
+  final String? motivo;
+
+  bool get cobrable => cotizacion != null;
+
+  static CotizacionVisitaRespuesta fromJson(Map<String, dynamic> json) =>
+      CotizacionVisitaRespuesta(
+        cotizacion: json['cobrable'] == true
+            ? CotizacionVisitaModel.fromJson(
+                (json['cotizacion'] as Map).cast<String, dynamic>(),
+              )
+            : null,
+        motivo: json['motivo'] as String?,
+      );
+}
+
+/// Comprobante del cobro cruzado: el efectivo entró aquí, el ingreso es de otra
+/// sede, y las dos cosas se dicen en el papel.
+class CobroCruzadoModel {
+  const CobroCruzadoModel({
+    required this.pagoClienteId,
+    required this.ci,
+    required this.total,
+    required this.recargoMora,
+    required this.ingresoDe,
+    required this.cobradoEnGymId,
+    required this.planCodigo,
+  });
+
+  final String pagoClienteId;
+  final String ci;
+  final double total;
+  final double recargoMora;
+
+  /// Sede DUEÑA del ingreso. En M4b era la cadena; aquí, otra sede.
+  final String ingresoDe;
+  final String cobradoEnGymId;
+  final String planCodigo;
+
+  static CobroCruzadoModel fromJson(Map<String, dynamic> json) => CobroCruzadoModel(
+    pagoClienteId: json['pago_cliente_id'] as String? ?? '',
+    ci: json['ci'] as String? ?? '',
+    total: decimalJsonToDouble(json['total']),
+    recargoMora: decimalJsonToDouble(json['recargo_mora']),
+    ingresoDe: json['ingreso_de'] as String? ?? '',
+    cobradoEnGymId: json['cobrado_en_gym_id'] as String? ?? '',
+    planCodigo: json['plan_codigo'] as String? ?? '',
+  );
+}
