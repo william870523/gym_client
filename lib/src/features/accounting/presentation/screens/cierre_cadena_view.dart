@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/pulso/pulso_theme.dart';
+import '../../../../core/window/window_manager.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
 import '../../../auth/presentation/state/sede_session_provider.dart';
@@ -148,6 +149,11 @@ class _CierreCadenaViewState extends ConsumerState<CierreCadenaView> {
                 gymId: sedeEnDetalle,
                 nombreSede: nombreDeLaSede,
                 compact: compact,
+                // En una instalación la sede ya está elegida: es esta. Sin
+                // esto el panel era inalcanzable en el escritorio, porque
+                // elegir sede pasa por el detalle y el detalle es del
+                // concentrador.
+                sedePropia: isDesktopPlatform,
               ),
             ],
           ),

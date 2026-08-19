@@ -31,12 +31,17 @@ class SaldoEnlacePanel extends ConsumerWidget {
     required this.gymId,
     required this.nombreSede,
     this.compact = false,
+    this.sedePropia = false,
   });
 
   /// La sede que se está mirando. `null` cuando aún no se ha elegido ninguna.
   final String? gymId;
   final String? nombreSede;
   final bool compact;
+
+  /// Esta instalación **es** una sede: se carga su saldo sin elegir nada, y la
+  /// consulta viaja sin `gym_id` porque el servidor local ya sabe cuál es.
+  final bool sedePropia;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,7 +58,11 @@ class SaldoEnlacePanel extends ConsumerWidget {
             nota: 'Acumulado · no depende del período',
             notaColor: tokens.muted2,
           ),
-          if (gymId == null)
+          if (gymId == null && sedePropia)
+            // Sin sede elegida pero en su propia instalación: se pide sin
+            // `gym_id` y el servidor local contesta lo suyo.
+            const _SaldoDeLaSede(gymId: null, nombreSede: null, compact: false)
+          else if (gymId == null)
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
               child: Text(
@@ -83,7 +92,9 @@ class _SaldoDeLaSede extends ConsumerWidget {
     required this.compact,
   });
 
-  final String gymId;
+  /// `null` cuando la instalación pregunta por sí misma: la consulta viaja sin
+  /// `gym_id` y el servidor local contesta lo suyo.
+  final String? gymId;
   final String? nombreSede;
   final bool compact;
 
@@ -109,7 +120,10 @@ class _SaldoDeLaSede extends ConsumerWidget {
       ),
       data: (datos) => _Cuerpo(
         datos: datos,
-        gymId: gymId,
+        // El servidor dice de qué sede es lo que acaba de contestar; en una
+        // instalación eso es lo único que la identifica aquí.
+        gymId: gymId ?? datos.gymId,
+        clave: gymId,
         nombreSede: nombreSede ?? datos.nombre,
         compact: compact,
       ),
@@ -121,12 +135,17 @@ class _Cuerpo extends ConsumerWidget {
   const _Cuerpo({
     required this.datos,
     required this.gymId,
+    required this.clave,
     required this.nombreSede,
     required this.compact,
   });
 
   final SaldoSedeModel datos;
   final String gymId;
+
+  /// La clave con la que se pidió: `null` si fue la instalación por sí misma.
+  /// Invalidar con otra dejaría la vista sin refrescarse tras liquidar.
+  final String? clave;
   final String nombreSede;
   final bool compact;
 
@@ -177,7 +196,7 @@ class _Cuerpo extends ConsumerWidget {
                 ? null
                 : () => _abrirLiquidacion(context, ref, linea),
           ),
-        _Liquidaciones(gymId: gymId, compact: compact),
+        _Liquidaciones(gymId: gymId, clave: clave, compact: compact),
       ],
     );
   }
@@ -196,8 +215,8 @@ class _Cuerpo extends ConsumerWidget {
       ),
     );
     if (hecha == null || !context.mounted) return;
-    ref.invalidate(saldoDeSedeProvider(gymId));
-    ref.invalidate(liquidacionesDeSedeProvider(gymId));
+    ref.invalidate(saldoDeSedeProvider(clave));
+    ref.invalidate(liquidacionesDeSedeProvider(clave));
     final mensaje = hecha.yaEstaba
         ? 'Esa liquidación ya estaba registrada; no se ha pagado dos veces.'
         : hecha.liquidaDelTodo
@@ -378,9 +397,14 @@ class _Dinero extends StatelessWidget {
 
 /// El historial: qué se transfirió, con qué referencia y quién lo anotó.
 class _Liquidaciones extends ConsumerWidget {
-  const _Liquidaciones({required this.gymId, required this.compact});
+  const _Liquidaciones({
+    required this.gymId,
+    required this.clave,
+    required this.compact,
+  });
 
   final String gymId;
+  final String? clave;
   final bool compact;
 
   static final _fecha = DateFormat('yyyy-MM-dd HH:mm');
@@ -389,7 +413,7 @@ class _Liquidaciones extends ConsumerWidget {
   Future<void> _anular(
     BuildContext context,
     WidgetRef ref,
-    String gymId,
+    String? clave,
     LiquidacionModel fila,
   ) async {
     final hecho = await showDialog<bool>(
@@ -397,8 +421,8 @@ class _Liquidaciones extends ConsumerWidget {
       builder: (_) => AnularLiquidacionDialog(fila: fila),
     );
     if (hecho != true || !context.mounted) return;
-    ref.invalidate(saldoDeSedeProvider(gymId));
-    ref.invalidate(liquidacionesDeSedeProvider(gymId));
+    ref.invalidate(saldoDeSedeProvider(clave));
+    ref.invalidate(liquidacionesDeSedeProvider(clave));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -412,7 +436,7 @@ class _Liquidaciones extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tokens = PulsoTokens.of(context);
-    final lista = ref.watch(liquidacionesDeSedeProvider(gymId));
+    final lista = ref.watch(liquidacionesDeSedeProvider(clave));
     final filas = lista.asData?.value ?? const <LiquidacionModel>[];
     if (filas.isEmpty) return const SizedBox.shrink();
 
@@ -527,7 +551,7 @@ class _Liquidaciones extends ConsumerWidget {
                                 icon: Icons.undo,
                                 tooltip: 'Anular esta liquidación',
                                 onPressed: () =>
-                                    _anular(context, ref, gymId, fila),
+                                    _anular(context, ref, clave, fila),
                               ),
                             ),
                     ),

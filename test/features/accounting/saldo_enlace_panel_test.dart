@@ -449,4 +449,46 @@ void main() {
     expect(find.text('YA LIQUIDADO'), findsOneWidget);
     expect(find.text('SALDO'), findsOneWidget);
   });
+
+  testWidgets('en una instalación el panel carga su propia sede sin elegir nada', (
+    tester,
+  ) async {
+    // Sin esto el panel era inalcanzable en el escritorio: elegir sede pasa por
+    // el detalle, el detalle necesita el semáforo, y el semáforo solo lo
+    // contesta el concentrador. La sede no podía ver lo que debe justo el día
+    // que el concentrador no responde.
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          saldoDeSedeProvider(null).overrideWith(
+            (_) async => saldo([linea(acreedor: sede('Centro'), saldo: '300.00')]),
+          ),
+          liquidacionesDeSedeProvider(null).overrideWith(
+            (_) async => const <LiquidacionModel>[],
+          ),
+        ],
+        child: MaterialApp(
+          home: PulsoThemeScope(
+            child: Scaffold(
+              body: SingleChildScrollView(
+                child: SizedBox(
+                  width: 1100,
+                  child: SaldoEnlacePanel(
+                    gymId: null,
+                    nombreSede: null,
+                    sedePropia: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Ni rastro del texto que pide elegir sede: ya está elegida.
+    expect(find.textContaining('Elija una sede arriba'), findsNothing);
+    expect(find.text('Centro'), findsOneWidget);
+    expect(find.text('300.00'), findsWidgets);
+  });
 }
