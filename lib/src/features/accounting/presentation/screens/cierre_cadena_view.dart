@@ -10,6 +10,7 @@ import '../../data/models/cierre_cadena_m6_models.dart';
 import '../../data/repositories/cierre_cadena_repository.dart';
 import '../state/cierre_cadena_m6_providers.dart';
 import '../state/cierre_cadena_providers.dart';
+import '../widgets/saldo_enlace_panel.dart';
 import '../widgets/semaforo_cierre_panel.dart';
 
 /// Alto mínimo de un estado de carga o vacío, y de uno con botón de reintento.
@@ -28,11 +29,17 @@ const double _altoEstadoConReintento = 214;
 /// 1. el **semáforo** dice quién ha cerrado y quién no;
 /// 2. el **informe agregado** suma lo que hay, por moneda y con desglose;
 /// 3. el **certificado** lo congela, y
-/// 4. el **detalle** de una sede explica cualquier cifra que chirríe.
+/// 4. el **detalle** de una sede explica cualquier cifra que chirríe, y
+/// 5. el **saldo entre sedes** (M8, §5.4) dice qué le debe esa sede a las demás
+///    y deja registrar la transferencia cuando se hace.
 ///
 /// Repartirlas por menús obligaría a recordar el período al saltar de una a
 /// otra, que es justo donde uno acaba mirando agosto en una y julio en la otra.
-/// Aquí el período se elige una vez y manda sobre las cuatro.
+/// Aquí el período se elige una vez y manda sobre las cuatro primeras —**el
+/// saldo no**, y eso se dice en su cabecera: es lo que se debe hoy, acumulado
+/// desde el primer cobro cruzado, y filtrarlo por período daría una cifra que
+/// nadie puede transferir—. La sede elegida en el detalle sí manda sobre él:
+/// es el mismo gesto, «abro la que chirría».
 ///
 /// El semáforo se mudó desde la pantalla de Sedes, donde vivió durante M5: allí
 /// era un panel plegado en el catálogo de sedes; aquí es el primer paso del
@@ -87,6 +94,18 @@ class _CierreCadenaViewState extends ConsumerState<CierreCadenaView> {
       return const _SoloParaLaCadena();
     }
 
+    final sedeEnDetalle = ref.watch(sedeEnDetalleProvider);
+    // El nombre sale del semáforo, que ya está cargado para el detalle: pedirlo
+    // otra vez solo para rotularlo sería una llamada de más.
+    final nombreDeLaSede = ref
+        .watch(semaforoCadenaProvider(_periodo))
+        .asData
+        ?.value
+        .filas
+        .where((f) => f.gymId == sedeEnDetalle)
+        .map((f) => f.nombre)
+        .firstOrNull;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 760;
@@ -123,6 +142,13 @@ class _CierreCadenaViewState extends ConsumerState<CierreCadenaView> {
               const SizedBox(height: 18),
               // 4. Y si algo chirría, la sede que lo produce.
               _DetallePanel(periodo: _periodo, compact: compact),
+              const SizedBox(height: 18),
+              // 5. Qué le debe esa sede a las demás, y anotar que lo pagó.
+              SaldoEnlacePanel(
+                gymId: sedeEnDetalle,
+                nombreSede: nombreDeLaSede,
+                compact: compact,
+              ),
             ],
           ),
         );

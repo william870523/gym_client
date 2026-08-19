@@ -1,0 +1,80 @@
+{
+  "sede": {
+    "gym_id": "local-gym-001",
+    "nombre": "Gym Test"
+  },
+  "liquidaciones": [
+    {
+      "liquidacion_id": "liq-m8-recorrido-3",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "CADENA",
+        "gym_id": null,
+        "nombre": "La cadena"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "monto": "1000.00",
+      "saldo_antes": "900.00",
+      "saldo_despues": "-100.00",
+      "dejo_saldo_a_favor": true,
+      "asiento_id": "sae-liq-liq-m8-recorrido-3",
+      "referencia": null,
+      "nota": "Se transfiri� de m�s; queda a favor",
+      "registrado_por": {
+        "user_id": "remote-verification-admin",
+        "nombre": "Verificación remota",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-08-19T17:00:13.303Z",
+      "fecha_negocio": "2026-08-19T00:00:00.000Z"
+    },
+    {
+      "liquidacion_id": "liq-m8-recorrido-2",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "SEDE",
+        "gym_id": "dtc-gym-ajeno",
+        "nombre": "Sede Ajena DEMO (R5.4)"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "monto": "350.00",
+      "saldo_antes": "350.00",
+      "saldo_despues": "0.00",
+      "dejo_saldo_a_favor": false,
+      "asiento_id": "sae-liq-liq-m8-recorrido-2",
+      "referencia": "TRF-20260819-0042",
+      "nota": null,
+      "registrado_por": {
+        "user_id": "remote-verification-admin",
+        "nombre": "Verificación remota",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-08-19T17:00:13.225Z",
+      "fecha_negocio": "2026-08-19T00:00:00.000Z"
+    },
+    {
+      "liquidacion_id": "liq-m8-recorrido-1",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "SEDE",
+        "gym_id": "dtc-gym-ajeno",
+        "nombre": "Sede Ajena DEMO (R5.4)"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "monto": "200.00",
+      "saldo_antes": "550.00",
+      "saldo_despues": "350.00",
+      "dejo_saldo_a_favor": false,
+      "asiento_id": "sae-liq-liq-m8-recorrido-1",
+      "referencia": "TRF-20260819-0041",
+      "nota": "Transferencia bancaria del lunes",
+      "registrado_por": {
+        "user_id": "remote-verification-admin",
+        "nombre": "Verificación remota",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-08-19T16:58:29.390Z",
+      "fecha_negocio": "2026-08-19T00:00:00.000Z"
+    }
+  ]
+}
