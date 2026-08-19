@@ -120,4 +120,33 @@ class SaldoEnlaceRepository {
       );
     }
   }
+
+  /// Anula una liquidación: la marca y la **contraasienta**.
+  ///
+  /// No la borra. La transferencia ocurrió de verdad, y hacerla desaparecer
+  /// dejaría el saldo cuadrando por casualidad y sin nadie a quien preguntarle.
+  /// El motivo es obligatorio, y el servidor lo rechaza si falta.
+  Future<void> anular({
+    required String liquidacionId,
+    required String motivo,
+  }) async {
+    try {
+      await _dio.post(
+        '/saldo-enlace/liquidaciones/$liquidacionId/anulacion',
+        data: {'motivo': motivo.trim()},
+      );
+    } on DioException catch (e) {
+      final cuerpo = e.response?.data;
+      final codigo = cuerpo is Map ? cuerpo['error_code']?.toString() : null;
+      if (codigo == 'LIQUIDACION_SALDO_REMOTE_ONLY') {
+        throw LiquidacionSoloEnElConcentrador(
+          serverErrorDetail(cuerpo) ??
+              'Anular la liquidación es de la cadena: lo arbitra el concentrador.',
+        );
+      }
+      throw Exception(
+        serverErrorDetail(cuerpo) ?? 'No se pudo anular la liquidación.',
+      );
+    }
+  }
 }

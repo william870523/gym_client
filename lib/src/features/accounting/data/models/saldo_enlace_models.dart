@@ -128,6 +128,10 @@ class LiquidacionModel {
     required this.saldoDespues,
     required this.dejoSaldoAFavor,
     required this.registradaPor,
+    this.estado = 'VIGENTE',
+    this.anuladaMotivo,
+    this.anuladaPor,
+    this.anuladaAt,
     this.referencia,
     this.nota,
     this.ocurridoAt,
@@ -147,9 +151,24 @@ class LiquidacionModel {
 
   /// Quién la registró, congelado: no cambia si a esa persona la renombran.
   final String registradaPor;
+
+  /// VIGENTE | ANULADA. Anular es contraasentar: la fila se queda, marcada.
+  final String estado;
+
+  /// Por qué se anuló. El servidor lo exige: una corrección de dinero entre dos
+  /// negocios sin explicar es indistinguible de un error.
+  final String? anuladaMotivo;
+
+  /// Quién la anuló, congelado. Suele ser otra persona que la que la registró, y
+  /// que se vean las dos es lo que permite auditar una corrección.
+  final String? anuladaPor;
+  final DateTime? anuladaAt;
+
   final String? referencia;
   final String? nota;
   final DateTime? ocurridoAt;
+
+  bool get anulada => estado == 'ANULADA';
 
   factory LiquidacionModel.fromJson(Map<String, dynamic> json) {
     final actor = ((json['registrado_por'] as Map?) ?? const {}).cast<String, dynamic>();
@@ -164,6 +183,12 @@ class LiquidacionModel {
       saldoDespues: _texto(json['saldo_despues']) ?? '0.00',
       dejoSaldoAFavor: json['dejo_saldo_a_favor'] == true,
       registradaPor: _texto(actor['nombre']) ?? _texto(actor['user_id']) ?? '—',
+      estado: _texto(json['estado']) ?? 'VIGENTE',
+      anuladaMotivo: _texto(json['anulada_motivo']),
+      anuladaPor: _texto(
+        ((json['anulada_por'] as Map?) ?? const {}).cast<String, dynamic>()['nombre'],
+      ),
+      anuladaAt: _instante(json['anulada_at']),
       referencia: _texto(json['referencia']),
       nota: _texto(json['nota']),
       ocurridoAt: _instante(json['ocurrido_at']),

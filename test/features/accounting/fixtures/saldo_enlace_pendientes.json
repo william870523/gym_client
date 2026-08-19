@@ -3,7 +3,17 @@
     "gym_id": "local-gym-001",
     "nombre": "Gym Test"
   },
-  "pendientes": [],
+  "pendientes": [
+    {
+      "acreedor": {
+        "tipo": "SEDE",
+        "gym_id": "dtc-gym-ajeno",
+        "nombre": "Sede Ajena DEMO (R5.4)"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "saldo": "200.00"
+    }
+  ],
   "lineas": [
     {
       "acreedor": {
@@ -12,10 +22,10 @@
         "nombre": "La cadena"
       },
       "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
-      "saldo": "-100.00",
-      "generado": "900.00",
-      "deshecho": "1000.00",
-      "asientos": 7
+      "saldo": "-650.00",
+      "generado": "1000.00",
+      "deshecho": "1650.00",
+      "asientos": 11
     },
     {
       "acreedor": {
@@ -24,10 +34,10 @@
         "nombre": "Sede Ajena DEMO (R5.4)"
       },
       "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
-      "saldo": "0.00",
-      "generado": "550.00",
+      "saldo": "200.00",
+      "generado": "750.00",
       "deshecho": "550.00",
-      "asientos": 4
+      "asientos": 5
     }
   ]
 }

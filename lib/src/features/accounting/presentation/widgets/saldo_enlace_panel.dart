@@ -385,6 +385,30 @@ class _Liquidaciones extends ConsumerWidget {
 
   static final _fecha = DateFormat('yyyy-MM-dd HH:mm');
 
+  /// Anular es contraasentar: la fila se queda, marcada, y la deuda vuelve.
+  Future<void> _anular(
+    BuildContext context,
+    WidgetRef ref,
+    String gymId,
+    LiquidacionModel fila,
+  ) async {
+    final hecho = await showDialog<bool>(
+      context: context,
+      builder: (_) => AnularLiquidacionDialog(fila: fila),
+    );
+    if (hecho != true || !context.mounted) return;
+    ref.invalidate(saldoDeSedeProvider(gymId));
+    ref.invalidate(liquidacionesDeSedeProvider(gymId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Anulada. Los ${fila.monto} vuelven a la deuda; la transferencia '
+          'queda registrada.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tokens = PulsoTokens.of(context);
@@ -412,59 +436,123 @@ class _Liquidaciones extends ConsumerWidget {
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: tokens.line)),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        fila.acreedor.nombre,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: tokens.chalk),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        [
-                          if (fila.ocurridoAt != null)
-                            _fecha.format(fila.ocurridoAt!),
-                          if (fila.referencia != null) fila.referencia!,
-                          fila.registradaPor,
-                        ].join(' · ').toUpperCase(),
-                        style: TextStyle(
-                          fontFamily: PulsoFonts.mono,
-                          fontSize: 8,
-                          letterSpacing: 0.6,
-                          color: tokens.muted2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!compact)
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      '${fila.saldoAntes} → ${fila.saldoDespues}',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontFamily: PulsoFonts.mono,
-                        fontSize: 11,
-                        color: fila.dejoSaldoAFavor
-                            ? tokens.warning
-                            : tokens.muted,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  fila.acreedor.nombre,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: fila.anulada
+                                        ? tokens.muted
+                                        : tokens.chalk,
+                                    // Tachada: la transferencia existió, pero ya
+                                    // no cuenta. Quitarla de la lista borraría
+                                    // algo que ocurrió de verdad.
+                                    decoration: fila.anulada
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              if (fila.anulada) ...[
+                                const SizedBox(width: 8),
+                                _Marca(texto: 'ANULADA', color: tokens.danger),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            [
+                              if (fila.ocurridoAt != null)
+                                _fecha.format(fila.ocurridoAt!),
+                              if (fila.referencia != null) fila.referencia!,
+                              fila.registradaPor,
+                            ].join(' · ').toUpperCase(),
+                            style: TextStyle(
+                              fontFamily: PulsoFonts.mono,
+                              fontSize: 8,
+                              letterSpacing: 0.6,
+                              color: tokens.muted2,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                Expanded(
-                  flex: 2,
-                  child: _Dinero(fila.monto, color: tokens.chalk, fuerte: true),
+                    if (!compact)
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          '${fila.saldoAntes} → ${fila.saldoDespues}',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontFamily: PulsoFonts.mono,
+                            fontSize: 11,
+                            color: fila.dejoSaldoAFavor
+                                ? tokens.warning
+                                : tokens.muted,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      flex: 2,
+                      child: _Dinero(
+                        fila.monto,
+                        color: fila.anulada ? tokens.muted : tokens.chalk,
+                        fuerte: true,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 40,
+                      child: fila.anulada
+                          ? const SizedBox.shrink()
+                          : Align(
+                              alignment: Alignment.centerRight,
+                              child: PulsoIconButton(
+                                icon: Icons.undo,
+                                tooltip: 'Anular esta liquidación',
+                                onPressed: () =>
+                                    _anular(context, ref, gymId, fila),
+                              ),
+                            ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 40),
+                // El motivo va **en la fila**, no escondido tras un clic: quien
+                // revisa el historial busca justamente por qué se corrigió.
+                if (fila.anulada && fila.anuladaMotivo != null) ...[
+                  const SizedBox(height: 7),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: tokens.line),
+                      color: tokens.raised,
+                    ),
+                    child: Text(
+                      '${fila.anuladaMotivo!}'
+                      '${fila.anuladaPor != null ? ' · ${fila.anuladaPor}' : ''}',
+                      style: TextStyle(fontSize: 11, color: tokens.chalkDim),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -881,6 +969,199 @@ class _Cabecera extends StatelessWidget {
           ),
           PulsoLabel(nota, color: notaColor),
         ],
+      ),
+    );
+  }
+}
+
+/// Marca corta encuadrada, para estados de fila.
+class _Marca extends StatelessWidget {
+  const _Marca({required this.texto, required this.color});
+
+  final String texto;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(border: Border.all(color: color)),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontFamily: PulsoFonts.mono,
+          fontSize: 8,
+          letterSpacing: 1.0,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// Anular una liquidación.
+///
+/// Se exige **motivo** y el botón no se habilita sin él, igual que en el
+/// servidor. Una corrección de dinero entre dos negocios sin explicar es
+/// indistinguible de un error, y quien la audite dentro de seis meses no tendrá
+/// a nadie a quien preguntarle.
+class AnularLiquidacionDialog extends ConsumerStatefulWidget {
+  const AnularLiquidacionDialog({super.key, required this.fila});
+
+  final LiquidacionModel fila;
+
+  @override
+  ConsumerState<AnularLiquidacionDialog> createState() =>
+      _AnularLiquidacionDialogState();
+}
+
+class _AnularLiquidacionDialogState
+    extends ConsumerState<AnularLiquidacionDialog> {
+  final _motivo = TextEditingController();
+  bool _enviando = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _motivo.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _motivo.dispose();
+    super.dispose();
+  }
+
+  Future<void> _anular() async {
+    setState(() {
+      _enviando = true;
+      _error = null;
+    });
+    try {
+      await ref.read(saldoEnlaceRepositoryProvider).anular(
+        liquidacionId: widget.fila.liquidacionId,
+        motivo: _motivo.text,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on LiquidacionSoloEnElConcentrador catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final puede = !_enviando && _motivo.text.trim().isNotEmpty;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: PulsoPanel(
+          padding: EdgeInsets.zero,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Cabecera(
+                  titulo: 'ANULAR LIQUIDACIÓN',
+                  nota: 'Se contraasienta · no se borra',
+                  notaColor: tokens.muted2,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: tokens.line),
+                          color: tokens.raised,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${widget.fila.monto} a ${widget.fila.acreedor.nombre}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: tokens.chalk,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Esa cantidad vuelve a la deuda. La transferencia '
+                              'se queda registrada y marcada como anulada: '
+                              'ocurrió de verdad, y borrarla dejaría el saldo '
+                              'cuadrando por casualidad.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: tokens.chalkDim,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _Campo(
+                        etiqueta: 'Motivo de la anulación',
+                        controller: _motivo,
+                        hint: 'Por qué se corrige',
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(11),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: tokens.danger),
+                            color: tokens.dangerSoft,
+                          ),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(fontSize: 12, color: tokens.danger),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PulsoSecondaryButton(
+                              label: 'Cancelar',
+                              onPressed: _enviando
+                                  ? null
+                                  : () => Navigator.of(context).pop(),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: PulsoPrimaryButton(
+                              label: _enviando ? 'ANULANDO…' : 'ANULAR',
+                              onPressed: puede ? _anular : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -13,6 +13,11 @@
         "nombre": "La cadena"
       },
       "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "VIGENTE",
+      "anulada": false,
+      "anulada_motivo": null,
+      "anulada_at": null,
+      "anulada_por": null,
       "monto": "1000.00",
       "saldo_antes": "900.00",
       "saldo_despues": "-100.00",
@@ -37,6 +42,11 @@
         "nombre": "Sede Ajena DEMO (R5.4)"
       },
       "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "VIGENTE",
+      "anulada": false,
+      "anulada_motivo": null,
+      "anulada_at": null,
+      "anulada_por": null,
       "monto": "350.00",
       "saldo_antes": "350.00",
       "saldo_despues": "0.00",
@@ -61,6 +71,15 @@
         "nombre": "Sede Ajena DEMO (R5.4)"
       },
       "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "ANULADA",
+      "anulada": true,
+      "anulada_motivo": "Destino equivocado: era la otra sede",
+      "anulada_at": "2026-08-19T18:48:55.904Z",
+      "anulada_por": {
+        "user_id": "remote-verification-admin",
+        "nombre": "Verificación remota",
+        "rol": "admin"
+      },
       "monto": "200.00",
       "saldo_antes": "550.00",
       "saldo_despues": "350.00",
@@ -75,6 +94,97 @@
       },
       "ocurrido_at": "2026-08-19T16:58:29.390Z",
       "fecha_negocio": "2026-08-19T00:00:00.000Z"
+    },
+    {
+      "liquidacion_id": "liq-d7ce3c95be9cc9c9836e14bbd15ee8df",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "CADENA",
+        "gym_id": null,
+        "nombre": "La cadena"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "VIGENTE",
+      "anulada": false,
+      "anulada_motivo": null,
+      "anulada_at": null,
+      "anulada_por": null,
+      "monto": "150.00",
+      "saldo_antes": "450.00",
+      "saldo_despues": "300.00",
+      "dejo_saldo_a_favor": false,
+      "asiento_id": "sae-liq-liq-d7ce3c95be9cc9c9836e14bbd15ee8df",
+      "referencia": "TRF-FIXTURE-M8-001",
+      "nota": "Transferencia parcial: queda resto vivo",
+      "registrado_por": {
+        "user_id": "fixture-m8-duena",
+        "nombre": "Dueña de la cadena (fixture M8)",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-06-20T10:00:00.000Z",
+      "fecha_negocio": "2026-06-20T00:00:00.000Z"
+    },
+    {
+      "liquidacion_id": "liq-937d17bec62366a7daf5191acfbd72f5",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "CADENA",
+        "gym_id": null,
+        "nombre": "La cadena"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "VIGENTE",
+      "anulada": false,
+      "anulada_motivo": null,
+      "anulada_at": null,
+      "anulada_por": null,
+      "monto": "400.00",
+      "saldo_antes": "300.00",
+      "saldo_despues": "-100.00",
+      "dejo_saldo_a_favor": true,
+      "asiento_id": "sae-liq-liq-937d17bec62366a7daf5191acfbd72f5",
+      "referencia": "TRF-FIXTURE-M8-003",
+      "nota": "Se transfirió de más a propósito; queda a favor",
+      "registrado_por": {
+        "user_id": "fixture-m8-duena",
+        "nombre": "Dueña de la cadena (fixture M8)",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-06-20T10:00:00.000Z",
+      "fecha_negocio": "2026-06-20T00:00:00.000Z"
+    },
+    {
+      "liquidacion_id": "liq-5aef87acebd42c317b5970945b0c2bdf",
+      "gym_id": "local-gym-001",
+      "acreedor": {
+        "tipo": "CADENA",
+        "gym_id": null,
+        "nombre": "La cadena"
+      },
+      "moneda_id": "48dd0e12-2349-4efb-9016-470ffa42bd3d",
+      "estado": "ANULADA",
+      "anulada": true,
+      "anulada_motivo": "Destino equivocado: el acreedor era la otra sede",
+      "anulada_at": "2026-06-21T09:30:00.000Z",
+      "anulada_por": {
+        "user_id": "fixture-m8-contabilidad",
+        "nombre": "Contabilidad central (fixture M8)",
+        "rol": "admin"
+      },
+      "monto": "100.00",
+      "saldo_antes": "300.00",
+      "saldo_despues": "200.00",
+      "dejo_saldo_a_favor": false,
+      "asiento_id": "sae-liq-liq-5aef87acebd42c317b5970945b0c2bdf",
+      "referencia": "TRF-FIXTURE-M8-002",
+      "nota": "Se transfirió al acreedor equivocado",
+      "registrado_por": {
+        "user_id": "fixture-m8-duena",
+        "nombre": "Dueña de la cadena (fixture M8)",
+        "rol": "admin"
+      },
+      "ocurrido_at": "2026-06-20T10:00:00.000Z",
+      "fecha_negocio": "2026-06-20T00:00:00.000Z"
     }
   ]
 }

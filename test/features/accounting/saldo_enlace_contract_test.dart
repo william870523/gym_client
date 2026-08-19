@@ -20,7 +20,9 @@ import 'package:gym_client/src/features/accounting/presentation/widgets/saldo_en
 /// enteró hasta caminarlo.
 ///
 /// Los ficheros de `fixtures/` son la respuesta literal del concentrador,
-/// capturada el 19-08-2026 contra las deudas reales de `local-gym-001`.
+/// capturada el 19-08-2026 contra las deudas reales de `local-gym-001`: las tres
+/// liquidaciones del recorrido —una de ellas anulada— más las tres que siembra
+/// la fixture paritaria `demo:liquidacion-saldo-m8`.
 void main() {
   Map<String, dynamic> leer(String nombre) {
     final ruta = File(
@@ -34,28 +36,45 @@ void main() {
 
     expect(saldo.gymId, 'local-gym-001');
     expect(saldo.nombre, 'Gym Test');
-    // Las dos líneas siguen ahí aunque no quede nada pendiente: una saldada y
-    // otra pagada de más. Esconderlas dejaría a quien busca una deuda que
-    // recuerda haber visto pensando que se perdió.
     expect(saldo.lineas, hasLength(2));
-    expect(saldo.pendientes, isEmpty);
-    expect(saldo.sinDeuda, isTrue);
 
     final cadena = saldo.lineas.firstWhere((l) => l.acreedor.esCadena);
     expect(cadena.acreedor.nombre, 'La cadena');
     expect(cadena.acreedor.gymId, isNull);
-    expect(cadena.saldo, '-100.00');
-    expect(cadena.generado, '900.00');
-    expect(cadena.deshecho, '1000.00');
     expect(cadena.aFavor, isTrue, reason: 'pagó de más: no está en paz');
     expect(cadena.saldado, isFalse);
 
+    // La deuda que la anulación devolvió: estaba saldada y volvió a estar viva.
     final sede = saldo.lineas.firstWhere((l) => !l.acreedor.esCadena);
     expect(sede.acreedor.gymId, 'dtc-gym-ajeno');
     expect(sede.acreedor.nombre, 'Sede Ajena DEMO (R5.4)');
-    expect(sede.saldo, '0.00');
-    expect(sede.saldado, isTrue);
+    expect(sede.saldo, '200.00');
+    expect(sede.saldado, isFalse);
     expect(sede.aFavor, isFalse);
+    expect(saldo.pendientes.map((p) => p.saldo), ['200.00']);
+  });
+
+  test('la anulada llega marcada, con su motivo y con quién la anuló', () {
+    // Es el caso que ninguna fixture escrita a mano prueba de verdad: quien
+    // registró y quien anuló son personas distintas, y las dos tienen que
+    // sobrevivir al viaje.
+    final filas = [
+      for (final fila in leer('liquidaciones')['liquidaciones'] as List)
+        LiquidacionModel.fromJson((fila as Map).cast<String, dynamic>()),
+    ];
+    final anuladas = filas.where((f) => f.anulada).toList();
+    expect(anuladas, isNotEmpty);
+    for (final fila in anuladas) {
+      expect(fila.estado, 'ANULADA');
+      expect(fila.anuladaMotivo, isNotNull);
+      expect(fila.anuladaMotivo, isNotEmpty);
+      expect(fila.anuladaPor, isNotNull);
+    }
+    // Y las vigentes no traen rastro de anulación: el estado no se contagia.
+    for (final fila in filas.where((f) => !f.anulada)) {
+      expect(fila.anuladaMotivo, isNull);
+      expect(fila.anuladaPor, isNull);
+    }
   });
 
   test('las liquidaciones reales conservan referencia, actor y foto del saldo', () {
@@ -64,7 +83,7 @@ void main() {
         LiquidacionModel.fromJson((fila as Map).cast<String, dynamic>()),
     ];
 
-    expect(filas, hasLength(3));
+    expect(filas, hasLength(6));
     // De la más reciente a la más antigua: quien abre esto busca la última.
     expect(filas.first.liquidacionId, 'liq-m8-recorrido-3');
 
@@ -140,15 +159,15 @@ void main() {
     expect(find.text('SALDO ENTRE SEDES'), findsOneWidget);
     expect(find.text('La cadena'), findsWidgets);
     expect(find.text('Sede Ajena DEMO (R5.4)'), findsWidgets);
-    // Las dos situaciones que se parecen y no son lo mismo.
+    // Pagado de más: la línea que se parece a una saldada y pide lo contrario.
     expect(find.textContaining('PAGADO DE MÁS'), findsOneWidget);
-    expect(find.textContaining('SALDADO'), findsOneWidget);
-    expect(find.text('-100.00'), findsWidgets);
-    // Nada que liquidar: las dos líneas están cerradas.
-    expect(find.byTooltip('Registrar la transferencia'), findsNothing);
-    expect(find.textContaining('Sin deudas vivas'), findsOneWidget);
-    // Y el historial, con la referencia y el actor congelado.
+    // Y la deuda que la anulación devolvió a la vida: sí se puede liquidar.
+    expect(find.byTooltip('Registrar la transferencia'), findsOneWidget);
+    // El historial, con la referencia y el actor congelado.
     expect(find.textContaining('TRF-20260819-0042'), findsOneWidget);
     expect(find.text('900.00 → -100.00'), findsOneWidget);
+    // Las anuladas siguen ahí, marcadas y con su motivo.
+    expect(find.text('ANULADA'), findsNWidgets(2));
+    expect(find.textContaining('Destino equivocado'), findsWidgets);
   });
 }

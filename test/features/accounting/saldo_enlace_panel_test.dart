@@ -316,4 +316,137 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('más de lo que se debe'), findsOneWidget);
   });
+
+  // ----------------------------------------------------------- la anulación
+
+  LiquidacionModel liquidacion({
+    String id = 'liq-1',
+    String estado = 'VIGENTE',
+    String? anuladaMotivo,
+    String? anuladaPor,
+  }) => LiquidacionModel(
+    liquidacionId: id,
+    acreedor: sede('Centro'),
+    monedaId: 'cup',
+    monto: '120.00',
+    saldoAntes: '300.00',
+    saldoDespues: '180.00',
+    dejoSaldoAFavor: false,
+    registradaPor: 'Dora Dueña',
+    referencia: 'TRF-0041',
+    estado: estado,
+    anuladaMotivo: anuladaMotivo,
+    anuladaPor: anuladaPor,
+    ocurridoAt: DateTime(2026, 8, 19, 10, 30),
+  );
+
+  testWidgets('una transferencia vigente se puede anular', (tester) async {
+    await tester.pumpWidget(
+      app(
+        datos: saldo([linea(acreedor: sede('Centro'), saldo: '180.00')]),
+        liquidaciones: [liquidacion()],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Anular esta liquidación'), findsOneWidget);
+  });
+
+  testWidgets('una anulada se queda a la vista, tachada y con su motivo', (
+    tester,
+  ) async {
+    // Quitarla de la lista borraría algo que ocurrió de verdad, y quien revisa
+    // el historial busca justamente por qué se corrigió.
+    await tester.pumpWidget(
+      app(
+        datos: saldo([linea(acreedor: sede('Centro'), saldo: '300.00')]),
+        liquidaciones: [
+          liquidacion(
+            estado: 'ANULADA',
+            anuladaMotivo: 'Destino equivocado',
+            anuladaPor: 'Contabilidad central',
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ANULADA'), findsOneWidget);
+    expect(
+      find.textContaining('Destino equivocado · Contabilidad central'),
+      findsOneWidget,
+    );
+    // Y ya no se puede volver a anular: el contraasiento devolvería el dinero
+    // dos veces.
+    expect(find.byTooltip('Anular esta liquidación'), findsNothing);
+  });
+
+  testWidgets('anular exige motivo antes de dejar enviar', (tester) async {
+    // Igual que el servidor: una corrección de dinero entre dos negocios sin
+    // explicar es indistinguible de un error.
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: PulsoThemeScope(
+            child: Scaffold(
+              body: AnularLiquidacionDialog(fila: liquidacion()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('vuelve a la deuda'), findsOneWidget);
+
+    final sinMotivo = tester.widget<PulsoPrimaryButton>(
+      find.byType(PulsoPrimaryButton),
+    );
+    expect(sinMotivo.onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField).first, 'Destino equivocado');
+    await tester.pumpAndSettle();
+    final conMotivo = tester.widget<PulsoPrimaryButton>(
+      find.byType(PulsoPrimaryButton),
+    );
+    expect(conMotivo.onPressed, isNotNull);
+  });
+
+  testWidgets('a 560 px la fila sigue legible y el saldo no se pierde', (
+    tester,
+  ) async {
+    // El gate de anchos pide tres tallas, y esta es la estrecha de verdad: el
+    // panel vive en una ventana que alguien puede dejar a media pantalla.
+    tester.view.physicalSize = const Size(560, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      app(
+        width: 560,
+        datos: saldo([linea(acreedor: sede('Centro'), saldo: '300.00')]),
+        liquidaciones: [liquidacion()],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'nada desborda a 560 px');
+    expect(find.text('Centro'), findsWidgets);
+    expect(find.text('300.00'), findsOneWidget);
+    expect(find.byTooltip('Registrar la transferencia'), findsOneWidget);
+    // Las auxiliares se ocultan; la acción y la cifra nunca.
+    expect(find.text('NACIDO DE COBROS'), findsNothing);
+  });
+
+  testWidgets('a 1400 px se ven todas las columnas', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      app(
+        width: 1400,
+        datos: saldo([linea(acreedor: sede('Centro'), saldo: '300.00')]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('NACIDO DE COBROS'), findsOneWidget);
+    expect(find.text('YA LIQUIDADO'), findsOneWidget);
+    expect(find.text('SALDO'), findsOneWidget);
+  });
 }
