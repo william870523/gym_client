@@ -913,17 +913,26 @@ class _ChipSede extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          alignment: Alignment.center,
           decoration: BoxDecoration(
             border: Border.all(color: activo ? tokens.accent : tokens.line),
             color: activo ? tokens.accentSoft : tokens.surface,
           ),
-          child: Text(
-            nombre,
-            style: TextStyle(
-              fontSize: 12,
-              color: activo ? tokens.accent : tokens.chalkDim,
-            ),
+          // `Row` con tamaño mínimo en vez de `alignment: center`: un
+          // `Container` con alineación y sin ancho se estira hasta el máximo que
+          // le permitan, y dentro del `Wrap` eso convertía cada chip en una
+          // barra a todo el ancho. Solo se veía en la web, porque en el
+          // escritorio esta lista no llega a cargarse.
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                nombre,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: activo ? tokens.accent : tokens.chalkDim,
+                ),
+              ),
+            ],
           ),
         ),
       ),

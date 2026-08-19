@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_client/src/core/theme/pulso/pulso_theme.dart';
 import 'package:gym_client/src/features/accounting/data/models/cierre_cadena_m6_models.dart';
+import 'package:gym_client/src/features/accounting/data/models/saldo_enlace_models.dart';
 import 'package:gym_client/src/features/accounting/data/models/cierre_cadena_models.dart';
 import 'package:gym_client/src/features/accounting/presentation/screens/cierre_cadena_view.dart';
 import 'package:gym_client/src/features/accounting/presentation/state/cierre_cadena_m6_providers.dart';
+import 'package:gym_client/src/features/accounting/presentation/state/saldo_enlace_providers.dart';
 import 'package:gym_client/src/features/accounting/presentation/state/cierre_cadena_providers.dart';
 import 'package:gym_client/src/features/auth/domain/models/sede_session.dart';
 import 'package:gym_client/src/features/auth/presentation/state/sede_session_provider.dart';
@@ -92,6 +94,19 @@ void main() {
       certificadosProvider.overrideWith((_) async => certificados),
       if (detalle != null)
         detalleDeSedeProvider.overrideWith((ref, _) async => detalle),
+      // El panel del saldo (M8) vive en esta pantalla, y sin estos dos la
+      // prueba salía a la red de verdad: en escritorio pide su propia sede.
+      saldoDeSedeProvider.overrideWith(
+        (ref, _) async => const SaldoSedeModel(
+          gymId: 'gym-centro',
+          nombre: 'Sede Centro',
+          pendientes: [],
+          lineas: [],
+        ),
+      ),
+      liquidacionesDeSedeProvider.overrideWith(
+        (ref, _) async => const <LiquidacionModel>[],
+      ),
     ],
     child: const MaterialApp(
       home: PulsoThemeScope(child: Scaffold(body: CierreCadenaView())),
@@ -332,6 +347,34 @@ void main() {
     expect(find.text('CIERRE DE LA CADENA.'), findsNothing);
     expect(find.textContaining('es del dueño de la cadena'), findsOneWidget);
   });
+  testWidgets('los chips de sede son compactos, no barras a todo el ancho', (
+    tester,
+  ) async {
+    // Un `Container` con alineación y sin ancho se estira hasta el máximo que le
+    // permitan, y dentro del `Wrap` eso convertía cada sede en una barra de
+    // pared a pared. Solo se vio fotografiando la web: en el escritorio esta
+    // lista no llega a cargarse porque el semáforo es del concentrador.
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    final chipTexto = find
+        .descendant(
+          of: find.byType(Wrap),
+          matching: find.text('Sede Centro'),
+        )
+        .first;
+    final ancho = tester.getSize(chipTexto).width;
+    // El chip que lo contiene mide lo que el texto más su padding, no el ancho
+    // del panel: si se estirara, pasaría de cien píxeles de margen.
+    final chip = find.ancestor(
+      of: chipTexto,
+      matching: find.byType(AnimatedContainer),
+    );
+    expect(tester.getSize(chip.first).width, lessThan(ancho + 60));
+  });
 }
 
 class _Sesion extends SedeSessionNotifier {
@@ -346,4 +389,5 @@ class _Sesion extends SedeSessionNotifier {
     role: 'admin',
     esPlataforma: esPlataforma,
   );
+
 }
