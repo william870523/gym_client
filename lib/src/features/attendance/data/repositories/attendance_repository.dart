@@ -22,10 +22,15 @@ class AttendanceRepository {
     }
   }
 
-  Future<AttendanceModel> checkIn(String clientId) async {
+  Future<EntradaRegistrada> checkIn(String clientId) async {
     try {
       final response = await _dio.post('/asistencias', data: {'ci': clientId});
-      return AttendanceModel.fromJson(response.data);
+      // §5.2 — la respuesta trae, en la entrada de un visitante, con qué dato
+      // se autorizó. Descartarlo aquí dejaría al mostrador sin saber que acaba
+      // de dejar pasar a alguien con información que puede estar vieja.
+      return EntradaRegistrada.fromJson(
+        (response.data as Map).cast<String, dynamic>(),
+      );
     } catch (e) {
       rethrow;
     }

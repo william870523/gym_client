@@ -340,6 +340,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   _pruebasDeVisitantes();
+  _pruebasDeLaDeclaracion();
 }
 
 Widget _harness({
@@ -441,6 +442,20 @@ class _AttendanceNotifier extends AttendanceNotifier {
 
   /// Fallo sin cuerpo legible: la red se cayó, no hubo rechazo de negocio.
   bool fallaSinMotivo = false;
+
+  /// §5.2 — con qué dato dice el servidor que autorizó la entrada.
+  String? decididoCon;
+  String? advertencia;
+
+  @override
+  Future<EntradaRegistrada?> checkInPorCi(String ci) async {
+    checkIns.add(ci);
+    return EntradaRegistrada(
+      asistencia: items.first,
+      decididoCon: decididoCon,
+      advertencia: advertencia,
+    );
+  }
 
   @override
   Future<void> checkIn(ClientModel client) async {
@@ -666,5 +681,85 @@ void _pruebasDeVisitantes() {
 
     expect(find.textContaining('sin sincronizar'), findsNothing);
     expect(find.textContaining('desde ayer'), findsNothing);
+  });
+}
+
+/// §5.2 — el mostrador dice **con qué dato** autorizó la entrada de un visitante.
+///
+/// El servidor lo devuelve desde que se cerró la ventana de la cancelación
+/// anticipada, y el aviso importa justo cuando **deja entrar**: si el
+/// concentrador no contestó, esa entrada se autorizó con lo que la sede tenía
+/// guardado y puede haber una baja de la que no se ha enterado.
+void _pruebasDeLaDeclaracion() {
+  VisitantesDeLaSede unVisitante() => VisitantesDeLaSede(
+    visitantes: [
+      const VisitanteModel(
+        ci: '99090100009',
+        nombres: 'Nadia',
+        apellidos: 'Del Norte',
+        gymIdOrigen: 'gym-norte',
+        accesoVigente: true,
+        membresiaEstado: 'ACTIVA',
+      ),
+    ],
+    conocimiento: ConocimientoDeLaSede.desconocido,
+  );
+
+  Future<void> entrar(WidgetTester tester, _AttendanceNotifier notifier) async {
+    tester.view.physicalSize = const Size(1500, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _harness(notifier: notifier, visitantes: unVisitante()),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pulso-mostrador-search')),
+      'Nadia',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nadia Del Norte'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('decidida por el concentrador: entra y no se advierte nada', (
+    tester,
+  ) async {
+    // El dato era el de origen en ese instante: no hay nada que matizar, y
+    // matizarlo enseñaría a ignorar el aviso cuando sí importe.
+    final notifier = _AttendanceNotifier(_attendances())
+      ..decididoCon = 'CONCENTRADOR';
+    await entrar(tester, notifier);
+
+    expect(notifier.checkIns, ['99090100009']);
+    expect(find.text('Entrada · Nadia Del Norte'.toUpperCase()), findsOneWidget);
+    expect(find.textContaining('no contestó'), findsNothing);
+  });
+
+  testWidgets('decidida con la copia: entra, y lo dice', (tester) async {
+    // Es el caso peligroso: la entrada se autorizó con datos que pueden haber
+    // envejecido. Se registra igual —cerrar el gimnasio porque el concentrador
+    // no responde sería peor— pero no en silencio.
+    final notifier = _AttendanceNotifier(_attendances())
+      ..decididoCon = 'COPIA_LOCAL'
+      ..advertencia =
+          'El concentrador no contestó: se decidió con lo que esta sede tenía guardado.';
+    await entrar(tester, notifier);
+
+    expect(notifier.checkIns, ['99090100009']);
+    expect(find.text('Entrada · Nadia Del Norte'.toUpperCase()), findsOneWidget);
+    expect(find.textContaining('no contestó'), findsOneWidget);
+  });
+
+  testWidgets('sin declaración —socio de la casa— no se inventa un aviso', (
+    tester,
+  ) async {
+    // Para un socio propio la pregunta no existe: su membresía está en esta
+    // misma base. Un aviso ahí haría creer que también hay duda.
+    final notifier = _AttendanceNotifier(_attendances());
+    await entrar(tester, notifier);
+
+    expect(find.textContaining('no contestó'), findsNothing);
+    expect(find.textContaining('guardado'), findsNothing);
   });
 }

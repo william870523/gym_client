@@ -289,7 +289,12 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
   }
 
   // ===== toast =====
-  void _toast(String msg, _ToastKind kind) {
+  /// `detalle` es la segunda línea que la receta §3.10 del toast ya preveía y
+  /// que aquí no se usaba. Se añadió para poder decir **con qué dato** se
+  /// autorizó una entrada de visitante sin gritarlo en el título: el
+  /// recepcionista necesita ver primero que la entrada se registró, y después
+  /// el matiz.
+  void _toast(String msg, _ToastKind kind, {String? detalle}) {
     if (!mounted) return;
     final p = _MostradorPalette.fromContext(context);
     final inks = _MostradorInks.fromContext(context);
@@ -297,28 +302,50 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       _ToastKind.ok => inks.verde,
       _ToastKind.bad => p.danger,
       _ToastKind.info => inks.ocre,
+      _ToastKind.duda => inks.ocre,
     };
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          duration: const Duration(seconds: 3),
+          // Con detalle dura más: son dos frases que hay que leer, y tres
+          // segundos no dan para enterarse de que la entrada se autorizó con
+          // información que puede estar vieja.
+          duration: Duration(seconds: detalle == null ? 3 : 7),
           behavior: SnackBarBehavior.floating,
           backgroundColor: p.ink,
           shape: const RoundedRectangleBorder(),
           content: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(width: 5, height: 26, color: bar),
+              Container(width: 5, height: detalle == null ? 26 : 42, color: bar),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  msg.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                    color: p.paper,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      msg.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        color: p.paper,
+                      ),
+                    ),
+                    if (detalle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        detalle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: p.paper.withValues(alpha: 0.78),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -900,10 +927,20 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     _searchController.clear();
     setState(() => _searchQuery = '');
     try {
-      await ref
+      final entrada = await ref
           .read(attendanceNotifierProvider.notifier)
           .checkInPorCi(visitante.ci);
-      _toast('Entrada · ${visitante.nombreCompleto}', _ToastKind.ok);
+      // §5.2 — cuando el concentrador no contestó, esta entrada se autorizó con
+      // lo que la sede tenía guardado, y puede haber una baja de la que no se
+      // ha enterado. Se dice **al dejar entrar**, que es cuando importa:
+      // avisarlo solo al bloquear dejaría sin matiz justo la decisión que puede
+      // estar equivocada.
+      final conDuda = entrada?.conDudaRazonable ?? false;
+      _toast(
+        'Entrada · ${visitante.nombreCompleto}',
+        conDuda ? _ToastKind.duda : _ToastKind.ok,
+        detalle: conDuda ? entrada!.advertencia : null,
+      );
     } catch (e) {
       // El servidor explica si el plus venció o si su membresía de origen no
       // cubre; ese texto es lo único accionable en el mostrador.
@@ -1737,7 +1774,10 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
   }
 }
 
-enum _ToastKind { ok, bad, info }
+/// `duda`: la acción salió bien **pero se decidió con datos que pueden
+/// haber envejecido**. No es un éxito limpio ni un fallo, y pintarlo verde
+/// haría creer que no hay nada que mirar.
+enum _ToastKind { ok, bad, info, duda }
 
 // =========================================================================
 // Cálculo de los hechos del mostrador

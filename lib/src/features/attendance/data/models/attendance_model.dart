@@ -124,3 +124,40 @@ class AttendanceModel {
 
   Map<String, dynamic> toJson() => _$AttendanceModelToJson(this);
 }
+
+/// Una entrada recién registrada, con **cómo se decidió** (§5.2).
+///
+/// La declaración va aparte de `AttendanceModel` a propósito: no es una
+/// propiedad de la asistencia —esa fila es la misma se haya decidido como se
+/// haya decidido— sino del acto de autorizarla. Meterla dentro obligaría a
+/// arrastrarla por todas las listas y los informes, donde no significa nada.
+///
+/// Solo llega en la entrada de un **visitante**: para un socio de la casa la
+/// pregunta no existe, porque su membresía está en esta misma base.
+class EntradaRegistrada {
+  const EntradaRegistrada({
+    required this.asistencia,
+    this.decididoCon,
+    this.advertencia,
+  });
+
+  final AttendanceModel asistencia;
+
+  /// `CONCENTRADOR` cuando el dato era de origen en ese instante;
+  /// `COPIA_LOCAL` cuando el concentrador no contestó y decidió esta sede.
+  final String? decididoCon;
+
+  /// Lo que la sede no puede afirmar. Nulo cuando decidió el concentrador.
+  final String? advertencia;
+
+  /// La entrada se autorizó con datos que pueden haber envejecido.
+  bool get conDudaRazonable => decididoCon == 'COPIA_LOCAL' && advertencia != null;
+
+  static EntradaRegistrada fromJson(Map<String, dynamic> json) => EntradaRegistrada(
+    asistencia: AttendanceModel.fromJson(json),
+    decididoCon: json['decidido_con'] as String?,
+    advertencia: (json['advertencia'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['advertencia'] as String).trim(),
+  );
+}

@@ -30,17 +30,20 @@ class AttendanceNotifier extends AsyncNotifier<List<AttendanceModel>> {
   /// instalación —su ficha vive en su sede y aquí solo llega la copia de solo
   /// lectura—, así que el mostrador necesita poder registrarle la entrada con
   /// lo único que tiene de él: su cédula. El servidor decide si puede pasar.
-  Future<void> checkInPorCi(String ci) async {
+  /// Devuelve cómo se decidió la entrada, o `null` si no llegó a registrarse
+  /// —ya estaba dentro, o hay otra en curso—.
+  Future<EntradaRegistrada?> checkInPorCi(String ci) async {
     final alreadyInside =
         state.value?.any(
           (attendance) => attendance.clientId == ci && attendance.checkOut == null,
         ) ??
         false;
-    if (alreadyInside || !_pendingCheckIns.add(ci)) return;
+    if (alreadyInside || !_pendingCheckIns.add(ci)) return null;
     try {
-      await ref.read(attendanceRepositoryProvider).checkIn(ci);
+      final entrada = await ref.read(attendanceRepositoryProvider).checkIn(ci);
       await refresh();
       ref.invalidate(attendanceHistoryProvider);
+      return entrada;
     } finally {
       _pendingCheckIns.remove(ci);
     }
