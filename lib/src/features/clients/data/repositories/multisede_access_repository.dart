@@ -32,13 +32,21 @@ class MultisedeAccessRepository {
   ///
   /// El mostrador los necesita para poder **encontrarlos**: su identificación
   /// busca en el padrón de la sede, y un visitante no está ahí por definición.
-  Future<List<VisitanteModel>> getVisitantes() async {
+  Future<VisitantesDeLaSede> getVisitantes() async {
     final response = await _dio.get("/acceso-multisede/visitantes");
-    final lista = (response.data as Map).cast<String, dynamic>()["visitantes"];
-    return [
-      for (final fila in (lista as List? ?? const []))
-        VisitanteModel.fromJson((fila as Map).cast<String, dynamic>()),
-    ];
+    final cuerpo = (response.data as Map).cast<String, dynamic>();
+    return VisitantesDeLaSede(
+      visitantes: [
+        for (final fila in (cuerpo["visitantes"] as List? ?? const []))
+          VisitanteModel.fromJson((fila as Map).cast<String, dynamic>()),
+      ],
+      // Viene con la lista y no en una llamada aparte: si se pidiera por
+      // separado, la pantalla podría pintar unos visitantes con la etiqueta de
+      // frescura de otro momento.
+      conocimiento: ConocimientoDeLaSede.fromJson(
+        (cuerpo["conocimiento"] as Map?)?.cast<String, dynamic>(),
+      ),
+    );
   }
 
   Future<MultisedeAccessModel?> getAcceso(String ci) async {
@@ -186,7 +194,7 @@ final cotizacionVisitaProvider =
     );
 
 /// Visitantes que esta sede puede atender hoy.
-final visitantesProvider = FutureProvider<List<VisitanteModel>>(
+final visitantesProvider = FutureProvider<VisitantesDeLaSede>(
   (ref) => ref.watch(multisedeAccessRepositoryProvider).getVisitantes(),
 );
 

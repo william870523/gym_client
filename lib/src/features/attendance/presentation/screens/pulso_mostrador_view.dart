@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -793,7 +794,8 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
     final consulta = _searchQuery.trim().toLowerCase();
     if (consulta.isEmpty) return const SizedBox.shrink();
 
-    final visitantes = ref.watch(visitantesProvider).asData?.value ?? const [];
+    final datos = ref.watch(visitantesProvider).asData?.value;
+    final visitantes = datos?.visitantes ?? const <VisitanteModel>[];
     final coinciden = visitantes
         .where(
           (v) =>
@@ -823,12 +825,33 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
               ),
             ),
           ),
+          // Va **encima** de la lista y no en cada fila: lo que cualifica no es
+          // este visitante sino todo lo que la sede cree saber de ellos.
+          if (datos != null && datos.conocimiento.advertencia != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(border: Border.all(color: inks.ocre)),
+              child: Text(
+                datos.conocimiento.advertencia!,
+                style: TextStyle(fontSize: 11, color: inks.ocre),
+              ),
+            ),
           for (final visitante in coinciden)
             _SuggestRow(
               p: p,
               inks: inks,
               name: visitante.nombreCompleto,
-              ci: '${visitante.ci} · ${visitante.gymIdOrigen}',
+              // La vigencia viaja en la copia desde M4a y no la enseñaba nadie:
+              // recepción solo se enteraba de que había vencido cuando la puerta
+              // lo rechazaba, con el socio delante. Enseñarla permite avisarle
+              // antes de que se le acabe.
+              ci: [
+                visitante.ci,
+                visitante.gymIdOrigen,
+                if (visitante.membresiaFechaFin != null)
+                  'hasta ${_dia.format(visitante.membresiaFechaFin!)}',
+              ].join(' · '),
               photo: null,
               initials: _initials(visitante.nombreCompleto),
               action: visitante.accesoVigente ? 'entrar' : 'sin plus',
@@ -866,6 +889,9 @@ class _PulsoMostradorViewState extends ConsumerState<PulsoMostradorView> {
       ),
     );
   }
+
+  /// Día de la vigencia del visitante. Sin hora: es una fecha comercial.
+  static final _dia = DateFormat('dd/MM/yyyy');
 
   /// Visitante al que se le está cobrando el plan (M4c), si hay alguno.
   VisitanteModel? _visitanteEnCobro;

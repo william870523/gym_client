@@ -131,6 +131,56 @@ class VisitanteModel {
   );
 }
 
+/// Cuánta confianza merece lo que esta sede sabe de sus visitantes (§5.2).
+///
+/// La lista de visitantes se responde igual con conexión y sin ella —la copia
+/// lleva la vigencia, y caducar no necesita información nueva—, pero **no vale
+/// lo mismo**: una baja o una renovación de hoy en la sede del socio solo llega
+/// por sincronización. Esto es lo que deja que la pantalla lo diga en vez de
+/// afirmar con la misma seguridad un dato fresco y uno de hace dos días.
+class ConocimientoDeLaSede {
+  const ConocimientoDeLaSede({
+    required this.frescura,
+    this.diasSinNoticias,
+    this.ultimaSincronizacion,
+    this.advertencia,
+  });
+
+  /// AL_DIA | CON_RETRASO | A_CIEGAS.
+  final String frescura;
+  final int? diasSinNoticias;
+  final DateTime? ultimaSincronizacion;
+
+  /// Lo que se puede decir sin mentir. Nulo cuando no hay nada que advertir:
+  /// llenar la vista de avisos inofensivos enseña a ignorarlos.
+  final String? advertencia;
+
+  bool get alDia => frescura == 'AL_DIA';
+
+  static const desconocido = ConocimientoDeLaSede(frescura: 'AL_DIA');
+
+  static ConocimientoDeLaSede fromJson(Map<String, dynamic>? json) {
+    if (json == null) return desconocido;
+    final ultima = json['ultima_sincronizacion'] as String?;
+    return ConocimientoDeLaSede(
+      frescura: json['frescura'] as String? ?? 'AL_DIA',
+      diasSinNoticias: (json['dias_sin_noticias'] as num?)?.toInt(),
+      ultimaSincronizacion: ultima == null ? null : DateTime.parse(ultima).toLocal(),
+      advertencia: (json['advertencia'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (json['advertencia'] as String).trim(),
+    );
+  }
+}
+
+/// La lista de visitantes con la etiqueta de cuánto vale.
+class VisitantesDeLaSede {
+  const VisitantesDeLaSede({required this.visitantes, required this.conocimiento});
+
+  final List<VisitanteModel> visitantes;
+  final ConocimientoDeLaSede conocimiento;
+}
+
 /// Cobro del plus multi-sede (M4b, docs/MULTI_SEDE.md §5.1).
 ///
 /// Lleva el **periodo comprado** y no solo el importe, y es a propósito:

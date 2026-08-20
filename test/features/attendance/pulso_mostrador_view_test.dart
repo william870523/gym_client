@@ -339,12 +339,14 @@ void main() {
     expect(find.text('PAUSAR'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  _pruebasDeVisitantes();
 }
 
 Widget _harness({
   _AttendanceNotifier? notifier,
   List<ClientModel>? clientItems,
   List<AttendanceModel>? attendanceItems,
+  VisitantesDeLaSede? visitantes,
 }) {
   final now = toGymWallClock(appClock.nowUtc(), appClock.gymTimezone);
   final nowMinutes = now.hour * 60 + now.minute;
@@ -355,7 +357,14 @@ Widget _harness({
       appearanceStoreProvider.overrideWithValue(_MemoryAppearanceStore()),
       // M4a: el mostrador consulta a los socios de otras sedes al identificar.
       // Sin simularlo, la vista sale a la red y deja un temporizador vivo.
-      visitantesProvider.overrideWith((_) async => const <VisitanteModel>[]),
+      visitantesProvider.overrideWith(
+        (_) async =>
+            visitantes ??
+            const VisitantesDeLaSede(
+              visitantes: <VisitanteModel>[],
+              conocimiento: ConocimientoDeLaSede.desconocido,
+            ),
+      ),
       syncStatusProvider.overrideWith(
         (ref) => Stream.value(
           SyncStatusSnapshot.offline(
@@ -559,4 +568,103 @@ class _MemoryAppearanceStore implements AppearanceStore {
 
   @override
   Future<void> save(AppearancePreference preference) async {}
+}
+
+/// §5.2 — la vigencia del visitante y cuánto vale lo que la sede sabe.
+///
+/// La copia lleva la fecha desde M4a y **no la enseñaba nadie**: recepción solo
+/// se enteraba de que el plan había vencido cuando la puerta rechazaba al socio,
+/// con él delante del mostrador.
+void _pruebasDeVisitantes() {
+  VisitanteModel visitante({
+    required String ci,
+    required String nombre,
+    bool vigente = true,
+    DateTime? hasta,
+  }) => VisitanteModel(
+    ci: ci,
+    nombres: nombre,
+    apellidos: 'Del Norte',
+    gymIdOrigen: 'gym-norte',
+    accesoVigente: vigente,
+    membresiaEstado: 'ACTIVA',
+    membresiaFechaFin: hasta,
+  );
+
+  testWidgets('el visitante enseña hasta cuándo le cubre', (tester) async {
+    tester.view.physicalSize = const Size(1500, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _harness(
+        visitantes: VisitantesDeLaSede(
+          visitantes: [
+            visitante(
+              ci: '99090100009',
+              nombre: 'Nadia',
+              hasta: DateTime.utc(2026, 9, 15),
+            ),
+          ],
+          conocimiento: ConocimientoDeLaSede.desconocido,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Nadia');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('hasta 15/09/2026'), findsOneWidget);
+  });
+
+  testWidgets('sin noticias, la sede lo dice en vez de afirmar', (tester) async {
+    // Es el caso que motiva todo esto: la pantalla afirmaba con la misma
+    // seguridad un dato de hace un minuto y uno de hace dos días.
+    tester.view.physicalSize = const Size(1500, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _harness(
+        visitantes: VisitantesDeLaSede(
+          visitantes: [visitante(ci: '99090100009', nombre: 'Nadia')],
+          conocimiento: const ConocimientoDeLaSede(
+            frescura: 'A_CIEGAS',
+            diasSinNoticias: 2,
+            advertencia:
+                'Esta sede lleva 2 días sin sincronizar: una membresía '
+                'cancelada desde entonces seguiría apareciendo vigente.',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Nadia');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('2 días sin sincronizar'), findsOneWidget);
+    // Y el visitante sigue en la lista, ofrecido: negar por llevar días sin
+    // noticias dejaría a la sede sin atender a nadie el día que se cae la
+    // conexión, que es lo contrario de para lo que existe la lectura local.
+    expect(find.text('Nadia Del Norte'), findsOneWidget);
+  });
+
+  testWidgets('al día no se advierte nada', (tester) async {
+    // Llenar la vista de avisos inofensivos enseña a ignorarlos.
+    tester.view.physicalSize = const Size(1500, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _harness(
+        visitantes: VisitantesDeLaSede(
+          visitantes: [visitante(ci: '99090100009', nombre: 'Nadia')],
+          conocimiento: const ConocimientoDeLaSede(frescura: 'AL_DIA'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Nadia');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('sin sincronizar'), findsNothing);
+    expect(find.textContaining('desde ayer'), findsNothing);
+  });
 }
