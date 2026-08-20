@@ -315,6 +315,121 @@ void main() {
     expect(find.text('Sede 0'), findsNothing);
     expect(find.text('Sede 8'), findsOneWidget);
   });
+  // §6.2 — «SIN NOTICIAS» sin fecha obliga a las dos preguntas que deciden y no
+  // contesta ninguna: ¿desde cuándo, y es de hoy o lleva semanas?
+  testWidgets('la sede callada dice desde cuándo, y la que habla también', (
+    tester,
+  ) async {
+    final ahora = DateTime.now().toUtc();
+    await tester.pumpWidget(
+      app(
+        semaforo: datos(
+          filas: [
+            fila(
+              nombre: 'Sede Muda',
+              estado: EstadoSemaforo.sinNoticias,
+              noticia: ahora.subtract(const Duration(days: 3, hours: 2)),
+            ),
+            fila(
+              nombre: 'Sede Al Habla',
+              estado: EstadoSemaforo.sinCerrar,
+              noticia: ahora.subtract(const Duration(minutes: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // La fecha ya la daba la columna; lo que faltaba es cuánto hace, y va en el
+    // sitio que ocupaba la etiqueta «última sync», que repetía el encabezado.
+    // La nota de `_Dato` se pinta en mayúsculas, y por eso se busca así.
+    expect(find.text('HACE 3 D'), findsOneWidget);
+    expect(find.text('ÚLTIMA SYNC'), findsNothing);
+    // También en la que sí habla: es un dato, no un aviso, y saber que la verde
+    // habló hace un rato es lo que hace creíble el resto de la tabla.
+    expect(find.text('HACE 12 MIN'), findsOneWidget);
+    // Y el contador pone cifra al montón: «2 sin noticias» no dice si es de esta
+    // mañana o de hace tres semanas.
+    expect(find.text('la más callada: 3 d'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('en compacto la noticia no se pierde con las columnas', (
+    tester,
+  ) async {
+    // Por debajo de 780 la tabla se queda con sede y estado, y con eso se iba lo
+    // único que distingue una sede callada esta mañana de una callada hace tres
+    // semanas. Ahí sí va bajo la acción: la columna no existe, no se duplica.
+    await tester.pumpWidget(
+      app(
+        width: 700,
+        semaforo: datos(
+          filas: [
+            fila(
+              nombre: 'Sede Muda',
+              estado: EstadoSemaforo.sinNoticias,
+              noticia: DateTime.now().toUtc().subtract(const Duration(days: 3)),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('hace 3 d'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('la sede de la que no consta nada no finge un silencio largo', (
+    tester,
+  ) async {
+    // Una sede recién dada de alta no ha callado: es que nunca habló. Pintarlo
+    // como un silencio mandaría a alguien a revisar una conexión que no existe.
+    await tester.pumpWidget(
+      app(
+        semaforo: datos(
+          filas: [
+            fila(nombre: 'Sede Nueva', estado: EstadoSemaforo.sinNoticias),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // En la fila y en el contador, que tampoco puede inventar días. La nota de
+    // la fila va en mayúsculas; el pie del contador, en texto corriente.
+    expect(find.text('SIN NOTICIA REGISTRADA'), findsOneWidget);
+    expect(find.text('sin noticia registrada'), findsOneWidget);
+    // Y la fecha sigue diciendo «nunca», que no es una fecha vieja.
+    expect(find.text('nunca'), findsOneWidget);
+    expect(find.textContaining('HACE'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un reloj atrasado no dice «hace -2 h»', (tester) async {
+    // La última noticia puede quedar en el futuro respecto a este equipo; restar
+    // sin más daría un negativo y la tabla diría un disparate.
+    await tester.pumpWidget(
+      app(
+        semaforo: datos(
+          filas: [
+            fila(
+              nombre: 'Sede Futura',
+              estado: EstadoSemaforo.sinCerrar,
+              noticia: DateTime.now().toUtc().add(const Duration(hours: 2)),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('HACE 0 MIN'), findsOneWidget);
+    expect(find.textContaining('HACE -'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
 }
 
 /// Una sesión de sede corriente: administra su gimnasio y no la cadena.

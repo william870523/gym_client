@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/time/app_clock.dart';
 import '../../../../core/theme/pulso/pulso_theme.dart';
 import '../../../../core/theme/pulso/pulso_tokens.dart';
 import '../../../../core/widgets/pulso_widgets.dart';
@@ -9,6 +10,48 @@ import '../../../auth/presentation/state/sede_session_provider.dart';
 import '../../data/models/cierre_cadena_models.dart';
 import '../../data/repositories/cierre_cadena_repository.dart';
 import '../state/cierre_cadena_providers.dart';
+
+/// Cuánto hace que se supo de una sede.
+///
+/// La tabla ya daba **la fecha**; lo que no daba es esto, y es lo que decide qué
+/// hacer: una sede callada veinticinco horas es un incidente de esta mañana; una
+/// callada tres semanas es una sede que nadie ha ido a mirar. Restarlo a ojo
+/// contra el reloj de cada uno es justo el trabajo que la pantalla puede
+/// ahorrar. Ocupa el sitio de la etiqueta «última sync», que repetía el
+/// encabezado de la columna.
+///
+/// `null` es **no consta**, y se dice con esas palabras: una sede recién dada de
+/// alta, o cuyo escritorio nunca arrancó, no ha callado —es que nunca habló—, y
+/// pintarlo como un silencio largo mandaría a alguien a revisar una conexión que
+/// no existe.
+String haceCuanto(DateTime? ultimaNoticia, DateTime ahora) {
+  if (ultimaNoticia == null) return 'sin noticia registrada';
+  final transcurrido = ahora.difference(ultimaNoticia.toUtc());
+  // Un reloj que va por detrás daría «hace -2 h». Se corta en cero: lo que se
+  // sabe es que se supo de ella, no cuánto hace exactamente.
+  final cuanto = transcurrido.isNegative ? Duration.zero : transcurrido;
+  if (cuanto.inDays >= 1) return 'hace ${cuanto.inDays} d';
+  if (cuanto.inHours >= 1) return 'hace ${cuanto.inHours} h';
+  return 'hace ${cuanto.inMinutes} min';
+}
+
+/// El silencio más largo de la cadena, para poner cifra a «sin noticias».
+///
+/// Se busca entre las que están **calladas**, no entre todas: la más antigua de
+/// las que hablan hoy no es un problema de nadie.
+Duration? silencioMasLargo(SemaforoCadenaModel datos, DateTime ahora) {
+  Duration? peor;
+  for (final fila in datos.filas) {
+    if (fila.estado != EstadoSemaforo.sinNoticias) continue;
+    // Una sede de la que no consta nada es el peor caso y no tiene duración;
+    // se representa aparte, con `null`, y por eso aquí se salta.
+    final noticia = fila.ultimaNoticia;
+    if (noticia == null) continue;
+    final d = ahora.difference(noticia.toUtc());
+    if (peor == null || d > peor) peor = d;
+  }
+  return peor;
+}
 
 /// Alto de los estados de carga, error y «solo en el concentrador». Lo manda
 /// `PulsoStateView` con su botón de reintento: 28 de padding arriba y abajo, 30
@@ -443,6 +486,17 @@ class _Contadores extends StatelessWidget {
 
   final SemaforoCadenaModel datos;
 
+  /// La peor de las calladas. Si ninguna tiene fecha, lo que hay que decir no es
+  /// un tiempo sino que **no consta**: son sedes de las que no se ha sabido
+  /// nunca, no sedes que se hayan callado.
+  static String _peorSilencio(SemaforoCadenaModel datos) {
+    final peor = silencioMasLargo(datos, appClock.nowUtc());
+    if (peor == null) return 'sin noticia registrada';
+    return peor.inDays >= 1
+        ? 'la más callada: ${peor.inDays} d'
+        : 'la más callada: ${peor.inHours} h';
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = PulsoTokens.of(context);
@@ -486,6 +540,23 @@ class _Contadores extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       PulsoLabel(celdas[i].$1, color: tokens.muted2),
+                      // «4 sin noticias» no dice si es de esta mañana o de hace
+                      // tres semanas, y eso cambia a quién se llama.
+                      if (celdas[i].$1 == 'Sin noticias' && celdas[i].$2 > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(
+                            _peorSilencio(datos),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: PulsoFonts.mono,
+                              fontSize: 8,
+                              letterSpacing: 0.6,
+                              color: tokens.muted2,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -678,6 +749,29 @@ class _FilaSede extends StatelessWidget {
             color: tokens.muted2,
           ),
         ),
+        // En compacto desaparecen las tres últimas columnas, y con ellas la de
+        // «Última noticia». Sin esto, la ventana estrecha se queda sin lo único
+        // que distingue una sede callada esta mañana de una callada hace tres
+        // semanas. Aquí no duplica nada: la columna no está.
+        if (compact) ...[
+          const SizedBox(height: 2),
+          Text(
+            fila.ultimaNoticia == null
+                ? 'sin noticia registrada'
+                : '${_diaHora.format(fila.ultimaNoticia!)} · '
+                      '${haceCuanto(fila.ultimaNoticia, appClock.nowUtc())}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: PulsoFonts.mono,
+              fontSize: 8,
+              letterSpacing: 0.6,
+              color: fila.estado == EstadoSemaforo.sinNoticias
+                  ? color
+                  : tokens.muted2,
+            ),
+          ),
+        ],
       ],
     );
 
@@ -728,11 +822,17 @@ class _FilaSede extends StatelessWidget {
       ],
     );
 
+    // La columna daba la fecha y, debajo, la etiqueta «última sync», que no
+    // añade nada: ya lo dice el encabezado. Lo que faltaba es **cuánto hace**,
+    // que es lo que decide qué hacer —una sede callada veinticinco horas es un
+    // incidente de esta mañana; una callada tres semanas es una sede que nadie
+    // ha ido a mirar— y obligaba a restar mentalmente contra el reloj de cada
+    // uno.
     final noticia = _Dato(
       valor: fila.ultimaNoticia == null
           ? 'nunca'
           : _diaHora.format(fila.ultimaNoticia!),
-      nota: fila.ultimaNoticia == null ? 'no ha sincronizado' : 'última sync',
+      nota: haceCuanto(fila.ultimaNoticia, appClock.nowUtc()),
     );
 
     if (compact) {
