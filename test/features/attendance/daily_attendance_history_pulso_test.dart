@@ -157,6 +157,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // §5.2, segundo eje — la fila que parecía comprobada. Le contestó el
+  // concentrador, sí, pero con lo último que subió una sede que lleva días muda.
+  testWidgets('distingue la comprobada de la comprobada contra una sede muda', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final now = appClock.nowUtc();
+    await tester.pumpWidget(
+      _harness(
+        extra: [
+          AttendanceModel(
+            id: 'a7',
+            clientId: '700',
+            checkIn: now,
+            clientName: 'Visita Sede Muda',
+            visitante: true,
+            decididoCon: 'CONCENTRADOR',
+            conocimientoAlDecidir: 'AL_DIA',
+            diasSinNoticias: 0,
+            conocimientoOrigenAlDecidir: 'A_CIEGAS',
+            diasSinNoticiasOrigen: 4,
+          ),
+          AttendanceModel(
+            id: 'a8',
+            clientId: '800',
+            checkIn: now,
+            clientName: 'Visita Al Dia',
+            visitante: true,
+            decididoCon: 'CONCENTRADOR',
+            conocimientoAlDecidir: 'AL_DIA',
+            diasSinNoticias: 0,
+            conocimientoOrigenAlDecidir: 'AL_DIA',
+            diasSinNoticiasOrigen: 0,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Comprobada, pero su sede llevaba 4 días sin dar noticias'),
+      findsOneWidget,
+    );
+    // La que sí está comprobada no lleva marca, y la frase no habla de la copia:
+    // aquí la copia no decidió nada.
+    expect(find.textContaining('Comprobada,'), findsOneWidget);
+    expect(find.textContaining('Decidida con la copia'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('una sede que nunca sincronizó no dice «null días»', (
     tester,
   ) async {

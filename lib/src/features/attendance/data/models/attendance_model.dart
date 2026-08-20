@@ -61,8 +61,26 @@ class AttendanceModel {
   @JsonKey(name: 'dias_sin_noticias')
   final int? diasSinNoticias;
 
+  /// §5.2, segundo eje — cuánto hacía que se sabía de **la sede del socio**.
+  ///
+  /// `AL_DIA` | `CON_RETRASO` | `A_CIEGAS` | `NO_CONSTA`. Y `NO_CONSTA` no es
+  /// estar al día: solo se mide cuando el concentrador contesta, porque la
+  /// copia no trae esta información.
+  @JsonKey(name: 'conocimiento_origen_al_decidir')
+  final String? conocimientoOrigenAlDecidir;
+
+  @JsonKey(name: 'dias_sin_noticias_origen')
+  final int? diasSinNoticiasOrigen;
+
   /// La entrada se autorizó sin poder comprobarla contra el concentrador.
   bool get decididaConLaCopia => decididoCon == 'COPIA_LOCAL';
+
+  /// Se comprobó contra el concentrador, pero **la sede del socio llevaba días
+  /// muda**: el dato era lo más reciente que existía y aun así estaba viejo.
+  bool get comprobadaContraSedeMuda =>
+      decididoCon == 'CONCENTRADOR' &&
+      (conocimientoOrigenAlDecidir == 'CON_RETRASO' ||
+          conocimientoOrigenAlDecidir == 'A_CIEGAS');
 
   AttendanceModel({
     required this.id,
@@ -79,6 +97,8 @@ class AttendanceModel {
     this.decididoCon,
     this.conocimientoAlDecidir,
     this.diasSinNoticias,
+    this.conocimientoOrigenAlDecidir,
+    this.diasSinNoticiasOrigen,
   }) : status = status ?? (checkOut == null ? 'activo' : 'finalizado');
 
   bool get isPaused => checkOut == null && pauseStart != null;
@@ -149,6 +169,13 @@ class AttendanceModel {
         final String v => int.tryParse(v),
         _ => null,
       },
+      conocimientoOrigenAlDecidir: json['conocimiento_origen_al_decidir']
+          ?.toString(),
+      diasSinNoticiasOrigen: switch (json['dias_sin_noticias_origen']) {
+        final num v => v.toInt(),
+        final String v => int.tryParse(v),
+        _ => null,
+      },
       sedeDeOrigen: json['gym_id_origen'] as String?,
     );
   }
@@ -183,7 +210,12 @@ class EntradaRegistrada {
   final String? advertencia;
 
   /// La entrada se autorizó con datos que pueden haber envejecido.
-  bool get conDudaRazonable => decididoCon == 'COPIA_LOCAL' && advertencia != null;
+  ///
+  /// **Ya no basta con mirar la fuente.** Que contestara el concentrador dejó de
+  /// significar «comprobado» el día que se midió el segundo eje: si la sede del
+  /// socio lleva días muda, lo que llega es su última foto. Quien manda es la
+  /// advertencia, que es la que sabe por cuál de los dos motivos habla.
+  bool get conDudaRazonable => advertencia != null;
 
   static EntradaRegistrada fromJson(Map<String, dynamic> json) => EntradaRegistrada(
     asistencia: AttendanceModel.fromJson(json),

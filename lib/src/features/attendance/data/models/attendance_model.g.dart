@@ -17,6 +17,9 @@ Map<String, dynamic> _$AttendanceModelToJson(AttendanceModel instance) =>
       'decidido_con': instance.decididoCon,
       'conocimiento_al_decidir': instance.conocimientoAlDecidir,
       'dias_sin_noticias': instance.diasSinNoticias,
+      'conocimiento_origen_al_decidir': instance.conocimientoOrigenAlDecidir,
+      'dias_sin_noticias_origen': instance.diasSinNoticiasOrigen,
       'decididaConLaCopia': instance.decididaConLaCopia,
+      'comprobadaContraSedeMuda': instance.comprobadaContraSedeMuda,
       'isPaused': instance.isPaused,
     };

@@ -894,14 +894,27 @@ class _MemberIdentity extends StatelessWidget {
 
 /// §5.2 — qué se dice de una entrada que se autorizó sin poder comprobarla.
 ///
-/// Solo se dice cuando decidió la copia. Marcar también las que resolvió el
-/// concentrador llenaría la lista de avisos inofensivos, y una lista donde todo
-/// está marcado no marca nada.
+/// Dos motivos distintos, y por eso dos frases: o **decidió la copia** porque el
+/// concentrador no contestó, o **contestó el concentrador con una foto vieja**
+/// porque la sede del socio llevaba días muda. La segunda parecía comprobada y
+/// era la más engañosa de las dos.
+///
+/// Lo que está de verdad comprobado no se marca: una lista donde todo está
+/// marcado no marca nada.
 ///
 /// El texto se compone de los datos congelados en la fila, no de lo que la sede
 /// sabe hoy: la entrada de anteayer se decidió con lo que había anteayer, y
 /// haber sincronizado esta mañana no la convierte en comprobada.
 String? _notaDeLaDecision(AttendanceModel attendance) {
+  if (attendance.comprobadaContraSedeMuda) {
+    // Se preguntó al concentrador y contestó, así que la fila parecía
+    // comprobada. Lo que no estaba comprobado es que ese dato fuera de hoy: lo
+    // subió la sede del socio, y esa llevaba días sin hablar.
+    final dias = attendance.diasSinNoticiasOrigen;
+    return dias == 1
+        ? 'Comprobada, pero su sede no daba noticias desde el día anterior'
+        : 'Comprobada, pero su sede llevaba $dias días sin dar noticias';
+  }
   if (!attendance.decididaConLaCopia) return null;
   final dias = attendance.diasSinNoticias;
   return switch (attendance.conocimientoAlDecidir) {
