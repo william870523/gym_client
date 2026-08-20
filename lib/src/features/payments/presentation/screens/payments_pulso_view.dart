@@ -135,6 +135,15 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
                   'como ingreso. La membresía volverá a pendiente y las '
                   'comisiones no pagadas serán anuladas.',
                 ),
+                // §7.8 — un cobro cruzado no es un cobro más: el efectivo está
+                // en una caja y el ingreso es de otra sede, así que anularlo
+                // toca **dos contabilidades**. El diálogo decía lo mismo para
+                // los dos casos, y quien anulaba desde aquí movía el saldo
+                // entre sedes sin enterarse.
+                if (payment.esCruzado) ...[
+                  const SizedBox(height: 14),
+                  _AvisoCobroCruzado(payment: payment),
+                ],
                 const SizedBox(height: 16),
                 TextField(
                   key: const ValueKey('payment-reversal-reason'),
@@ -168,7 +177,11 @@ class _PaymentsPulsoViewState extends ConsumerState<PaymentsPulsoView> {
               PulsoSecondaryButton(
                 label: 'Anular pago',
                 danger: true,
-                onPressed: reasonDraft.trim().length < 5
+                // Sin autoridad no se ofrece: el servidor contestaría 403 y el
+                // recepcionista se quedaría con un error sin saber a quién
+                // llamar. El aviso de arriba dice qué sede tiene que hacerlo.
+                onPressed:
+                    !payment.puedeAnularAqui || reasonDraft.trim().length < 5
                     ? null
                     : () => Navigator.of(context).pop(reasonDraft.trim()),
               ),
@@ -1983,6 +1996,62 @@ class _PaymentFooter extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// §7.8 — lo que hay que saber antes de anular un cobro cruzado.
+///
+/// Dos cosas, y las dos cambian la decisión: que el dinero y el ingreso están
+/// en sedes distintas, y que anularlo **deshace también el saldo entre ellas**.
+/// Sin esto, el diálogo decía exactamente lo mismo que para un cobro corriente.
+class _AvisoCobroCruzado extends StatelessWidget {
+  const _AvisoCobroCruzado({required this.payment});
+
+  final PaymentModel payment;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = PulsoTokens.of(context);
+    final puede = payment.puedeAnularAqui;
+    final color = puede ? tokens.warning : tokens.danger;
+    final ingreso = payment.sedeDelIngresoNombre ?? 'otra sede';
+    final efectivo = payment.sedeDelEfectivoNombre ?? 'otra sede';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: color),
+        color: puede ? tokens.warningSoft : tokens.dangerSoft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PulsoLabel('Cobro entre sedes', color: color),
+          const SizedBox(height: 6),
+          Text(
+            'El efectivo entró en la caja de $efectivo y el ingreso es de '
+            '$ingreso. Anularlo toca dos cajas y dos contabilidades: además de '
+            'devolver el dinero, deshace el saldo pendiente entre las dos '
+            'sedes.',
+            style: TextStyle(fontSize: 12, color: tokens.chalkDim),
+          ),
+          if (!puede) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Desde aquí no se puede: lo anula '
+              '${payment.sedeQueAnulaNombre ?? efectivo}, que es la sede en '
+              'cuya caja entró el efectivo y la que devuelve el dinero.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

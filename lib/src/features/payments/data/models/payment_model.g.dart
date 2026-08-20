@@ -23,6 +23,11 @@ PaymentModel _$PaymentModelFromJson(Map<String, dynamic> json) => PaymentModel(
   clientCategorySnapshot: json['categoria_cliente_snapshot'] as String?,
   planCodeSnapshot: json['plan_codigo_snapshot'] as String?,
   installmentSuffixSnapshot: json['cuota_sufijo_snapshot'] as String?,
+  esCruzado: json['es_cruzado'] as bool? ?? false,
+  sedeDelIngresoNombre: json['sede_del_ingreso_nombre'] as String?,
+  sedeDelEfectivoNombre: json['sede_del_efectivo_nombre'] as String?,
+  sedeQueAnulaNombre: json['sede_que_anula_nombre'] as String?,
+  puedeAnularAqui: json['puede_anular_aqui'] as bool? ?? true,
   collectorUserId: json['cobrado_por_user_id'] as String?,
   collectorName: json['cobrado_por_nombre_snapshot'] as String?,
   collectorRole: json['cobrado_por_rol_snapshot'] as String?,
@@ -67,6 +72,11 @@ Map<String, dynamic> _$PaymentModelToJson(PaymentModel instance) =>
       'anulado_at': instance.voidedAt?.toIso8601String(),
       'is_deleted': instance.isDeleted,
       'version': instance.version,
+      'es_cruzado': instance.esCruzado,
+      'sede_del_ingreso_nombre': instance.sedeDelIngresoNombre,
+      'sede_del_efectivo_nombre': instance.sedeDelEfectivoNombre,
+      'sede_que_anula_nombre': instance.sedeQueAnulaNombre,
+      'puede_anular_aqui': instance.puedeAnularAqui,
     };
 
 PaymentDetailModel _$PaymentDetailModelFromJson(Map<String, dynamic> json) =>

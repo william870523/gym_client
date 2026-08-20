@@ -83,6 +83,32 @@ class PaymentModel {
   @JsonKey(includeFromJson: true, includeToJson: false)
   final String? clientName;
 
+  // ===== §7.8 — el cobro cruzado toca dos cajas y dos contabilidades =====
+  //
+  // El servidor decide quién puede anularlo y manda los nombres resueltos: la
+  // instalación no descarga el catálogo completo de sedes ajenas, y un aviso
+  // que dijera «anúlelo desde dtc-gym-ajeno» no le sirve a nadie en el
+  // mostrador. La regla no se repite aquí a propósito; vive en la política
+  // gemela del servidor y esta pantalla obedece.
+
+  /// El efectivo entró en una caja y el ingreso es de otra sede.
+  @JsonKey(name: 'es_cruzado', defaultValue: false)
+  final bool esCruzado;
+
+  @JsonKey(name: 'sede_del_ingreso_nombre')
+  final String? sedeDelIngresoNombre;
+
+  @JsonKey(name: 'sede_del_efectivo_nombre')
+  final String? sedeDelEfectivoNombre;
+
+  /// Sede desde la que se puede anular: la que tiene el dinero (§7.8).
+  @JsonKey(name: 'sede_que_anula_nombre')
+  final String? sedeQueAnulaNombre;
+
+  /// `false` cuando esta sede no es la que devuelve los billetes.
+  @JsonKey(name: 'puede_anular_aqui', defaultValue: true)
+  final bool puedeAnularAqui;
+
   PaymentModel({
     required this.id,
     required this.ci,
@@ -98,6 +124,11 @@ class PaymentModel {
     this.clientCategorySnapshot,
     this.planCodeSnapshot,
     this.installmentSuffixSnapshot,
+    this.esCruzado = false,
+    this.sedeDelIngresoNombre,
+    this.sedeDelEfectivoNombre,
+    this.sedeQueAnulaNombre,
+    this.puedeAnularAqui = true,
     this.collectorUserId,
     this.collectorName,
     this.collectorRole,

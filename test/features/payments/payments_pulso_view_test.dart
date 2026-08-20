@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_client/src/core/sync/sync_status_provider.dart';
+import 'package:gym_client/src/core/widgets/pulso_widgets.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_preference.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_provider.dart';
 import 'package:gym_client/src/core/theme/pulso/appearance_store.dart';
@@ -180,11 +181,17 @@ void main() {
     expect(find.text('Pago duplicado'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  _pruebasDelCobroCruzado();
 }
 
-List<PaymentModel> _payments() => [
+List<PaymentModel> _payments({bool cruzado = false, bool puedeAnular = true}) => [
   PaymentModel(
     id: 'payment-carlos',
+    esCruzado: cruzado,
+    sedeDelIngresoNombre: cruzado ? 'Sede Norte' : null,
+    sedeDelEfectivoNombre: cruzado ? 'Gym Test' : null,
+    sedeQueAnulaNombre: cruzado ? 'Gym Test' : null,
+    puedeAnularAqui: puedeAnular,
     ci: '91021547301',
     fecha: DateTime.utc(2026, 7, 10, 15, 30),
     amount: 1,
@@ -380,4 +387,58 @@ class _MemoryAppearanceStore implements AppearanceStore {
 
   @override
   Future<void> save(AppearancePreference preference) async {}
+}
+
+/// §7.8 — anular un cobro cruzado toca dos cajas y dos contabilidades.
+///
+/// El diálogo decía exactamente lo mismo para un cobro corriente y para uno
+/// cruzado, así que quien anulaba desde aquí movía el saldo entre sedes sin
+/// enterarse.
+void _pruebasDelCobroCruzado() {
+  Future<void> abrirAnulacion(WidgetTester tester, List<PaymentModel> pagos) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_harness(paymentNotifier: _PaymentNotifier(pagos)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ANULAR PAGO'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('un cobro corriente no habla de sedes', (tester) async {
+    // Llenar el diálogo de avisos que no aplican enseña a ignorarlos.
+    await abrirAnulacion(tester, _payments());
+    expect(find.textContaining('dos cajas'), findsNothing);
+    expect(find.text('COBRO ENTRE SEDES'), findsNothing);
+  });
+
+  testWidgets('un cobro cruzado avisa de las dos contabilidades', (tester) async {
+    await abrirAnulacion(tester, _payments(cruzado: true));
+    expect(find.text('COBRO ENTRE SEDES'), findsOneWidget);
+    expect(find.textContaining('dos cajas y dos contabilidades'), findsOneWidget);
+    // Y nombra el efecto que nadie veía: el saldo entre las dos se deshace.
+    expect(find.textContaining('deshace el saldo'), findsOneWidget);
+    // Las dos sedes con nombre, no con identificador.
+    expect(find.textContaining('Gym Test'), findsOneWidget);
+    expect(find.textContaining('Sede Norte'), findsOneWidget);
+  });
+
+  testWidgets('sin autoridad no se ofrece anular, y se dice quién puede', (
+    tester,
+  ) async {
+    // El servidor contestaría 403 y el recepcionista se quedaría con un error
+    // sin saber a quién llamar.
+    await abrirAnulacion(
+      tester,
+      _payments(cruzado: true, puedeAnular: false),
+    );
+    expect(find.textContaining('Desde aquí no se puede'), findsOneWidget);
+    expect(find.textContaining('en cuya caja entró el efectivo'), findsOneWidget);
+
+    final boton = tester.widget<PulsoSecondaryButton>(
+      find.widgetWithText(PulsoSecondaryButton, 'ANULAR PAGO').last,
+    );
+    expect(boton.onPressed, isNull);
+  });
 }
