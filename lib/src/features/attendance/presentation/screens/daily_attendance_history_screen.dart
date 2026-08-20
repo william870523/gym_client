@@ -690,6 +690,7 @@ class _AttendanceRow extends StatelessWidget {
               name: name,
               id: attendance.clientId,
               photo: attendance.photoUrl,
+              nota: _notaDeLaDecision(attendance),
             ),
           ),
           Expanded(
@@ -768,6 +769,7 @@ class _AttendanceCards extends StatelessWidget {
                 name: _clientName(attendance, client),
                 id: attendance.clientId,
                 photo: attendance.photoUrl,
+                nota: _notaDeLaDecision(attendance),
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -802,11 +804,15 @@ class _MemberIdentity extends StatelessWidget {
     required this.name,
     required this.id,
     required this.photo,
+    this.nota,
   });
 
   final String name;
   final String id;
   final String? photo;
+
+  /// §5.2 — con qué se decidió la entrada, cuando merece decirse.
+  final String? nota;
 
   @override
   Widget build(BuildContext context) {
@@ -864,12 +870,48 @@ class _MemberIdentity extends StatelessWidget {
                   color: tokens.muted2,
                 ),
               ),
+              if (nota != null) ...[
+                const SizedBox(height: 3),
+                Text(
+                  nota!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: PulsoFonts.mono,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.warning,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ],
     );
   }
+}
+
+/// §5.2 — qué se dice de una entrada que se autorizó sin poder comprobarla.
+///
+/// Solo se dice cuando decidió la copia. Marcar también las que resolvió el
+/// concentrador llenaría la lista de avisos inofensivos, y una lista donde todo
+/// está marcado no marca nada.
+///
+/// El texto se compone de los datos congelados en la fila, no de lo que la sede
+/// sabe hoy: la entrada de anteayer se decidió con lo que había anteayer, y
+/// haber sincronizado esta mañana no la convierte en comprobada.
+String? _notaDeLaDecision(AttendanceModel attendance) {
+  if (!attendance.decididaConLaCopia) return null;
+  final dias = attendance.diasSinNoticias;
+  return switch (attendance.conocimientoAlDecidir) {
+    'A_CIEGAS' when dias == null =>
+      'Decidida con la copia · esta sede no había sincronizado nunca',
+    'A_CIEGAS' => 'Decidida con la copia · $dias días sin sincronizar',
+    'CON_RETRASO' => 'Decidida con la copia · sin sincronizar desde el día anterior',
+    // Al día y aun así con la copia: el concentrador no llegó a contestar.
+    _ => 'Decidida con la copia · el concentrador no contestó',
+  };
 }
 
 class _Datum extends StatelessWidget {

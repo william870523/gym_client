@@ -104,9 +104,93 @@ void main() {
     expect(clipboardText, contains('Luis Gómez'));
     expect(tester.takeException(), isNull);
   });
+
+  // §5.2 — la entrada que se autorizó sin poder comprobarla se distingue de la
+  // que sí se comprobó. Sin esto, cuando la sincronización trae una baja
+  // anterior no hay forma de saber cuáles hay que revisar.
+  testWidgets('marca la entrada que decidió la copia y calla las demás', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final now = appClock.nowUtc();
+    await tester.pumpWidget(
+      _harness(
+        extra: [
+          AttendanceModel(
+            id: 'a4',
+            clientId: '400',
+            checkIn: now,
+            clientName: 'Visita A Ciegas',
+            visitante: true,
+            decididoCon: 'COPIA_LOCAL',
+            conocimientoAlDecidir: 'A_CIEGAS',
+            diasSinNoticias: 3,
+          ),
+          AttendanceModel(
+            id: 'a5',
+            clientId: '500',
+            checkIn: now,
+            clientName: 'Visita Comprobada',
+            visitante: true,
+            decididoCon: 'CONCENTRADOR',
+            conocimientoAlDecidir: 'AL_DIA',
+            diasSinNoticias: 0,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Los días son los del momento de decidir, no los de hoy: la nota se compone
+    // de lo congelado en la fila.
+    expect(
+      find.text('Decidida con la copia · 3 días sin sincronizar'),
+      findsOneWidget,
+    );
+    // La comprobada no lleva marca: si todo estuviera marcado, nada lo estaría.
+    expect(find.textContaining('Decidida con la copia'), findsOneWidget);
+    expect(find.text('Visita Comprobada'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('una sede que nunca sincronizó no dice «null días»', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _harness(
+        extra: [
+          AttendanceModel(
+            id: 'a6',
+            clientId: '600',
+            checkIn: appClock.nowUtc(),
+            clientName: 'Visita Sin Noticias',
+            visitante: true,
+            decididoCon: 'COPIA_LOCAL',
+            conocimientoAlDecidir: 'A_CIEGAS',
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Decidida con la copia · esta sede no había sincronizado nunca'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
-Widget _harness() {
+Widget _harness({List<AttendanceModel>? extra}) {
   final now = appClock.nowUtc();
   final attendances = [
     AttendanceModel(
@@ -129,6 +213,7 @@ Widget _harness() {
       checkOut: now.subtract(const Duration(days: 2)),
       clientName: 'Eva Ríos',
     ),
+    ...?extra,
   ];
   final clients = [
     ClientModel(id: '100', nombres: 'Ana', apellidos: 'Pérez', planId: 'p1'),

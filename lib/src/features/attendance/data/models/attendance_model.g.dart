@@ -14,5 +14,9 @@ Map<String, dynamic> _$AttendanceModelToJson(AttendanceModel instance) =>
       'fecha_salida': instance.checkOut?.toIso8601String(),
       'pausa_inicio': instance.pauseStart?.toIso8601String(),
       'pausa_ms': instance.pausedMs,
+      'decidido_con': instance.decididoCon,
+      'conocimiento_al_decidir': instance.conocimientoAlDecidir,
+      'dias_sin_noticias': instance.diasSinNoticias,
+      'decididaConLaCopia': instance.decididaConLaCopia,
       'isPaused': instance.isPaused,
     };

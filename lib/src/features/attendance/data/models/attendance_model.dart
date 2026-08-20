@@ -43,6 +43,27 @@ class AttendanceModel {
   @JsonKey(includeFromJson: false, includeToJson: false)
   final String? sedeDeOrigen;
 
+  /// §5.2 — con qué se decidió esta entrada, **guardado con ella**.
+  ///
+  /// `CONCENTRADOR` cuando el dato era el de origen en ese instante;
+  /// `COPIA_LOCAL` cuando el concentrador no contestó y decidió la sede con lo
+  /// que tenía. `null` en la entrada de un socio de la casa: allí la pregunta
+  /// no existe, porque su membresía está en la misma base.
+  @JsonKey(name: 'decidido_con')
+  final String? decididoCon;
+
+  /// `AL_DIA` | `CON_RETRASO` | `A_CIEGAS` de **quien decidió**, no de la sede
+  /// del socio.
+  @JsonKey(name: 'conocimiento_al_decidir')
+  final String? conocimientoAlDecidir;
+
+  /// El hecho del que sale ese juicio. `null` si la sede nunca sincronizó.
+  @JsonKey(name: 'dias_sin_noticias')
+  final int? diasSinNoticias;
+
+  /// La entrada se autorizó sin poder comprobarla contra el concentrador.
+  bool get decididaConLaCopia => decididoCon == 'COPIA_LOCAL';
+
   AttendanceModel({
     required this.id,
     required this.clientId,
@@ -55,6 +76,9 @@ class AttendanceModel {
     this.photoUrl,
     this.visitante = false,
     this.sedeDeOrigen,
+    this.decididoCon,
+    this.conocimientoAlDecidir,
+    this.diasSinNoticias,
   }) : status = status ?? (checkOut == null ? 'activo' : 'finalizado');
 
   bool get isPaused => checkOut == null && pauseStart != null;
@@ -118,6 +142,13 @@ class AttendanceModel {
       clientName: name,
       photoUrl: photo,
       visitante: json['visitante'] == true,
+      decididoCon: json['decidido_con']?.toString(),
+      conocimientoAlDecidir: json['conocimiento_al_decidir']?.toString(),
+      diasSinNoticias: switch (json['dias_sin_noticias']) {
+        final num v => v.toInt(),
+        final String v => int.tryParse(v),
+        _ => null,
+      },
       sedeDeOrigen: json['gym_id_origen'] as String?,
     );
   }
@@ -127,10 +158,11 @@ class AttendanceModel {
 
 /// Una entrada recién registrada, con **cómo se decidió** (§5.2).
 ///
-/// La declaración va aparte de `AttendanceModel` a propósito: no es una
-/// propiedad de la asistencia —esa fila es la misma se haya decidido como se
-/// haya decidido— sino del acto de autorizarla. Meterla dentro obligaría a
-/// arrastrarla por todas las listas y los informes, donde no significa nada.
+/// Lo que queda **aquí y no en la fila** es la advertencia: es prosa, se escribe
+/// para quien tiene al socio delante y cambia cuando se reescribe el texto. En
+/// la fila van los tres datos codificados —`decidido_con`,
+/// `conocimiento_al_decidir` y los días—, que es lo que se puede consultar
+/// meses después sin depender de cómo estuviera redactado el aviso aquel día.
 ///
 /// Solo llega en la entrada de un **visitante**: para un socio de la casa la
 /// pregunta no existe, porque su membresía está en esta misma base.
